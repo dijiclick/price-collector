@@ -1,0 +1,80 @@
+name: collect
+
+# THE COLLECTOR REPOSITORY IS PUBLIC. Anyone can open a pull request against it,
+# so the trigger list is the security boundary:
+#
+#   schedule / workflow_dispatch  — only that repo's own code ever runs.
+#   pull_request                  — runs fork code, but GitHub withholds secrets.
+#   pull_request_target           — NEVER. Runs with secrets in scope while the
+#   workflow_run                  — NEVER. attacker supplies the code.
+#
+# If you add a trigger, it goes in the first group or it does not go in.
+on:
+  schedule:
+    # Every 90 minutes. Cron can't express that as one expression, so it's two
+    # halves. Minutes are :07/:37 instead of :00/:30 — GitHub's scheduler queue
+    # is most congested exactly on the hour/half-hour, where runs were drifting
+    # by hours or getting skipped outright. (For strict timing, an external
+    # scheduler hitting the workflow_dispatch API is the reliable option.)
+    - cron: "7 0,3,6,9,12,15,18,21 * * *"
+    - cron: "37 1,4,7,10,13,16,19,22 * * *"
+  workflow_dispatch: {}
+
+# Least privilege. The job reads code and talks to its own services; it has no
+# business writing to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    # Brands fetch concurrently (~6 min), but keep real headroom: a job killed
+    # mid-run leaves the sweep half-applied, which is worse than a slow one.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Nothing here pushes; leaving the token in .git/config is free risk.
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # --omit=dev keeps PGlite's wasm (a local-dev fallback) out of CI, which
+      # is why tsx sits in dependencies: CI genuinely needs it to run TypeScript.
+      - run: npm ci --omit=dev --ignore-scripts
+      - name: Collect prices
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SEPHORA_CLIENT_ID: ${{ secrets.SEPHORA_CLIENT_ID }}
+          DATAIMPULSE_PROXY: ${{ secrets.DATAIMPULSE_PROXY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+          # Push goes straight to Apple and Google. CI has no filesystem to hold
+          # key files, so the contents come through as secrets. Absent = that
+          # platform is skipped and its events retry next run.
+          APNS_KEY: ${{ secrets.APNS_KEY }}
+          APNS_KEY_ID: ${{ secrets.APNS_KEY_ID }}
+          FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
+        run: npm run collect
+      # Dead-man's-switch: skipped/failed runs are otherwise silent. Pings only
+      # when a HEALTHCHECK_URL secret exists (e.g. a healthchecks.io check URL);
+      # success pings the URL, failure pings <url>/fail. A missed ping = the
+      # schedule silently skipped — the monitor alerts on that.
+      - name: Healthcheck ping
+        if: always()
+        env:
+          HC_URL: ${{ secrets.HEALTHCHECK_URL }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ -n "$HC_URL" ]; then
+            if [ "$JOB_STATUS" = "success" ]; then
+              curl -fsS -m 10 --retry 3 "$HC_URL" > /dev/null || true
+            else
+              curl -fsS -m 10 --retry 3 "$HC_URL/fail" > /dev/null || true
+            fi
+          fi

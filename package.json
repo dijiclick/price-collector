@@ -1,0 +1,25 @@
+{
+  "name": "price-collector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Scheduled price collector for Turkish fashion and cosmetics retailers.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "collect": "tsx packages/collector/src/collect.ts",
+    "export-snapshot": "tsx packages/collector/src/export-snapshot.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "postgres": "^3.4.5",
+    "undici": "^7.2.0",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.2",
+    "@electric-sql/pglite": "^0.5.4"
+  }
+}
