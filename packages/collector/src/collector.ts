@@ -42,7 +42,20 @@ export interface BrandResult {
  * Uses bulk DB operations (a handful of queries per brand) so it stays fast against a
  * networked Postgres instead of doing per-product round-trips.
  */
-const BRAND_TIMEOUT_MS = Number(process.env.BRAND_TIMEOUT_MS ?? 240000); // 4 min per brand
+/**
+ * Per-brand ceiling. 5 minutes, raised from 4 on 2026-08-25.
+ *
+ * Beymen is the largest catalogue at ~42.000 products and was measured across
+ * nine successful runs at 150–185s, with a failure the same day — i.e. it was
+ * grazing a 240s limit and losing a whole sweep whenever it crossed. A brand
+ * that times out is not fatal (the others still land, and it retries in 90
+ * minutes), but it is the biggest catalogue going stale for no good reason.
+ *
+ * Costs nothing in practice: brands run six at a time, the whole sweep takes
+ * ~6 minutes, and even the pathological case of every brand hanging is three
+ * waves of 5 minutes against the workflow's 40-minute budget.
+ */
+const BRAND_TIMEOUT_MS = Number(process.env.BRAND_TIMEOUT_MS ?? 300000);
 
 function withTimeout<T>(p: Promise<T>, ms: number, brand: string): Promise<T> {
   return Promise.race([
