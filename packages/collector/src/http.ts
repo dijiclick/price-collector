@@ -30,13 +30,27 @@ export interface FetchOpts {
   retries?: number;
 }
 
-/** GET/POST JSON with a browser UA, gzip, retry, and optional residential proxy. */
+/**
+ * GET/POST JSON with a browser UA, gzip, retry, and the residential proxy as a
+ * FALLBACK.
+ *
+ * `proxy: true` means "this host sometimes blocks our egress", not "always go
+ * through the proxy". Direct is tried first and the proxy is used only after a
+ * direct attempt fails, because residential bandwidth is metered and paid while
+ * datacenter egress is free. Watsons is the case that proves it: it answers
+ * GitHub's runners perfectly well most days, and routing it through the proxy
+ * unconditionally made it slower, cost real money per sweep, and then broke it.
+ *
+ * The first attempt is direct; every later attempt uses the proxy when one is
+ * configured. With no proxy configured this degrades to the old plain retry.
+ */
 export async function getJson<T = any>(url: string, opts: FetchOpts = {}): Promise<T> {
   const retries = opts.retries ?? 2;
-  const dispatcher: Dispatcher | undefined = opts.proxy ? getProxyAgent() : undefined;
+  const viaProxy = opts.proxy ? getProxyAgent() : undefined;
   let lastErr: unknown;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
+    const dispatcher: Dispatcher | undefined = attempt === 0 ? undefined : viaProxy;
     try {
       const res = await fetch(url, {
         method: opts.method ?? "GET",

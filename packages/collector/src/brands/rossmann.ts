@@ -38,6 +38,11 @@ function gql<T = any>(query: string): Promise<T> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query }),
+    // Rossmann 403s GitHub's Azure ranges specifically — it answers 200 to a
+    // residential IP, to GCP, and to a bare curl, so no header shaping helps.
+    // `proxy: true` is a fallback (see getJson): the direct attempt still runs
+    // first and costs nothing when it is not blocked.
+    proxy: true,
   });
 }
 
