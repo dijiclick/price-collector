@@ -1,12 +1,22 @@
 import { ProxyAgent, type Dispatcher } from "undici";
+import { proxyUrlFor } from "../../../lib/live-lookup";
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 let proxyAgent: ProxyAgent | undefined;
+/**
+ * Residential egress, pinned to a TURKISH exit.
+ *
+ * The country rides in the username (`user__cr.tr`) and DataImpulse's default
+ * is the US — which is not merely suboptimal here, it fails: Sephora answers
+ * 200 through a TR exit and 403 through the default one. Every shop the
+ * collector reads is a Turkish storefront, so there is no case where another
+ * exit is the right answer. Measured 2026-08-25.
+ */
 function getProxyAgent(): ProxyAgent | undefined {
-  const url = process.env.DATAIMPULSE_PROXY;
+  const url = proxyUrlFor(process.env.DATAIMPULSE_PROXY, "tr");
   if (!url) return undefined;
   if (!proxyAgent) proxyAgent = new ProxyAgent(url);
   return proxyAgent;
