@@ -1,0 +1,60 @@
+name: collect-sephora
+
+# Sephora on its own schedule, because it is the only brand that costs money to
+# collect.
+#
+# Akamai fronts sephora.com.tr and blocks datacenter egress outright — the
+# request has to leave through the paid residential proxy, and through a
+# TURKISH exit specifically (the proxy's default US exit answers 403). At
+# ~2,7 KB/product across ~6.200 products that is ~18 MB a sweep. On the main
+# 90-minute cadence it was ~8,6 GB/month of metered bandwidth, to catch 14
+# price changes in the last measured run.
+#
+# Every 4 hours is ~3,2 GB/month. Cosmetics prices do not move fast enough for
+# the difference to be visible to anyone.
+#
+# Same trigger rules as the main workflow: schedule and manual only. Never
+# pull_request_target or workflow_run — those hand secrets to code a stranger
+# controls, and this repository is public.
+on:
+  schedule:
+    # :17 keeps it clear of the main sweep's :07/:37 starts, so the two rarely
+    # queue behind each other.
+    - cron: "17 1,5,9,13,17,21 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Shares the main sweep's group on purpose: one collector writing at a time is
+# the simplest guarantee that two runs never interleave on the same tables.
+# Queuing costs nothing here — a 4-hourly job can wait out a 6-minute sweep.
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    # One small brand; nothing like the full sweep's budget is needed.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --omit=dev --ignore-scripts
+      - name: Collect Sephora
+        env:
+          ONLY_BRANDS: sephora
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SEPHORA_CLIENT_ID: ${{ secrets.SEPHORA_CLIENT_ID }}
+          DATAIMPULSE_PROXY: ${{ secrets.DATAIMPULSE_PROXY }}
+          # No push or email credentials here on purpose. The notifier and the
+          # push pass are the full sweep's job; running them from a
+          # single-brand job would send alerts off a partial view of the
+          # catalogue.
+        run: npm run collect

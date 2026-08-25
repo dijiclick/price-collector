@@ -49,11 +49,19 @@ jobs:
       - run: npm ci --omit=dev --ignore-scripts
       - name: Collect prices
         env:
-          # Rossmann 403s GitHub's Azure ranges and answers 200 from GCP, so it
-          # is collected hourly by the free e2-micro box (ONLY_BRANDS=rossmann)
-          # instead. Skipping it here stops a guaranteed failure from burning
-          # proxy bandwidth on retries and from reading as a broken adapter.
-          SKIP_BRANDS: rossmann
+          # Two brands sit out the main sweep, for different reasons.
+          #
+          # ROSSMANN 403s GitHub's Azure ranges and answers 200 from GCP, so the
+          # free e2-micro box collects it hourly (ONLY_BRANDS=rossmann).
+          #
+          # SEPHORA is the only brand that reaches us through the paid
+          # residential proxy — Akamai blocks datacenter egress outright. At
+          # 2,7 KB/product across ~6.200 products that is ~18 MB a sweep, so
+          # running it every 90 minutes cost ~8,6 GB/month of metered
+          # bandwidth to catch 14 price changes. collect-sephora.yml runs it
+          # every 4 hours instead: ~3,2 GB/month, and cosmetics prices do not
+          # move fast enough to notice the difference.
+          SKIP_BRANDS: rossmann,sephora
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SEPHORA_CLIENT_ID: ${{ secrets.SEPHORA_CLIENT_ID }}
           DATAIMPULSE_PROXY: ${{ secrets.DATAIMPULSE_PROXY }}
