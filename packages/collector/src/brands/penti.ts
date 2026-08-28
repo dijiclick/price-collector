@@ -16,9 +16,25 @@ function mapProduct(p: any): ProductRecord | null {
     const raw = img.url.startsWith("http") ? img.url : `https://www.penti.com${img.url}`;
     imageUrl = raw.replace("{0}", "500").replace("{1}", "650");
   }
+  /**
+   * Penti publishes the printed EAN on every row and we simply never read it.
+   *
+   * Nothing about a Penti tag can be resolved without this: unlike Inditex,
+   * whose article number is inside the product url, Penti's urls are pure
+   * slugs (`/tr/kadin/kadin-corap/soket-corap/...`) with no number anywhere for
+   * `findProductByBarcode` to match against. So every one of the ~3.7k Penti
+   * products was unscannable, and a scan of a real Penti tag (6300672009085,
+   * reported 2026-08-28) fell all the way through to "not found".
+   *
+   * Measured on a 200-row pull: 200/200 rows carry a populated `ean` in the
+   * same 630067… range as the physical tags.
+   */
+  const ean = String(p.ean ?? "").replace(/\D/g, "");
+
   return {
     brand: "penti",
     externalId: code,
+    barcodes: ean.length >= 8 && ean.length <= 14 ? [ean] : null,
     name: p.name ?? "",
     url: p.url ? `https://www.penti.com/tr${p.url}` : "https://www.penti.com/tr",
     imageUrl,
@@ -80,3 +96,6 @@ export async function listProducts(): Promise<ProductRecord[]> {
   }
   return [...byId.values()];
 }
+
+/** Exposed for penti.test.ts — the mapping is the whole barcode fix. */
+export const mapProductForTest = mapProduct;

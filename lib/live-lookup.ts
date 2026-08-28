@@ -574,3 +574,5 @@ export async function lookupLive(brand: string | undefined, url: string): Promis
     return null;
   }
 }
+
+export { barcodeFromScanUrl } from "./scan-url";
