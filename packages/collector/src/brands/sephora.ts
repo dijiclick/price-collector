@@ -50,7 +50,22 @@ function mapHit(h: any): ProductRecord | null {
   const sale = h.c_salesPrice;
   const discounted = typeof sale === "number" && sale > 0 && sale < listed;
   const price = discounted ? sale : listed;
-  const original = discounted ? listed : h.c_price;
+  /**
+   * A master product whose variants are different SIZES reports a price RANGE,
+   * not a markdown: `price` is the cheapest variant and `price_max`/`c_price`
+   * the dearest. Reading `c_price` as a strikethrough turned every such range
+   * into a fake discount — Magic Energy showed "₺1.690, was ₺9.090, -%81" when
+   * ₺1.690 is simply the 10 ml and ₺9.090 the 100 ml, and 14 of 14 of Sephora's
+   * largest "deals" were this same artifact with no real sale behind any of them.
+   *
+   * So `c_price` is only an original price when the product has ONE price. When
+   * the hit spans a range there is no single was-price to quote, and the honest
+   * answer is no discount at all. A genuine sale still comes through the
+   * `c_salesPrice` branch above, which is per-variant and unaffected.
+   */
+  const priceMax = typeof h.price_max === "number" ? h.price_max : h.c_maxPrice;
+  const isRange = typeof priceMax === "number" && priceMax > listed;
+  const original = discounted ? listed : isRange ? null : h.c_price;
   // Prefer the principal product photo over a colour swatch.
   const imgs: any[] = h.image_groups?.flatMap((g: any) => g.images ?? []) ?? [];
   const principal =
@@ -70,6 +85,9 @@ function mapHit(h: any): ProductRecord | null {
     category: typeof h.c_brand === "string" ? h.c_brand : null,
   };
 }
+
+/** Exposed for sephora.test.ts — the price mapping is where the fake-discount bug lived. */
+export const mapHitForTest = mapHit;
 
 export const brand = "sephora";
 

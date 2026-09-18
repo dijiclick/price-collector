@@ -19,3 +19,23 @@ export function pctChange(oldMinor: number, newMinor: number): number {
   if (oldMinor <= 0) return 0;
   return Math.round(((newMinor - oldMinor) / oldMinor) * 100);
 }
+
+/**
+ * The one place a list price is allowed to become a discount.
+ *
+ * A `listPrice` only means something when it is strictly above the price being
+ * charged for the SAME sellable unit. Adapters were each enforcing that
+ * themselves and not all of them did — Beymen passed its original through
+ * unchecked — so a source glitch could store `listPrice <= price` and the feed
+ * would render a 0% or negative "deal".
+ *
+ * This does NOT try to second-guess a large-but-real markdown: 70% off in a
+ * clearance is ordinary here. The variant-range artifact that produced fake
+ * discounts (a master's cheapest size quoted against its dearest) has to be
+ * caught where the shape is known — in the adapter — because only it can tell a
+ * range from a strikethrough. See sephora.ts.
+ */
+export function cleanListPrice(price: number, listPrice: number | null | undefined): number | null {
+  if (typeof listPrice !== "number" || !Number.isFinite(listPrice)) return null;
+  return listPrice > price ? listPrice : null;
+}

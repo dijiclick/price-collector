@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { ProductRecord, PriceEvent, Snap, ProductVariants } from "./types";
 import { classifyType } from "./productType";
+import { cleanListPrice } from "./normalize";
 import { subtypeForName } from "../../../lib/productTypes";
 
 /** Minimal row-returning query interface both Neon (postgres.js) and PGlite satisfy. */
@@ -160,6 +161,15 @@ export function contentHash(r: ProductRecord): string {
 export async function upsertProducts(db: Db, records: ProductRecord[]): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   if (records.length === 0) return map;
+
+  // Every brand passes through here, so this is where the "a list price must
+  // actually be above the price" invariant is enforced once instead of in
+  // twenty adapters — two of which had quietly stopped doing it. Applied before
+  // the content hash so a record whose only change is a bogus list price does
+  // not churn the row. See cleanListPrice.
+  records = records.map((r) =>
+    r.listPrice === cleanListPrice(r.price, r.listPrice) ? r : { ...r, listPrice: cleanListPrice(r.price, r.listPrice) },
+  );
 
   // Existing fingerprints for every brand in this batch (normally exactly one).
   const brands = [...new Set(records.map((r) => r.brand))];

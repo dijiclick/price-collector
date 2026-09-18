@@ -348,6 +348,10 @@ const BARCODE_RESOLVERS: Record<string, (code: string) => Promise<LiveProduct | 
   beymen: beymenByBarcode,
   rossmann: rossmannByBarcode,
   watsons: watsonsByBarcode,
+  // Penti's own urls carry no article number, so a Penti tag that is not in the
+  // catalogue has no other route at all — the url-matching fallback in
+  // findProductByBarcode cannot help it.
+  penti: pentiByBarcode,
 };
 
 export function barcodeBrands(): string[] {
@@ -388,6 +392,62 @@ export async function lookupLiveByBarcode(barcode: string): Promise<LiveProduct 
   // rule, same order, as the SQL in findProductByBarcode.
   hits.sort((a, b) => Number(b.inStock) - Number(a.inStock) || a.price - b.price);
   return hits[0];
+}
+
+
+/* -------------------------------------------------------------------- penti */
+
+const PENTI_API = "https://www.penti.com/pentiwebservices/v2/penti";
+
+/**
+ * Penti by barcode, for the product our catalogue does not hold.
+ *
+ * The point of a live resolver is the thing a shopper actually wants to do:
+ * scan something that is NOT on sale, and ask to be told when it drops or when
+ * their size comes back. The collector only ever holds a slice of a shop, so
+ * without this a perfectly real product answers "not found".
+ *
+ * Penti's search is fuzzy — querying an EAN returns a dozen neighbours from the
+ * same family (`…955512`, `…955567` came back for `…955550`). Only the row
+ * whose own `ean` equals the scan is the garment in the user's hand; anything
+ * else would put a different SIZE or colour on screen, which is worse than a
+ * miss because nothing in the UI could show it was wrong. Same rule as
+ * rossmannByBarcode.
+ */
+async function pentiByBarcode(barcode: string): Promise<LiveProduct | null> {
+  const url =
+    `${PENTI_API}/products/search?query=${encodeURIComponent(barcode)}` +
+    `&pageSize=50&fields=FULL&lang=tr&curr=TRY`;
+  const res = await json<any>(url, { Accept: "application/json", "User-Agent": UA }, countryFor("penti"));
+  const items: any[] = res?.products ?? [];
+  const p = items.find((x) => String(x?.ean ?? "").replace(/\D/g, "") === barcode);
+  if (!p) return null;
+
+  const value = p.price?.value;
+  if (typeof value !== "number" || value <= 0) return null;
+  const prev = p.price?.previousPrice?.value;
+
+  const img = p.images?.find((i: any) => i.imageType === "PRIMARY") ?? p.images?.[0];
+  const imageUrl = img?.url
+    ? (img.url.startsWith("http") ? img.url : `https://www.penti.com${img.url}`)
+        .replace("{0}", "500").replace("{1}", "650")
+    : null;
+
+  const name = String(p.name ?? "");
+  return {
+    brand: "penti",
+    externalId: String(p.code ?? ""),
+    name,
+    url: p.url ? `https://www.penti.com/tr${p.url}` : "https://www.penti.com/tr",
+    imageUrl,
+    price: toMinor(value),
+    listPrice: typeof prev === "number" && prev > value ? toMinor(prev) : null,
+    inStock: p.stock?.stockLevelStatus !== "outOfStock",
+    category: p.categoryName ?? null,
+    type: classifyType(name, p.categoryName ?? null),
+    gender: null,
+    colorName: null,
+  };
 }
 
 /* ------------------------------------------------------------------- mango */
