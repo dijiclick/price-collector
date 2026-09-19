@@ -115,18 +115,41 @@ function pathGender(path: string): ProductRecord["gender"] {
   return null;
 }
 
+/**
+ * The words Mango has used for its sale sections.
+ *
+ * It renamed them from "indirim" to "promosyon": the homepage now links
+ * /tr/tr/c/kadin/promosyon/7914393e and friends, so nothing matched and the
+ * adapter threw on every run — mango went stale from 2026-09-16 until it was
+ * noticed three days later. Both words are accepted now. Keeping the old one
+ * costs nothing and means a rename back does not break the crawl a second time.
+ */
+const SALE_WORDS = ["indirim", "promosyon"];
+
+/**
+ * Sale category paths, women first (primary audience), then men, then the rest.
+ * Pure and exported so the filter that broke above is covered by a test rather
+ * than only by a live run.
+ */
+export function pickSalePaths(paths: Iterable<string>, max: number): string[] {
+  const segRank = (p: string) => (p.includes("/kadin/") ? 0 : p.includes("/erkek/") ? 1 : 2);
+  return [...paths]
+    .filter((p) => SALE_WORDS.some((w) => p.includes(w)))
+    .sort((a, b) => segRank(a) - segRank(b) || a.localeCompare(b))
+    .slice(0, max);
+}
+
 async function seedProducts(max: number): Promise<Seed[]> {
   const home = await getText(`${SITE}/tr/tr`, { headers: { Accept: "text/html" } });
   const catPaths = new Set<string>();
   for (const m of home.matchAll(/\/tr\/tr\/c\/[a-zA-Z0-9/_-]+/g)) catPaths.add(m[0]);
 
-  // Sale categories only; women first (primary audience), then men, then rest.
-  const segRank = (p: string) => (p.includes("/kadin/") ? 0 : p.includes("/erkek/") ? 1 : 2);
-  const salePaths = [...catPaths]
-    .filter((p) => p.includes("indirim"))
-    .sort((a, b) => segRank(a) - segRank(b) || a.localeCompare(b))
-    .slice(0, MAX_SEED_CATEGORIES);
-  if (salePaths.length === 0) throw new Error("mango: no sale category links on homepage");
+  const salePaths = pickSalePaths(catPaths, MAX_SEED_CATEGORIES);
+  if (salePaths.length === 0) {
+    throw new Error(
+      `mango: no sale category links on homepage (looked for ${SALE_WORDS.join("/")} in ${catPaths.size} category paths)`,
+    );
+  }
 
   const byId = new Map<string, Seed>();
   for (const path of salePaths) {
