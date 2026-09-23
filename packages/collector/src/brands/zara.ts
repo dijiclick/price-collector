@@ -45,6 +45,7 @@ export function zaraBase(country: CountryCode): string {
 
 interface ZaraCategory {
   id: number;
+  name?: string;
   sectionName?: string;
   subcategories?: ZaraCategory[];
 }
@@ -92,7 +93,7 @@ function leafSections(
  */
 const FOREIGN_SECTION = /massimo|dutti|pre-?owned/i;
 export function ownSections(cats: ZaraCategory[]): ZaraCategory[] {
-  return cats.filter((c) => !FOREIGN_SECTION.test(String(c.name ?? "")));
+  return cats.filter((c) => !FOREIGN_SECTION.test(c.name ?? ""));
 }
 
 /** Zara listing availability -> orderable? Unknown values default to in stock. */
