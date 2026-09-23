@@ -1,4 +1,6 @@
 import { canResolveLive } from "../../../lib/live-lookup";
+import { DEFAULT_COUNTRY } from "../../../lib/countries";
+import { hostGroup } from "./hosts";
 import type { BrandAdapter, SizeVariant } from "./types";
 import { diff, diffSizes } from "./differ";
 import {
@@ -20,6 +22,8 @@ import {
 
 export interface BrandResult {
   brand: string;
+  /** The market this result is for — the log line reads `zara/AE`. */
+  country: string;
   count: number;
   events: number;
   /** Products no longer listed, marked out of stock this run. */
@@ -109,6 +113,13 @@ export function createGate(width: number): <T>(fn: () => Promise<T>) => Promise<
   };
 }
 
+/**
+ * How many markets of ONE brand may fetch at a time. One, and it should stay
+ * one — see `hosts.ts` for why the per-brand concurrency inside each adapter
+ * cannot simply be multiplied by the number of countries.
+ */
+const HOST_CONCURRENCY = Number(process.env.HOST_CONCURRENCY ?? 1);
+
 export async function runCollect(adapters: BrandAdapter[], db: Db): Promise<BrandResult[]> {
   // Indexed rather than pushed, so the report keeps registry order regardless of
   // which brand happens to finish first.
@@ -122,6 +133,20 @@ export async function runCollect(adapters: BrandAdapter[], db: Db): Promise<Bran
    */
   const withWriteLock = createGate(WRITE_CONCURRENCY);
 
+  /**
+   * One gate per origin, so the countries of a brand queue behind each other
+   * while different brands still overlap. Built lazily from the adapter list
+   * actually being run, so a Turkey-only sweep allocates one width-1 gate per
+   * brand and behaves exactly as it did before this existed.
+   */
+  const hostGates = new Map<string, <T>(fn: () => Promise<T>) => Promise<T>>();
+  const withHostLock = <T>(brand: string, fn: () => Promise<T>): Promise<T> => {
+    const host = hostGroup(brand);
+    let gate = hostGates.get(host);
+    if (!gate) hostGates.set(host, (gate = createGate(HOST_CONCURRENCY)));
+    return gate(fn);
+  };
+
   // Which (product, size) pairs someone watches — bounds per-size back_in_stock
   // events to what's actually wanted. Read once; the set barely changes mid-run.
   const watchedSizes = await getWatchedSizes(db);
@@ -131,7 +156,7 @@ export async function runCollect(adapters: BrandAdapter[], db: Db): Promise<Bran
     Array.from({ length: Math.min(BRAND_CONCURRENCY, adapters.length) }, async () => {
       while (cursor < adapters.length) {
         const i = cursor++;
-        results[i] = await collectBrand(adapters[i], db, withWriteLock, watchedSizes);
+        results[i] = await collectBrand(adapters[i], db, withWriteLock, withHostLock, watchedSizes);
       }
     }),
   );
@@ -142,15 +167,28 @@ async function collectBrand(
   adapter: BrandAdapter,
   db: Db,
   withWriteLock: <T>(fn: () => Promise<T>) => Promise<T>,
+  withHostLock: <T>(brand: string, fn: () => Promise<T>) => Promise<T>,
   watchedSizes: Map<number, Set<string>>,
 ): Promise<BrandResult> {
-  const res: BrandResult = { brand: adapter.brand, count: 0, events: 0 };
+  const country = adapter.country ?? DEFAULT_COUNTRY;
+  const res: BrandResult = { brand: adapter.brand, country, count: 0, events: 0 };
   try {
     const runStart = await dbNow(db);
-    const prevInStock = await countInStock(db, adapter.brand);
+    const prevInStock = await countInStock(db, adapter.brand, country);
     const fetchStart = Date.now();
-    const products = await withTimeout(adapter.listProducts(), BRAND_TIMEOUT_MS, adapter.brand);
+    // `withTimeout` sits INSIDE the gate, so the 5-minute per-brand ceiling
+    // starts when this market's turn does — a brand with four markets must not
+    // time out three of them while queueing. `fetchMs` deliberately does
+    // include the wait: that queueing is the cost of adding a market, and it is
+    // exactly what should be visible when the 40-minute budget gets tight.
+    const raw = await withHostLock(adapter.brand, () =>
+      withTimeout(adapter.listProducts(country), BRAND_TIMEOUT_MS, adapter.brand),
+    );
     res.fetchMs = Date.now() - fetchStart;
+    // Stamp the adapter's market onto every record. Adapters that already set
+    // their own country (once tasks 4–9 land) are left alone; the rest are
+    // Turkish, which is what they are collecting.
+    const products = raw.map((r) => (r.country ? r : { ...r, country }));
     if (products.length === 0) {
       // Genuinely empty is possible (a brand with nothing listed), but a brand
       // that had stock last run and returns nothing now is a broken adapter or
@@ -171,13 +209,15 @@ async function collectBrand(
         : new Map<number, SizeVariant[]>();
 
       const idByKey = await upsertProducts(db, products);
-      const ids = products.map((p) => idByKey.get(key(p.brand, p.externalId))!).filter(Boolean);
+      const ids = products
+        .map((p) => idByKey.get(key(p.brand, p.country ?? country, p.externalId))!)
+        .filter(Boolean);
       const prevByProduct = await latestSnapshots(db, ids);
 
       const snapRows: { productId: number; price: number; listPrice: number | null; inStock: boolean }[] = [];
       const eventRows: { productId: number; e: ReturnType<typeof diff>[number] }[] = [];
       for (const rec of products) {
-        const id = idByKey.get(key(rec.brand, rec.externalId));
+        const id = idByKey.get(key(rec.brand, rec.country ?? country, rec.externalId));
         if (!id) continue;
         const prev = prevByProduct.get(id) ?? null;
         const curr = { price: rec.price, listPrice: rec.listPrice, inStock: rec.inStock };
@@ -219,7 +259,9 @@ async function collectBrand(
       if (prevInStock === 0 || products.length >= prevInStock * 0.5) {
         // Tracked products of a resolvable brand are the reprice pass's to
         // own — the sweep never sees them, so "missing" is not evidence.
-        res.gone = await markMissingOutOfStock(db, adapter.brand, runStart, canResolveLive(adapter.brand));
+        res.gone = await markMissingOutOfStock(
+          db, adapter.brand, country, runStart, canResolveLive(adapter.brand),
+        );
       }
     });
     // Includes time queued behind another brand's write — that queueing is
@@ -243,11 +285,14 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
   } catch (err) {
     console.error("prune failed:", err instanceof Error ? err.message : err);
   }
+  // `zara` while only Turkey runs, `zara/AE` once a second market does — so an
+  // existing log reader is unchanged and a multi-country run is attributable.
+  const label = (r: BrandResult) => (r.country === DEFAULT_COUNTRY ? r.brand : `${r.brand}/${r.country}`);
   for (const r of results) {
-    if (r.error) console.error(`✗ ${r.brand}: ${r.error}`);
+    if (r.error) console.error(`✗ ${label(r)}: ${r.error}`);
     else
       console.log(
-        `✓ ${r.brand}: ${r.count} products, ${r.events} events` +
+        `✓ ${label(r)}: ${r.count} products, ${r.events} events` +
           (r.gone ? `, ${r.gone} delisted` : "") +
           // Attribution for the run budget: minutes are billed by wall clock, so
           // knowing whether a slow brand is slow to fetch or slow to write is the
@@ -255,6 +300,16 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
           (r.fetchMs != null ? ` [fetch ${(r.fetchMs / 1000).toFixed(1)}s` : "") +
           (r.writeMs != null ? ` write ${(r.writeMs / 1000).toFixed(1)}s]` : r.fetchMs != null ? "]" : ""),
       );
+  }
+  // SWEEP_ONLY: collect and stop. The international matrix runs one job per
+  // market, and twenty notifiers racing over the same unsent events would send
+  // each alert more than once — nothing locks them. So those jobs only write
+  // events, and the Turkish sweep's notifier (every 90 min) sends them all:
+  // it reads events regardless of country, and reprices every tracked product.
+  if (sweepOnly()) {
+    await db.close();
+    failOnBlocked(results, label);
+    return;
   }
   // After the sweeps and before anyone is notified: a drop found here has to
   // reach the same run's notifier, or it waits 90 minutes for no reason.
@@ -284,7 +339,12 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
     console.error("push notifier failed:", err instanceof Error ? err.message : err);
   }
   await db.close();
+  failOnBlocked(results, label);
+}
 
+export const sweepOnly = (env: NodeJS.ProcessEnv = process.env): boolean => env.SWEEP_ONLY === "1";
+
+function failOnBlocked(results: BrandResult[], label: (r: BrandResult) => string): void {
   // Fail the run so CI actually tells us a brand died. Only for brands that
   // went from "had stock" to "collected nothing" — a thrown error is usually a
   // transient hiccup that self-heals next run, so it logs but doesn't fail.
@@ -292,7 +352,7 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
   if (blocked.length > 0) {
     console.error(
       `\n${blocked.length} brand(s) collected nothing despite having stock: ` +
-        blocked.map((b) => b.brand).join(", ") +
+        blocked.map(label).join(", ") +
         `\nLikely an IP block (route that brand through a proxy) or a broken adapter.`,
     );
     process.exitCode = 1;

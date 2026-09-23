@@ -6,6 +6,7 @@ import type { ProductRecord, PriceEvent, Snap, ProductVariants } from "./types";
 import { classifyType } from "./productType";
 import { cleanListPrice } from "./normalize";
 import { subtypeForName } from "../../../lib/productTypes";
+import { DEFAULT_COUNTRY } from "../../../lib/countries";
 
 /** Minimal row-returning query interface both Neon (postgres.js) and PGlite satisfy. */
 export interface Db {
@@ -99,7 +100,19 @@ export async function migrate(db: Db): Promise<void> {
   }
 }
 
-const key = (brand: string, externalId: string) => brand + "|" + externalId;
+/**
+ * A product's identity, as one string.
+ *
+ * Country sits in the middle because it sits in the middle of the unique index
+ * too — `(brand, country, external_id)`. Leaving it out is not a cosmetic bug:
+ * the map would collide a TR and an AE row on one entry and the second country
+ * collected would overwrite the first country's snapshots and events.
+ */
+const key = (brand: string, country: string, externalId: string) =>
+  brand + "|" + country + "|" + externalId;
+
+/** Absent country means Turkey — see ProductRecord.country. */
+const countryOf = (r: { country?: string }): string => r.country ?? DEFAULT_COUNTRY;
 
 /** Build a multi-row VALUES clause ($1,$2,...) for `rows` each with `cols` columns. */
 function placeholders(rowCount: number, cols: number): string {
@@ -129,6 +142,11 @@ async function inChunks<T>(items: T[], size: number, fn: (chunk: T[]) => Promise
  *
  * `currency` is deliberately absent: it appears in the INSERT but not the
  * DO UPDATE list, so a changed currency never lands on an existing row anyway.
+ *
+ * `country` is absent for a different reason: it is part of the KEY, like brand
+ * and external id. Hashing it would mean every existing row's fingerprint
+ * changed the day the column shipped, forcing a full rewrite of ~160k rows to
+ * record nothing.
  */
 export function contentHash(r: ProductRecord): string {
   const h = createHash("sha1");
@@ -171,37 +189,51 @@ export async function upsertProducts(db: Db, records: ProductRecord[]): Promise<
     r.listPrice === cleanListPrice(r.price, r.listPrice) ? r : { ...r, listPrice: cleanListPrice(r.price, r.listPrice) },
   );
 
-  // Existing fingerprints for every brand in this batch (normally exactly one).
+  // Existing fingerprints for every brand AND country in this batch (normally
+  // exactly one of each). Scoped by country as well so a Zara/AE run reads
+  // 30k AE fingerprints instead of the 60k TR+AE pile.
   const brands = [...new Set(records.map((r) => r.brand))];
+  const countries = [...new Set(records.map(countryOf))];
   const known = new Map<string, { id: number; hash: string | null }>();
-  const existing = await db.query<{ id: number; brand: string; external_id: string; content_hash: string | null }>(
-    "SELECT id, brand, external_id, content_hash FROM products WHERE brand = ANY($1)",
-    [brands],
+  const existing = await db.query<{ id: number; brand: string; country: string; external_id: string; content_hash: string | null }>(
+    "SELECT id, brand, country, external_id, content_hash FROM products WHERE brand = ANY($1) AND country = ANY($2)",
+    [brands, countries],
   );
   for (const row of existing) {
-    known.set(key(row.brand, row.external_id), { id: row.id, hash: row.content_hash });
+    known.set(key(row.brand, row.country, row.external_id), { id: row.id, hash: row.content_hash });
   }
 
   const changed: { rec: ProductRecord; hash: string }[] = [];
   const unchanged: ProductRecord[] = [];
   for (const r of records) {
     const hash = contentHash(r);
-    const prev = known.get(key(r.brand, r.externalId));
+    const k = key(r.brand, countryOf(r), r.externalId);
+    const prev = known.get(k);
     if (prev && prev.hash === hash) {
       unchanged.push(r);
-      map.set(key(r.brand, r.externalId), prev.id);
+      map.set(k, prev.id);
     } else {
       changed.push({ rec: r, hash });
     }
   }
 
   // Unchanged: nothing to write but the freshness marker delisting reads.
-  await inChunks(unchanged, 5000, async (chunk) => {
-    await db.query(
-      "UPDATE products SET last_seen=now() WHERE brand=$1 AND external_id = ANY($2)",
-      [chunk[0].brand, chunk.map((r) => r.externalId)],
-    );
-  });
+  // Grouped by brand AND country, because the UPDATE names both: a chunk that
+  // straddled two countries would bump one country's rows under the other's
+  // external ids and silently leave real rows looking stale to the sweep.
+  const byScope = new Map<string, ProductRecord[]>();
+  for (const r of unchanged) {
+    const scope = r.brand + "|" + countryOf(r);
+    (byScope.get(scope) ?? byScope.set(scope, []).get(scope)!).push(r);
+  }
+  for (const group of byScope.values()) {
+    await inChunks(group, 5000, async (chunk) => {
+      await db.query(
+        "UPDATE products SET last_seen=now() WHERE brand=$1 AND country=$2 AND external_id = ANY($3)",
+        [chunk[0].brand, countryOf(chunk[0]), chunk.map((r) => r.externalId)],
+      );
+    });
+  }
 
   await upsertChanged(db, changed, map);
   return map;
@@ -217,17 +249,20 @@ async function upsertChanged(
     for (const { rec: r, hash } of chunk) {
       // Pass the object as-is: postgres.js serialises it to JSONB. Stringifying
       // here would double-encode it (stored as a JSON *string*, not an object).
-      params.push(r.brand, r.externalId, r.name, r.url, r.imageUrl, r.category ?? null,
+      params.push(r.brand, countryOf(r), r.externalId, r.name, r.url, r.imageUrl, r.category ?? null,
         classifyType(r.category, r.name), subtypeForName(classifyType(r.category, r.name), r.name),
         r.variants ?? null, r.groupKey ?? null, r.colorName ?? null,
         r.gender ?? null, r.barcodes?.length ? r.barcodes : null,
         r.price, r.listPrice, r.currency, r.inStock, hash);
     }
-    const rows = await db.query<{ id: number; brand: string; external_id: string }>(
-      "INSERT INTO products (brand, external_id, name, url, image_url, category, product_type, product_subtype, variants, group_key, color_name, gender, barcodes," +
+    const rows = await db.query<{ id: number; brand: string; country: string; external_id: string }>(
+      "INSERT INTO products (brand, country, external_id, name, url, image_url, category, product_type, product_subtype, variants, group_key, color_name, gender, barcodes," +
         " current_price, current_list_price, currency, in_stock, content_hash) VALUES " +
-        placeholders(chunk.length, 18) +
-        " ON CONFLICT (brand, external_id) DO UPDATE SET" +
+        placeholders(chunk.length, 19) +
+        // The three-column unique INDEX from schema phase A. It must exist in
+        // production before this ships, or every write errors "no unique or
+        // exclusion constraint matching the ON CONFLICT specification".
+        " ON CONFLICT (brand, country, external_id) DO UPDATE SET" +
         " name=EXCLUDED.name, url=EXCLUDED.url, image_url=EXCLUDED.image_url," +
         " category=EXCLUDED.category, product_type=EXCLUDED.product_type," +
         " product_subtype=EXCLUDED.product_subtype," +
@@ -244,10 +279,10 @@ async function upsertChanged(
         " current_price=EXCLUDED.current_price," +
         " current_list_price=EXCLUDED.current_list_price, in_stock=EXCLUDED.in_stock," +
         " content_hash=EXCLUDED.content_hash," +
-        " last_seen=now() RETURNING id, brand, external_id",
+        " last_seen=now() RETURNING id, brand, country, external_id",
       params,
     );
-    for (const row of rows) map.set(key(row.brand, row.external_id), row.id);
+    for (const row of rows) map.set(key(row.brand, row.country, row.external_id), row.id);
   });
 }
 
@@ -257,11 +292,19 @@ export async function dbNow(db: Db): Promise<string> {
   return rows[0].t;
 }
 
-/** How many of a brand's products are currently in stock (health guard). */
-export async function countInStock(db: Db, brand: string): Promise<number> {
+/**
+ * How many of a brand's products are currently in stock, in ONE country
+ * (health guard).
+ *
+ * Country-scoped for the same reason the delist sweep is. This number is what
+ * the blocked-brand guard compares a run's yield against; judged against every
+ * country's total, a first Emirati H&M run collecting nothing legitimately
+ * would be reported as an IP block and fail the workflow forever.
+ */
+export async function countInStock(db: Db, brand: string, country: string): Promise<number> {
   const rows = await db.query<{ c: number }>(
-    "SELECT count(*)::int AS c FROM products WHERE brand=$1 AND in_stock=TRUE",
-    [brand],
+    "SELECT count(*)::int AS c FROM products WHERE brand=$1 AND country=$2 AND in_stock=TRUE",
+    [brand, country],
   );
   return rows[0]?.c ?? 0;
 }
@@ -286,9 +329,20 @@ export async function countInStock(db: Db, brand: string): Promise<number> {
  * product that vanishes from the listing really has gone, and must still be
  * marked — otherwise nothing would ever delist the items people care most about.
  */
+/**
+ * `country` is not optional and must never become so.
+ *
+ * "This brand, and not seen since the run started" is true of every OTHER
+ * country's rows on every run, because another country's sweep never touches
+ * them. Scoped by brand alone, the first Emirati Zara run marks the entire
+ * Turkish Zara catalogue out of stock — the live feed emptied, with a green tick
+ * in the logs. This is risk 4 in the plan and the reason country landed in the
+ * collector before a single adapter was parameterised.
+ */
 export async function markMissingOutOfStock(
   db: Db,
   brand: string,
+  country: string,
   since: string,
   protectTracked = false,
 ): Promise<number> {
@@ -300,10 +354,10 @@ export async function markMissingOutOfStock(
        )`
     : "";
   const rows = await db.query<{ id: number }>(
-    "UPDATE products SET in_stock=FALSE WHERE brand=$1 AND in_stock=TRUE AND last_seen < $2" +
+    "UPDATE products SET in_stock=FALSE WHERE brand=$1 AND country=$2 AND in_stock=TRUE AND last_seen < $3" +
       guard +
       " RETURNING id",
-    [brand, since],
+    [brand, country, since],
   );
   return rows.length;
 }
@@ -311,6 +365,9 @@ export async function markMissingOutOfStock(
 export interface RepriceCandidate {
   id: number;
   brand: string;
+  /** Which market's listing this is — the live resolver needs it to ask the
+   *  right storefront for the right currency. */
+  country: string;
   url: string;
 }
 
@@ -333,8 +390,11 @@ export async function listRepriceCandidates(
 ): Promise<RepriceCandidate[]> {
   if (brands.length === 0 || limit <= 0) return [];
   const brandSlots = brands.map((_, i) => "$" + (i + 1)).join(",");
+  // Deliberately NOT filtered by country: a tracked product is tracked whatever
+  // market it came from, and this pass runs once per sweep. The country comes
+  // back on the row instead, so the resolver can ask the right storefront.
   return db.query<RepriceCandidate>(
-    `SELECT id, brand, url FROM products p
+    `SELECT id, brand, country, url FROM products p
       WHERE brand IN (${brandSlots})
         AND last_seen < $${brands.length + 1}
         AND EXISTS (

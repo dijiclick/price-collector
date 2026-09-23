@@ -1,6 +1,12 @@
 import { ProxyAgent, type Dispatcher } from "undici";
 import { BRANDS } from "./brands";
 import { classifyType } from "./productTypes";
+import { countryFromUrl } from "./scan-url";
+import {
+  DEFAULT_COUNTRY as DEFAULT_MARKET,
+  currencyFor,
+  type CountryCode,
+} from "./countries";
 
 /**
  * Fetch ONE product straight from a brand, for a URL the catalogue does not
@@ -41,6 +47,13 @@ export interface LiveProduct {
   type: string | null;
   gender: string | null;
   colorName: string | null;
+  /**
+   * Which market this was quoted from, and in what. Optional: every resolver
+   * that predates multi-country is reading a Turkish storefront, and the writer
+   * defaults to TR/TRY — which is the literal `'TRY'` it used to hardcode.
+   */
+  country?: CountryCode;
+  currency?: string;
 }
 
 const UA =
@@ -66,8 +79,21 @@ const UA =
  */
 const BRAND_COUNTRY: Record<string, string> = {};
 export const DEFAULT_COUNTRY = "tr";
-export const countryFor = (brand: string | undefined): string =>
-  (brand && BRAND_COUNTRY[brand]) || DEFAULT_COUNTRY;
+
+/**
+ * Which exit a request for `brand` should leave from.
+ *
+ * `country` is the MARKET being read, when the caller knows it — a pasted
+ * `zara.com/uk/en/…` is a British storefront and answering it from a Turkish IP
+ * is the request most likely to be challenged or priced differently. A brand
+ * pinned in `BRAND_COUNTRY` still wins: some shops only answer one exit
+ * whatever url you ask for, and that is a property of the shop.
+ */
+export const countryFor = (brand: string | undefined, country?: CountryLike): string =>
+  (brand && BRAND_COUNTRY[brand]) || (country ? String(country).toLowerCase() : DEFAULT_COUNTRY);
+
+/** Accepts either an ISO code ("GB") or an already-lowercased exit ("gb"). */
+type CountryLike = string;
 
 /**
  * DataImpulse selects the exit country through the USERNAME, not the host:
@@ -489,16 +515,26 @@ export function parseMangoUrl(url: string): { id: string; colorId: string; gende
 async function mango(url: string): Promise<LiveProduct | null> {
   const parsed = parseMangoUrl(url);
   if (!parsed) return null;
+  /**
+   * The url's own market, not a hardcoded TR.
+   *
+   * Mango's orchestrator takes `countryIso` and answers with that market's
+   * price — verified for all nine probed countries. Asking it for TR while the
+   * shopper pasted `/gb/en/` returned a lira price for a British product, which
+   * is a wrong number that looks entirely right.
+   */
+  const country = countryFromUrl(url) ?? DEFAULT_MARKET;
+  const languageIso = country === "TR" ? "tr" : "en";
   const [prices, detail] = await Promise.all([
     json<Record<string, { price?: number; crossedOutPrice?: number; type?: string }>>(
-      `${MANGO_ORCH}/v3/prices/products?channelId=shop&countryIso=TR&productId=${parsed.id}`,
+      `${MANGO_ORCH}/v3/prices/products?channelId=shop&countryIso=${country}&productId=${parsed.id}`,
       MANGO_HEADERS,
-      countryFor("mango"),
+      countryFor("mango", country),
     ),
     json<any>(
-      `${MANGO_ORCH}/v4/products?channelId=shop&countryIso=TR&languageIso=tr&productId=${parsed.id}`,
+      `${MANGO_ORCH}/v4/products?channelId=shop&countryIso=${country}&languageIso=${languageIso}&productId=${parsed.id}`,
       MANGO_HEADERS,
-      countryFor("mango"),
+      countryFor("mango", country),
     ),
   ]);
   if (!prices) return null;
@@ -543,6 +579,8 @@ async function mango(url: string): Promise<LiveProduct | null> {
     type: classifyType(null, name),
     gender: parsed.gender,
     colorName: typeof colour?.label === "string" ? colour.label : null,
+    country,
+    currency: currencyFor(country),
   };
 }
 

@@ -1,5 +1,5 @@
 import type { Db } from "./db";
-import { fromMinorTRY } from "./normalize";
+import { fromMinor } from "./normalize";
 import { BRAND_LABELS } from "../../../lib/format";
 import {
   classifyToken, loadCreds, sendApns, sendFcm, type PushContent,
@@ -19,6 +19,11 @@ export interface PushRow {
   type: "price_drop" | "back_in_stock";
   /** null for devices that synced before the language setting existed. */
   lang: "tr" | "en" | null;
+  /**
+   * The product's currency (`products.currency`). null for rows written before
+   * the column had a non-TRY value in it, which means lira.
+   */
+  currency: string | null;
 }
 
 /**
@@ -42,9 +47,11 @@ export interface PushMessage {
  * keeps getting Turkish — which is what it was already receiving, so nothing
  * changes under anyone.
  *
- * Prices stay in lira either way, because they ARE lira; only the separators
- * follow the language, which is why the percentage and the arrow are built here
- * rather than inline.
+ * A price is in whatever the shop charges — `products.currency`, not the
+ * reader's language. Only the SEPARATORS follow the language, which is why the
+ * percentage and the arrow are built here rather than inline. Converting would
+ * invent a price nobody is charging, and a lira sign over a British amount is
+ * that mistake in the smallest possible space.
  */
 const COPY = {
   tr: {
@@ -73,7 +80,8 @@ export function buildMessage(r: PushRow): PushMessage {
       channelId: "price-drops",
     };
   }
-  const drop = `${fromMinorTRY(r.old_price, r.lang)} → ${fromMinorTRY(r.new_price, r.lang)} (${c.pct(Math.abs(r.pct))})`;
+  const money = (m: number) => fromMinor(m, r.currency, r.lang);
+  const drop = `${money(r.old_price)} → ${money(r.new_price)} (${c.pct(Math.abs(r.pct))})`;
   const goal = r.target != null && r.new_price <= r.target;
   const base = goal ? c.target(drop) : drop;
   return {
@@ -108,7 +116,7 @@ export async function pushNotify(db: Db): Promise<number> {
   const rows = await db.query<PushRow>(
     // price_drop → any watcher of the product; back_in_stock → only the watcher
     // whose chosen size is the one that returned (e.size is set by the differ).
-    `SELECT w.token, w.target, e.id AS event_id, e.product_id, e.old_price, e.new_price, e.pct, p.name, p.brand, w.size, e.type, d.lang
+    `SELECT w.token, w.target, e.id AS event_id, e.product_id, e.old_price, e.new_price, e.pct, p.name, p.brand, p.currency, w.size, e.type, d.lang
      FROM events e
      JOIN push_watch w ON w.product_id = e.product_id
        AND ( (e.type = 'price_drop' AND (w.target IS NULL OR e.new_price <= w.target))

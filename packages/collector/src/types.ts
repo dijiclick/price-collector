@@ -1,3 +1,5 @@
+import type { CountryCode } from "../../../lib/countries";
+
 export type Availability = "in_stock" | "low_on_stock" | "out_of_stock";
 export interface SizeVariant {
   label: string;
@@ -14,6 +16,17 @@ export interface ProductVariants {
 /** A single product as returned by a brand adapter. Prices are in minor units (kuruş). */
 export interface ProductRecord {
   brand: string;
+  /**
+   * Which market this listing is. Part of the product's IDENTITY, with brand and
+   * external id — Massimo Dutti's `l06431733` is the same reference in AE as in
+   * TR, at a different price in a different currency.
+   *
+   * Optional only for the migration window: every adapter still returns
+   * TR-shaped records until its own task parameterises it, and absent means
+   * Turkey (which is what those adapters are collecting). Once the adapters set
+   * it, this can be made required.
+   */
+  country?: CountryCode;
   externalId: string;
   name: string;
   url: string;
@@ -54,7 +67,18 @@ export interface ProductRecord {
 /** A brand adapter: pure over HTTP, no DB knowledge. */
 export interface BrandAdapter {
   brand: string;
-  listProducts(): Promise<ProductRecord[]>;
+  /**
+   * The market this adapter instance collects. The registry builds the product
+   * of adapters × active countries, so `zara` appears once per country and each
+   * instance owns only its own rows — which is what lets the delist sweep be
+   * scoped safely. Absent means Turkey, for adapters not yet parameterised.
+   */
+  country?: CountryCode;
+  /**
+   * Collect one market. TR-only adapters ignore the argument; the collector
+   * only ever calls them for Turkey (see `lib/brands.ts`).
+   */
+  listProducts(country: CountryCode): Promise<ProductRecord[]>;
 }
 
 export type EventType =

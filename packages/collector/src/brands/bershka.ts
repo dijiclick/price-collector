@@ -1,15 +1,27 @@
 import type { ProductRecord } from "../types";
 import { getJson } from "../http";
-import { pickImage, pickVariants, anySizeInStock, genderFromText } from "./_inditex";
+import type { CountryCode } from "../../../../lib/countries";
+import {
+  pickImage,
+  pickVariants,
+  anySizeInStock,
+  genderFromText,
+  resolveMarket,
+  type InditexMarket,
+} from "./_inditex";
 
-// Bershka TR via the Inditex itxrest gateway. Doesn't use _inditex.ts because
-// Bershka leaf categories 404 on their own id — the product grid lives under
-// viewCategoryId. Store/catalog ids from /itxrest/2/catalog/store?appId=1&brandId=4.
-const SITE = "https://www.bershka.com";
-const API = `${SITE}/itxrest`;
-const STORE = 44109521;
-const CATALOG = 40259537;
-const LANG = -43;
+// Bershka via the Inditex itxrest gateway. Doesn't use _inditex.ts's crawl
+// because Bershka leaf categories 404 on their own id — the product grid lives
+// under viewCategoryId. Store/catalog/language per country come from
+// /itxrest/2/catalog/store?appId=1&brandId=4 at run time (resolveMarket).
+const DOMAIN = "www.bershka.com";
+const API = `https://${DOMAIN}/itxrest`;
+const SITE = {
+  domain: DOMAIN,
+  brandId: 4,
+  // Only used if the store list cannot be read; BSK_TR.
+  trFallback: { storeId: 44109521, catalogId: 40259537 },
+};
 
 // 0 = no cap. Both caps were costing real deals: the 120-per-category limit
 // alone hid ~518 discounted items, and 25 of 528 grids hid the rest.
@@ -53,7 +65,8 @@ function leafCategories(
   return out;
 }
 
-function mapProduct(
+export function mapProduct(
+  m: Pick<InditexMarket, "country" | "urlPrefix" | "currency">,
   p: any,
   category: string | null,
   gender: ProductRecord["gender"] = null,
@@ -65,7 +78,8 @@ function mapProduct(
   if (!color) return null;
 
   // Cheapest size of the first colour. Prices are integer minor-unit strings
-  // ("299000" = ₺2.990,00), verified against the live site.
+  // in the store currency ("299000" = ₺2.990,00, "3599" = €35.99), verified
+  // against the live site; resolveMarket asserts the currency.
   let price = Infinity;
   let listPrice: number | null = null;
   for (const s of color.sizes ?? []) {
@@ -90,15 +104,18 @@ function mapProduct(
   const ref = String(real.detail?.displayReference ?? "").replace(/\D/g, "");
   return {
     brand: "bershka",
+    country: m.country,
     externalId: String(p.id),
     barcodes: ref.length >= 6 ? [ref] : null,
     name: p.name,
-    // canonical PDP url: slug without its -l{ref} suffix + the bundle summary id
-    url: `${SITE}/tr/${encodeURI(String(p.productUrl).replace(/-l\d+$/, ""))}-c0p${real.id ?? p.id}.html`,
+    // canonical PDP url: slug without its -l{ref} suffix + the bundle summary id.
+    // Per-country form (`/gb/…`, `/us/…`, `/no/en/…`) matches Bershka's own
+    // sitemaps; the PDPs themselves are Akamai-blocked from Node.
+    url: `${m.urlPrefix}/${encodeURI(String(p.productUrl).replace(/-l\d+$/, ""))}-c0p${real.id ?? p.id}.html`,
     imageUrl: pickImage(real.detail),
     price,
     listPrice,
-    currency: "TRY",
+    currency: m.currency,
     inStock: p.isBuyable !== false && anySizeInStock(color.sizes),
     category,
     gender,
@@ -112,9 +129,14 @@ function mapProduct(
 
 export const brand = "bershka";
 
-export async function listProducts(): Promise<ProductRecord[]> {
+export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
+  const m = await resolveMarket(SITE, country);
+  const STORE = m.storeId;
+  const CATALOG = m.catalogId;
+  const LANG = m.languageId;
   const tree = await getJson<any>(
     `${API}/2/catalog/store/${STORE}/${CATALOG}/category?languageId=${LANG}&typeCatalog=1&appId=1`,
+    { country },
   );
   const all = leafCategories(tree.categories ?? []);
   const leaves = MAX_CATEGORIES > 0 ? all.slice(0, MAX_CATEGORIES) : all;
@@ -130,6 +152,7 @@ export async function listProducts(): Promise<ProductRecord[]> {
         try {
           const grid = await getJson<any>(
             `${API}/3/catalog/store/${STORE}/${CATALOG}/category/${leaf.gridId}/product?languageId=${LANG}&appId=1`,
+            { country },
           );
           const gridIds: number[] = grid.productIds ?? [];
           const ids =
@@ -140,9 +163,10 @@ export async function listProducts(): Promise<ProductRecord[]> {
             const batch = fresh.slice(i, i + BATCH);
             const data = await getJson<any>(
               `${API}/3/catalog/store/${STORE}/${CATALOG}/productsArray?languageId=${LANG}&productIds=${batch.join(",")}&appId=1`,
+              { country },
             );
             for (const p of data.products ?? []) {
-              const rec = mapProduct(p, leaf.name, leaf.gender);
+              const rec = mapProduct(m, p, leaf.name, leaf.gender);
               if (rec) byId.set(rec.externalId, rec);
             }
           }

@@ -1,5 +1,5 @@
 import type { Db } from "./db";
-import { fromMinorTRY } from "./normalize";
+import { fromMinor } from "./normalize";
 // Shared with the web app rather than duplicated: this list was hand-maintained
 // here and had already drifted — Boyner and Beymen were missing, so their alert
 // emails would have shown the raw slug as the brand name.
@@ -20,11 +20,13 @@ export interface DropRow {
   target: number | null;
   /** null for anyone who subscribed before the language setting existed. */
   lang: "tr" | "en" | null;
+  /** The product's currency. null means lira, which is what every old row is. */
+  currency: string | null;
 }
 
 /**
- * Alert-email copy, per language. Same rule as the push copy: the prices stay
- * lira, only the separators and the words follow the reader.
+ * Alert-email copy, per language. Same rule as the push copy: the amount is in
+ * the shop's currency, and only the separators and the words follow the reader.
  */
 const COPY = {
   tr: {
@@ -110,8 +112,8 @@ function itemHtml(i: DropRow): string {
   const hitTarget = i.target != null && i.new_price <= i.target;
   return `<tr>${head}
           <div style="margin-top:4px">
-            <span style="font-weight:800;font-size:17px">${fromMinorTRY(i.new_price, i.lang)}</span>
-            <span style="color:#857f8b;text-decoration:line-through;margin-left:8px">${fromMinorTRY(i.old_price, i.lang)}</span>
+            <span style="font-weight:800;font-size:17px">${fromMinor(i.new_price, i.currency, i.lang)}</span>
+            <span style="color:#857f8b;text-decoration:line-through;margin-left:8px">${fromMinor(i.old_price, i.currency, i.lang)}</span>
             <span style="color:#fff;background:#8c1d2f;border-radius:8px;padding:2px 7px;font-weight:700;font-size:12px;margin-left:8px">${c.pct(Math.abs(i.pct))}</span>
           </div>
           ${hitTarget ? `<div style="font-size:12px;color:#2e6b4f;font-weight:700;margin-top:3px">${c.hitTarget}</div>` : ""}
@@ -172,7 +174,7 @@ export async function notify(db: Db, now: Date = new Date()): Promise<number> {
     // back_in_stock → only the watcher whose chosen size is the one that returned.
     // `current_price`/`in_stock`/`ts` come along so `stillTrue` can retire an
     // alert the world has moved past instead of emailing it.
-    `SELECT w.email, p.name, p.brand, p.url, e.id AS event_id, e.old_price, e.new_price, e.pct,
+    `SELECT w.email, p.name, p.brand, p.url, p.currency, e.id AS event_id, e.old_price, e.new_price, e.pct,
             w.size, e.type, w.target, e.ts, p.current_price, p.in_stock, sub.lang
      FROM events e
      JOIN watchlist w ON w.product_id = e.product_id

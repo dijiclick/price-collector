@@ -1,0 +1,69 @@
+name: collect-intl
+
+# THE COLLECTOR REPOSITORY IS PUBLIC — see collect.yml for why the trigger list
+# is the security boundary. schedule / workflow_dispatch only, ever.
+on:
+  schedule:
+    # Every 4 hours, offset from collect.yml's :07/:37 so the two never start
+    # together. Prices abroad are swept for the feed; alerts ride the Turkish
+    # run (below), so this cadence does not delay a notification by 4 hours.
+    - cron: "52 1,5,9,13,17,21 * * *"
+  workflow_dispatch:
+    inputs:
+      countries:
+        description: "Comma-separated markets (blank = all)"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      # One market failing (a block, a changed storefront) must not cancel the
+      # other twenty mid-sweep.
+      fail-fast: false
+      # Each market is its own job: its own 5-minute brand timeouts, its own
+      # runner IP, and a failure that names the country in the UI.
+      max-parallel: 10
+      matrix:
+        country: [AE, SA, GB, US, CA, AU, IE, DE, FR, NL, BE, AT, ES, IT, PT, FI, CH, SE, DK, NO]
+    concurrency:
+      group: collect-intl-${{ matrix.country }}
+      cancel-in-progress: false
+    steps:
+      # A job-level `if` cannot see `matrix`, so a manual run for a subset
+      # skips the other markets here.
+      - name: Selected?
+        id: pick
+        env:
+          ASKED: ${{ inputs.countries }}
+          CC: ${{ matrix.country }}
+        run: |
+          if [ -z "$ASKED" ] || echo ",${ASKED// /}," | grep -qi ",$CC,"; then
+            echo "run=1" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.pick.outputs.run == '1'
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - if: steps.pick.outputs.run == '1'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.pick.outputs.run == '1'
+        run: npm ci --omit=dev --ignore-scripts
+      - if: steps.pick.outputs.run == '1'
+        name: Collect ${{ matrix.country }}
+        env:
+          COUNTRIES: ${{ matrix.country }}
+          # Collect and stop. Twenty jobs racing one notifier over the same
+          # unsent events would send each alert several times; collect.yml's
+          # notifier sends every market's events every 90 minutes.
+          SWEEP_ONLY: "1"
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATAIMPULSE_PROXY: ${{ secrets.DATAIMPULSE_PROXY }}
+        run: npm run collect

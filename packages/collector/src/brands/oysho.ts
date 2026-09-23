@@ -1,21 +1,38 @@
 import type { ProductRecord } from "../types";
 import { getJson } from "../http";
-import { pickImage, pickVariants, sizeInStock, anySizeInStock, genderFromText } from "./_inditex";
+import type { CountryCode } from "../../../../lib/countries";
+import {
+  pickImage,
+  pickVariants,
+  sizeInStock,
+  anySizeInStock,
+  genderFromText,
+  resolveMarket,
+  type InditexMarket,
+} from "./_inditex";
 
-// Inditex itxrest API. Oysho TR: brandId=6, store 64009621, catalog 60361124,
-// languageId -43 (tr). The grid/product endpoints sit behind Akamai and 403
+// Inditex itxrest API, brandId=6. Store/catalog/language per country come from
+// the store list at run time (resolveMarket). That matters for Oysho in
+// particular: the code pinned TR catalog 60361124 (a summer catalog no store
+// references any more) while the storefront had moved to 60361115
+// (OYSHO_WINTER_TURQUIA). The grid/product endpoints sit behind Akamai and 403
 // without browser-like CORS headers; the header set below is enough.
-const API = "https://www.oysho.com/itxrest";
-const STORE = "64009621/60361124";
-const SITE = "https://www.oysho.com/tr";
-const HEADERS = {
+const DOMAIN = "www.oysho.com";
+const API = `https://${DOMAIN}/itxrest`;
+const SITE = {
+  domain: DOMAIN,
+  brandId: 6,
+  // Only used if the store list cannot be read.
+  trFallback: { storeId: 64009621, catalogId: 60361115 },
+};
+const headersFor = (m: Pick<InditexMarket, "urlPrefix">) => ({
   Accept: "application/json",
-  Origin: "https://www.oysho.com",
-  Referer: `${SITE}/`,
+  Origin: `https://${DOMAIN}`,
+  Referer: `${m.urlPrefix}/`,
   "Sec-Fetch-Dest": "empty",
   "Sec-Fetch-Mode": "cors",
   "Sec-Fetch-Site": "same-origin",
-};
+});
 
 /**
  * Oysho has ~660 leaf categories, ordered new-season first, and no sale rail to
@@ -30,8 +47,8 @@ const MAX_CATEGORIES = Number(process.env.OYSHO_MAX_CATEGORIES ?? 660);
 const CATEGORY_CONCURRENCY = Number(process.env.OYSHO_CONCURRENCY ?? 5);
 const BATCH = 50;
 
-function api(path: string) {
-  return getJson<any>(`${API}/${path}`, { headers: HEADERS });
+function api(m: InditexMarket, path: string) {
+  return getJson<any>(`${API}/${path}`, { headers: headersFor(m), country: m.country });
 }
 
 interface OyshoCategory {
@@ -67,7 +84,8 @@ function leaves(
   return out;
 }
 
-function mapProduct(
+export function mapProduct(
+  m: Pick<InditexMarket, "country" | "urlPrefix" | "currency">,
   p: any,
   category: string | null,
   gender: ProductRecord["gender"] = null,
@@ -76,19 +94,21 @@ function mapProduct(
   const detail = p.bundleProductSummaries?.[0]?.detail ?? p.detail;
   const sizes: any[] = detail?.colors?.[0]?.sizes ?? [];
   const size = sizes.find(sizeInStock) ?? sizes[0];
-  // Size prices are strings already in integer minor units ("259000" = 2.590,00 ₺).
+  // Size prices are strings already in integer minor units of the store
+  // currency ("259000" = 2.590,00 ₺); resolveMarket asserts which currency.
   const price = Number(size?.price);
   if (!Number.isFinite(price) || price <= 0) return null;
   const oldPrice = Number(size?.oldPrice);
   return {
     brand: "oysho",
+    country: m.country,
     externalId: String(p.id),
     name: p.name ?? "",
-    url: encodeURI(`${SITE}/${p.productUrl}`),
+    url: encodeURI(`${m.urlPrefix}/${p.productUrl}`),
     imageUrl: pickImage(detail),
     price,
     listPrice: Number.isFinite(oldPrice) && oldPrice > price ? oldPrice : null,
-    currency: "TRY",
+    currency: m.currency,
     inStock: anySizeInStock(sizes),
     category,
     gender,
@@ -101,8 +121,12 @@ function mapProduct(
 
 export const brand = "oysho";
 
-export async function listProducts(): Promise<ProductRecord[]> {
-  const tree = await api(`2/catalog/store/${STORE}/category?languageId=-43&typeCatalog=1&appId=1`);
+export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
+  const probe = { urlPrefix: `https://${DOMAIN}/${country.toLowerCase()}` };
+  const m = await resolveMarket(SITE, country, headersFor(probe));
+  const STORE = `${m.storeId}/${m.catalogId}`;
+  const L = m.languageId;
+  const tree = await api(m, `2/catalog/store/${STORE}/category?languageId=${L}&typeCatalog=1&appId=1`);
   const cats = leaves(tree.categories ?? []).slice(0, MAX_CATEGORIES);
 
   const byId = new Map<string, ProductRecord>();
@@ -113,7 +137,8 @@ export async function listProducts(): Promise<ProductRecord[]> {
         const cat = cats[next++];
         try {
           const grid = await api(
-            `3/catalog/store/${STORE}/category/${cat.id}/product?languageId=-43&appId=1`
+            m,
+            `3/catalog/store/${STORE}/category/${cat.id}/product?languageId=${L}&appId=1`
           );
           // sortedProductIds holds real product ids; productIds mixes in marketing spots.
           // Categories overlap heavily, so skipping ids already mapped by another
@@ -124,10 +149,11 @@ export async function listProducts(): Promise<ProductRecord[]> {
           for (let i = 0; i < ids.length; i += BATCH) {
             const chunk = ids.slice(i, i + BATCH).join(",");
             const data = await api(
-              `3/catalog/store/${STORE}/productsArray?languageId=-43&productIds=${chunk}&appId=1`
+              m,
+              `3/catalog/store/${STORE}/productsArray?languageId=${L}&productIds=${chunk}&appId=1`
             );
             for (const p of data.products ?? []) {
-              const rec = mapProduct(p, cat.name ?? null, cat.gender ?? null);
+              const rec = mapProduct(m, p, cat.name ?? null, cat.gender ?? null);
               if (rec) byId.set(rec.externalId, rec);
             }
           }

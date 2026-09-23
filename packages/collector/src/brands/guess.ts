@@ -1,11 +1,48 @@
 import type { ProductRecord, SizeVariant, Availability } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
+import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
 const APP_ID = "YML5RK21LG";
 const API_KEY = "769a17c8b936f70b64ab0c62f3fdf12e";
-const INDEX = "production__products__tr_TR";
-const URL = `https://${APP_ID}-dsn.algolia.net/1/indexes/${INDEX}/query`;
+
+/**
+ * One Algolia index per storefront locale, `production__products__{locale}`.
+ * Turkey keeps its Turkish index (live in production). Every other market uses
+ * the `en_{CC}` index so names stay English for `lib/productTypes.ts`.
+ *
+ * Probed 2026-09-23: every locale below answers 200 and its hits carry
+ * `currencyCode` matching lib/countries (GBP, EUR, CHF, SEK, DKK, NO -> NOK),
+ * and `url` already prefixed with the storefront path (`/en-gb/…`, `/en-ch/…`).
+ * `en_US`, `en_AE`, `en_SA` are 404 — those storefronts are other platforms.
+ */
+export const LOCALES: Partial<Record<CountryCode, string>> = {
+  TR: "tr_TR",
+  GB: "en_GB", IE: "en_IE", DE: "en_DE", FR: "en_FR", NL: "en_NL",
+  BE: "en_BE", AT: "en_AT", ES: "en_ES", IT: "en_IT", PT: "en_PT",
+  FI: "en_FI", CH: "en_CH", SE: "en_SE", DK: "en_DK", NO: "en_NO",
+};
+
+export interface Market {
+  country: CountryCode;
+  /** Algolia index name. */
+  index: string;
+  /** Storefront path segment, e.g. `tr-tr`, `en-gb`. */
+  path: string;
+  /** ISO 4217, from lib/countries. */
+  currency: string;
+}
+
+export function market(country: CountryCode): Market {
+  const locale = LOCALES[country];
+  if (!locale) throw new Error(`guess: no Algolia index for country ${country}`);
+  return {
+    country,
+    index: `production__products__${locale}`,
+    path: locale.toLowerCase().replace("_", "-"),
+    currency: COUNTRIES[country].currency,
+  };
+}
 
 /**
  * The Algolia index carries no image field at all — `image_link`/`imageLink`
@@ -34,9 +71,12 @@ export function mapGender(value: unknown): ProductRecord["gender"] {
   return null;
 }
 
-function mapHit(h: any): ProductRecord | null {
+export function mapHit(h: any, m: Market = market("TR")): ProductRecord | null {
   const id = String(h.objectID ?? "");
   if (!id || id.startsWith("ENSEMBLE-")) return null; // skip "shop the look" bundles
+  // Every hit names its own currency. A mismatch would store e.g. EUR amounts
+  // labelled SEK — a silently wrong price — so drop the hit instead.
+  if (h.currencyCode && h.currencyCode !== m.currency) return null;
   const price = h.master_price;
   if (typeof price !== "number" || price <= 0) return null;
   const retail = typeof h.master_price_retail === "number" ? h.master_price_retail : null;
@@ -61,11 +101,12 @@ function mapHit(h: any): ProductRecord | null {
     brand: "guess",
     externalId: id,
     name: h.name ?? "",
-    url: h.url ? `https://www.guess.eu${h.url}` : `https://www.guess.eu/tr-tr/`,
+    url: h.url ? `https://www.guess.eu${h.url}` : `https://www.guess.eu/${m.path}/`,
     imageUrl: imageUrl(id),
     price: toMinor(price),
     listPrice: retail && retail > price ? toMinor(retail) : null,
-    currency: "TRY",
+    currency: m.currency,
+    country: m.country,
     inStock: h.in_stock !== false,
     gender: mapGender(h.guess_gender),
     groupKey: base ? "guess:" + base : null,
@@ -91,8 +132,9 @@ const PAGE_CAP = 5000;
 const SPLIT_FACET = "guess_gender";
 const SUBSPLIT_FACET = "__primary_category.0";
 
-function search(params: string): Promise<any> {
-  return getJson<any>(URL, {
+function search(m: Market, params: string): Promise<any> {
+  const url = `https://${APP_ID}-dsn.algolia.net/1/indexes/${m.index}/query`;
+  return getJson<any>(url, {
     method: "POST",
     headers: {
       "X-Algolia-Application-Id": APP_ID,
@@ -107,13 +149,17 @@ const withFilters = (filters: string[][], extra = "") =>
   `query=&${extra}facetFilters=${encodeURIComponent(JSON.stringify(filters))}`;
 
 /** Page one bucket to exhaustion, mapping hits into `byId`. */
-async function drain(filters: string[][], byId: Map<string, ProductRecord>): Promise<void> {
+async function drain(
+  m: Market,
+  filters: string[][],
+  byId: Map<string, ProductRecord>,
+): Promise<void> {
   let page = 0;
   let nbPages = 1;
   do {
-    const res = await search(withFilters(filters, `hitsPerPage=1000&page=${page}&`));
+    const res = await search(m, withFilters(filters, `hitsPerPage=1000&page=${page}&`));
     for (const h of res.hits ?? []) {
-      const rec = mapHit(h);
+      const rec = mapHit(h, m);
       if (rec) byId.set(rec.externalId, rec);
     }
     nbPages = res.nbPages ?? 1;
@@ -121,9 +167,11 @@ async function drain(filters: string[][], byId: Map<string, ProductRecord>): Pro
   } while (page < nbPages);
 }
 
-export async function listProducts(): Promise<ProductRecord[]> {
+export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
+  const m = market(country);
   const byId = new Map<string, ProductRecord>();
   const head = await search(
+    m,
     `query=&hitsPerPage=0&facets=${encodeURIComponent(JSON.stringify([SPLIT_FACET]))}`,
   );
   const values = Object.keys(head.facets?.[SPLIT_FACET] ?? {});
@@ -131,22 +179,23 @@ export async function listProducts(): Promise<ProductRecord[]> {
   for (const value of values) {
     const filters = [[`${SPLIT_FACET}:${value}`]];
     const probe = await search(
+      m,
       withFilters(filters, `hitsPerPage=0&facets=${encodeURIComponent(JSON.stringify([SUBSPLIT_FACET]))}&`),
     );
     if ((probe.nbHits ?? 0) < PAGE_CAP) {
-      await drain(filters, byId);
+      await drain(m, filters, byId);
       continue;
     }
     // Bucket is itself unreachable past 5000 — split it once more.
     for (const sub of Object.keys(probe.facets?.[SUBSPLIT_FACET] ?? {})) {
-      await drain([...filters, [`${SUBSPLIT_FACET}:${sub}`]], byId);
+      await drain(m, [...filters, [`${SUBSPLIT_FACET}:${sub}`]], byId);
     }
   }
 
   // Products carrying none of the facet values are invisible to every bucket
   // above, so sweep them up by excluding all of them at once.
   if (values.length > 0) {
-    await drain(values.map((v) => [`${SPLIT_FACET}:-${v}`]), byId);
+    await drain(m, values.map((v) => [`${SPLIT_FACET}:-${v}`]), byId);
   }
   return [...byId.values()];
 }

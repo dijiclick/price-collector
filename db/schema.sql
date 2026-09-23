@@ -177,3 +177,114 @@ CREATE TABLE IF NOT EXISTS email_codes (
   sends       INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS email_codes_expiry_idx ON email_codes(expires_at);
+
+-- ---------------------------------------------------------------------------
+-- Multi-country, PHASE A (2026-09-20).
+--
+-- A product is "this listing at this shop", and a Turkish and an Emirati Zara
+-- row are two listings: different price, url, stock and currency. So identity
+-- gains country rather than any cross-country link, and every id downstream —
+-- watchlist, push_watch, user_watch, lists, inbox — keeps pointing at the same
+-- row it always did.
+--
+-- DEFAULT 'TR' is what makes this safe on the live database: the existing
+-- ~160k rows ARE the Turkish catalogue, so backfilling them is the identity
+-- they already had.
+--
+-- The migrator splits on ";\n", so one statement per block and no semicolons
+-- inside a comment.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT 'TR';
+
+-- The real key from here on. Both writers (the collector's upsertChanged and
+-- lib/db.ts's upsertLiveProduct) conflict on it, and ON CONFLICT works from a
+-- unique INDEX alone — which is why the old two-column CONSTRAINT can be
+-- dropped in a later commit rather than swapped atomically.
+CREATE UNIQUE INDEX IF NOT EXISTS products_brand_country_external_idx
+  ON products (brand, country, external_id);
+
+-- Every read is "this country's catalogue, optionally this brand".
+CREATE INDEX IF NOT EXISTS idx_products_country_brand ON products (country, brand);
+
+-- PHASE C (2026-09-20, a later commit than A on purpose).
+--
+-- The old two-column key is what rejects the first non-TR Inditex or Guess row:
+-- their external ids are identical across countries — Massimo Dutti's
+-- l06431733 is that jacket in AE and in TR, Guess's HWSG2237230-ESP is the same
+-- objectID in every Algolia index — so it has to go before any non-TR market is
+-- enabled.
+--
+-- It goes AFTER phase A and after the lib/db.ts write path is deployed, never
+-- before: both writers now infer ON CONFLICT from
+-- products_brand_country_external_idx, and dropping this while anything still
+-- conflicted on two columns would leave a window with no product identity at
+-- all — the collector inserting a fresh row every sweep instead of updating.
+--
+-- Uniqueness is not loosened here, it is re-keyed. lib/db-phase-c.test.ts
+-- asserts both halves: one reference can exist in two markets, and a true
+-- duplicate is still refused.
+ALTER TABLE products DROP CONSTRAINT IF EXISTS products_brand_external_id_key
+;
+
+-- ---------------------------------------------------------------------------
+-- The subscription paywall (2026-09-20). Turkey only; see lib/paywall.ts.
+--
+-- Entitlement is keyed to the anonymous INSTALL, not to a person: there are no
+-- accounts, and Apple requires a purchase to work without one. The store signs
+-- the install id into the transaction itself (appAccountToken on iOS,
+-- obfuscatedAccountId on Play), so the link below is something the store
+-- attests to rather than something a client claims.
+--
+-- Everything here ships dark: nothing reads it until PAYWALL_STOREFRONTS names
+-- a storefront.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS iap_subscriptions (
+  id              SERIAL PRIMARY KEY,
+  platform        TEXT NOT NULL,              -- 'ios' | 'android'
+  -- iOS: originalTransactionId. Android: sha256 of the purchase token, because
+  -- the raw token is long and we already store it separately below.
+  store_key       TEXT NOT NULL,
+  -- Android only, and the reason a renewal needs no webhook: holding the token
+  -- means the server can re-ask Google what the state is at any time.
+  purchase_token  TEXT,
+  product_id      TEXT NOT NULL,
+  status          TEXT NOT NULL,              -- active | grace | expired | revoked
+  environment     TEXT NOT NULL,              -- Production | Sandbox | Xcode
+  storefront      TEXT,
+  started_at      TIMESTAMPTZ,
+  expires_at      TIMESTAMPTZ,
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (platform, store_key)
+);
+
+-- Which installs a subscription has been claimed by. More than one is normal
+-- and intended — a second phone, or a reinstall that wiped AsyncStorage and got
+-- a fresh id — which is why Restore Purchases works and why the count is
+-- capped in code (lib/legal.ts INSTALL_LINK_CAP) rather than here.
+CREATE TABLE IF NOT EXISTS iap_installs (
+  install_id       UUID NOT NULL,
+  subscription_id  INTEGER NOT NULL REFERENCES iap_subscriptions(id) ON DELETE CASCADE,
+  linked_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (install_id, subscription_id)
+);
+CREATE INDEX IF NOT EXISTS idx_iap_installs_install ON iap_installs (install_id);
+
+-- The device side. install_id is what joins a push token to an entitlement;
+-- storefront is what the STORE said (never the catalogue picker, which is free).
+ALTER TABLE push_devices ADD COLUMN IF NOT EXISTS install_id UUID;
+ALTER TABLE push_devices ADD COLUMN IF NOT EXISTS storefront TEXT;
+-- A cache of the answer, for readability in the console and for the collector
+-- to join on later if it ever needs to. The source of truth is iap_subscriptions.
+ALTER TABLE push_devices ADD COLUMN IF NOT EXISTS premium_until TIMESTAMPTZ;
+
+-- How many products this device was ALREADY tracking when the paywall first
+-- met it. NULL means "never measured"; the first sync after the cap goes live
+-- fills it from this token's existing push_watch rows and never lowers it.
+--
+-- This is the server's half of grandfathering, and it is deliberately derived
+-- from our own rows rather than from anything the client sends — a patched app
+-- cannot claim to have had fifty products. The device derives the same number
+-- from its own persisted watch map, so the two sides agree without trusting
+-- each other.
+ALTER TABLE push_devices ADD COLUMN IF NOT EXISTS grandfathered_cap INTEGER;
+CREATE INDEX IF NOT EXISTS idx_push_devices_install ON push_devices (install_id)
+  WHERE install_id IS NOT NULL

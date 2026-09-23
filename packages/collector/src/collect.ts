@@ -1,5 +1,5 @@
 import { main } from "./collector";
-import { adapters } from "./registry";
+import { adapters, marketAdapters, selectCountries } from "./registry";
 
 /**
  * Optional brand filters, so one schedule can run a subset of the registry.
@@ -22,7 +22,21 @@ const list = (v: string | undefined) =>
 const only = list(process.env.ONLY_BRANDS);
 const skip = list(process.env.SKIP_BRANDS);
 
-let selected = adapters;
+/**
+ * Which markets this run sweeps: `COUNTRIES=TR,AE,GB`. Unset is Turkey, which
+ * is the schedule that has always run — the international sweep is a separate
+ * workflow on a slower cadence, because prices abroad do not move faster than
+ * they do in Turkey and one origin can only take so much.
+ */
+let countries;
+try {
+  countries = selectCountries(process.env.COUNTRIES);
+} catch (err) {
+  console.error(err instanceof Error ? err.message : err);
+  process.exit(1);
+}
+
+let selected = marketAdapters(countries);
 if (only.length > 0) selected = selected.filter((a) => only.includes(a.brand));
 if (skip.length > 0) selected = selected.filter((a) => !skip.includes(a.brand));
 
@@ -37,8 +51,15 @@ if (selected.length === 0) {
   console.error("brand filters selected nothing — refusing to run");
   process.exit(1);
 }
-if (selected.length !== adapters.length) {
-  console.log(`collecting ${selected.length}/${adapters.length} brands: ${selected.map((a) => a.brand).join(", ")}`);
+const all = marketAdapters(countries);
+if (selected.length !== all.length) {
+  console.log(
+    `collecting ${selected.length}/${all.length} brand×market pairs: ` +
+      selected.map((a) => (a.country === "TR" ? a.brand : `${a.brand}/${a.country}`)).join(", "),
+  );
+}
+if (countries.length > 1) {
+  console.log(`markets: ${countries.join(", ")} (${all.length} brand×market pairs)`);
 }
 
 main(selected).catch((err) => {

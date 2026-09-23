@@ -1,5 +1,6 @@
 import type { ProductRecord, ProductVariants, SizeVariant, Availability } from "../types";
 import { getJson } from "../http";
+import { currencyFor, type CountryCode } from "../../../../lib/countries";
 
 /**
  * Shared adapter for the Inditex `itxrest` gateway, used by Massimo Dutti,
@@ -16,8 +17,179 @@ export interface InditexSite {
   brand: string;
   /** e.g. "www.massimodutti.com" */
   domain: string;
-  storeId: string;
-  catalogId: string;
+  /** itxrest brandId — the store list 404s without it. */
+  brandId: number;
+  /**
+   * Turkey's store/catalog, used ONLY if the store list itself cannot be read.
+   * The Turkish sweep is live and never depended on that endpoint before, so an
+   * outage there must degrade to exactly what ran before, not to nothing.
+   */
+  trFallback: { storeId: number; catalogId: number };
+}
+
+/* ------------------------------------------------------------------ */
+/* Market resolution: which store/catalog/language/url a country uses. */
+/* ------------------------------------------------------------------ */
+
+/** Everything a crawl needs to know about one brand in one country. */
+export interface InditexMarket {
+  country: CountryCode;
+  storeId: number;
+  catalogId: number;
+  languageId: number;
+  /** PDP/category url prefix, no trailing slash: `https://www.x.com/tr`, `…/de/en`. */
+  urlPrefix: string;
+  /** ISO 4217, read from the store detail and checked against lib/countries. */
+  currency: string;
+  /** Accept-Language for the HTML fallback. */
+  acceptLanguage: string;
+}
+
+interface StoreLanguage {
+  id: number;
+  code: string;
+  languageTag?: string;
+}
+export interface StoreListEntry {
+  id: number;
+  countryCode: string;
+  type?: number;
+  isOpenForSale?: boolean;
+  catalogs?: { id: number; identifier?: string; type: number }[];
+  storeDefaultLanguageId: number;
+  supportedLanguages?: StoreLanguage[];
+  iDesktopUrlRemoveDefaultLanguage?: boolean;
+}
+
+/**
+ * Pick the store, catalog, language and url prefix for a country from the
+ * brand's store list (`/itxrest/2/catalog/store?brandId=N`). Pure.
+ *
+ * - Catalog: the store's type-1 catalog. Catalog ids carry season names
+ *   (`OYSHO_WINTER_TURQUIA`, `STR_UK_INVIERNO`) and rotate — Oysho TR moved
+ *   from 60361124 to 60361115 while the code still pinned the old one — so they
+ *   are read, never pasted.
+ * - Language: Turkey keeps the store default (Turkish, -43), which is what the
+ *   live sweep has always collected. Everywhere else English, whose id is not
+ *   always -1 (Pull&Bear and Bershka US use -15), so it is looked up by code.
+ * - Url: `/{cc}/slug` in the store default language, `/{cc}/{lang}/slug`
+ *   otherwise — the `iDesktopUrlRemoveDefaultLanguage` rule. Verified live:
+ *   MD `/gb/…`, `/us/…`, `/de/en/…` answer 200 with that canonical, as do P&B
+ *   `/gb/`, `/us/`, `/de/en/`; Stradivarius, Oysho and Bershka PDPs are
+ *   Akamai-blocked from Node, but their own sitemaps list `/gb/…`, `/de/en/…`,
+ *   `/us/…` and (Bershka) `/no/en/…` in exactly this form.
+ */
+export function marketFromStoreList(
+  stores: StoreListEntry[],
+  country: CountryCode,
+  domain: string,
+): Omit<InditexMarket, "currency"> {
+  const candidates = stores.filter((s) => s.countryCode === country);
+  const store =
+    candidates.find((s) => s.isOpenForSale !== false && (s.type ?? 1) === 1) ?? candidates[0];
+  if (!store) throw new Error(`${domain}: no store for ${country} in the store list`);
+  if (store.isOpenForSale === false) throw new Error(`${domain}: ${country} store ${store.id} is not open for sale`);
+  const catalog = store.catalogs?.find((c) => c.type === 1);
+  if (!catalog) throw new Error(`${domain}: ${country} store ${store.id} has no type-1 catalog`);
+
+  const langs = store.supportedLanguages ?? [];
+  const byId = (id: number) => langs.find((l) => l.id === id);
+  const lang =
+    country === "TR"
+      ? byId(store.storeDefaultLanguageId)
+      : langs.find((l) => l.code === "en") ?? byId(store.storeDefaultLanguageId);
+  if (!lang) throw new Error(`${domain}: ${country} store ${store.id} has no usable language`);
+
+  const cc = country.toLowerCase();
+  const isDefault = lang.id === store.storeDefaultLanguageId;
+  const dropLang = isDefault && store.iDesktopUrlRemoveDefaultLanguage !== false;
+  const urlPrefix = `https://${domain}/${cc}${dropLang ? "" : `/${lang.code}`}`;
+  return {
+    country,
+    storeId: store.id,
+    catalogId: catalog.id,
+    languageId: lang.id,
+    urlPrefix,
+    acceptLanguage: `${lang.code}-${country},${lang.code};q=0.9`,
+  };
+}
+
+/**
+ * The store detail's currency, asserted against lib/countries. Pure.
+ *
+ * Prices are integer minor units (`"3599"` = €35.99) only when
+ * `currencyDecimals` is -2, and they are in the STORE's currency, which is not
+ * guaranteed to be the country's: Oysho's Norway entry resolves to a worldwide
+ * store (countryCode "WW") that prices in EUR. Recording those as NOK would be
+ * a silent 10x error on every row, so any mismatch throws.
+ */
+export function currencyFromStoreDetail(detail: any, country: CountryCode, domain: string): string {
+  const want = currencyFor(country);
+  if (detail?.countryCode && detail.countryCode !== country) {
+    throw new Error(
+      `${domain}: ${country} resolves to store ${detail.id} of country ${detail.countryCode}, not ${country}`,
+    );
+  }
+  const locale = detail?.details?.locale;
+  const got = locale?.currencyCode;
+  if (got !== want) {
+    throw new Error(`${domain}: ${country} store prices in ${got ?? "unknown currency"}, expected ${want}`);
+  }
+  if (locale?.currencyDecimals !== -2) {
+    throw new Error(
+      `${domain}: ${country} currencyDecimals ${locale?.currencyDecimals}, expected -2 (prices in hundredths)`,
+    );
+  }
+  return got;
+}
+
+/**
+ * Resolve a brand's market at run time: one store-list read (~13 KB) and one
+ * store-detail read per brand per country per run.
+ *
+ * Turkey only: if the store list cannot be read, fall back to the pinned ids
+ * and TRY, which is exactly how the Turkish sweep ran before this existed. Other
+ * countries throw — the collector's blocked-brand guard reports it.
+ */
+export async function resolveMarket(
+  site: Pick<InditexSite, "domain" | "brandId" | "trFallback">,
+  country: CountryCode,
+  headers?: Record<string, string>,
+): Promise<InditexMarket> {
+  const base = `https://${site.domain}/itxrest/2/catalog/store`;
+  let partial: Omit<InditexMarket, "currency">;
+  try {
+    const list = await getJson<{ stores: StoreListEntry[] }>(
+      `${base}?languageId=-1&appId=1&brandId=${site.brandId}`,
+      { country, headers, retries: 2 },
+    );
+    partial = marketFromStoreList(list.stores ?? [], country, site.domain);
+  } catch (err) {
+    if (country !== "TR") throw err;
+    return {
+      country,
+      storeId: site.trFallback.storeId,
+      catalogId: site.trFallback.catalogId,
+      languageId: -43,
+      urlPrefix: `https://${site.domain}/tr`,
+      currency: "TRY",
+      acceptLanguage: "tr-TR,tr;q=0.9",
+    };
+  }
+  let detail: any;
+  try {
+    detail = await getJson<any>(`${base}/${partial.storeId}?languageId=-1&appId=1`, {
+      country,
+      headers,
+      retries: 2,
+    });
+  } catch (err) {
+    // Same reasoning as above: TR's currency is not in doubt, a lost detail
+    // read must not stop the live sweep.
+    if (country === "TR") return { ...partial, currency: "TRY" };
+    throw err;
+  }
+  return { ...partial, currency: currencyFromStoreDetail(detail, country, site.domain) };
 }
 
 interface InditexCategory {
@@ -37,8 +209,8 @@ const UA =
 
 const PRODUCTS_ARRAY_CHUNK = 80;
 
-function api(site: InditexSite, version: number): string {
-  return `https://${site.domain}/itxrest/${version}/catalog/store/${site.storeId}/${site.catalogId}`;
+function api(site: InditexSite, m: InditexMarket, version: number): string {
+  return `https://${site.domain}/itxrest/${version}/catalog/store/${m.storeId}/${m.catalogId}`;
 }
 
 /**
@@ -79,20 +251,21 @@ function leafCategories(
   return out;
 }
 
-async function categoryTree(site: InditexSite): Promise<InditexCategory[]> {
-  const base = `${api(site, 2)}/category`;
+async function categoryTree(site: InditexSite, m: InditexMarket): Promise<InditexCategory[]> {
+  const base = `${api(site, m, 2)}/category`;
   try {
     const tree = await getJson<{ categories: InditexCategory[] }>(
-      `${base}?languageId=-43&appId=1`,
-      { retries: 1 },
+      `${base}?languageId=${m.languageId}&appId=1`,
+      { retries: 1, country: m.country },
     );
     return tree.categories ?? [];
   } catch {
     // Akamai often blocks the appId=1 variant from datacenter IPs while
     // letting the bare one through — retry without it.
-    const tree = await getJson<{ categories: InditexCategory[] }>(`${base}?languageId=-43`, {
-      retries: 3,
-    });
+    const tree = await getJson<{ categories: InditexCategory[] }>(
+      `${base}?languageId=${m.languageId}`,
+      { retries: 3, country: m.country },
+    );
     return tree.categories ?? [];
   }
 }
@@ -106,12 +279,16 @@ function extractIds(data: any): number[] {
   return [];
 }
 
-async function categoryProductIds(site: InditexSite, cat: InditexCategory): Promise<number[]> {
+async function categoryProductIds(
+  site: InditexSite,
+  m: InditexMarket,
+  cat: InditexCategory,
+): Promise<number[]> {
   // Primary: the JSON listing endpoint.
   try {
     const data = await getJson<any>(
-      `${api(site, 3)}/category/${cat.id}/product?languageId=-43&appId=1&showProducts=false`,
-      { retries: 1 },
+      `${api(site, m, 3)}/category/${cat.id}/product?languageId=${m.languageId}&appId=1&showProducts=false`,
+      { retries: 1, country: m.country },
     );
     const ids = extractIds(data);
     if (ids.length > 0) return ids;
@@ -121,7 +298,8 @@ async function categoryProductIds(site: InditexSite, cat: InditexCategory): Prom
   // Fallback: the SSR category page embeds "productIds":[...] arrays.
   if (cat.categoryUrl) {
     try {
-      const html = await fetchHtml(site.domain, `/tr/${cat.categoryUrl}`);
+      const path = `${new URL(m.urlPrefix).pathname}/${cat.categoryUrl}`;
+      const html = await fetchHtml(site.domain, path, m.acceptLanguage);
       const ids = new Set<number>();
       for (const m of html.matchAll(/"productIds":\[([0-9,\s]*)\]/g)) {
         for (const part of m[1].split(",")) {
@@ -256,8 +434,9 @@ export function pickVariants(detail: any): ProductVariants | null {
   return { colors: colorNames, sizes };
 }
 
-function mapProduct(
-  site: InditexSite,
+export function mapProduct(
+  site: Pick<InditexSite, "brand" | "domain">,
+  m: Pick<InditexMarket, "country" | "urlPrefix" | "currency">,
   p: any,
   category: string | null,
   gender: ProductRecord["gender"] = null,
@@ -292,8 +471,8 @@ function mapProduct(
 
   const slug: string | undefined = p.productUrl ?? real?.productUrl;
   const url = slug
-    ? `https://${site.domain}/tr/${encodeURI(slug)}`
-    : `https://${site.domain}/tr/-l${detail?.displayReference ?? p.id}`;
+    ? `${m.urlPrefix}/${encodeURI(slug)}`
+    : `${m.urlPrefix}/-l${detail?.displayReference ?? p.id}`;
 
   // Product-level id: the same garment ships as one bundle id per COLOUR (same
   // url, e.g. …-l00808111). Key on the shared "l{ref}" from the url so colours
@@ -307,13 +486,14 @@ function mapProduct(
 
   return {
     brand: site.brand,
+    country: m.country,
     externalId,
     name,
     url,
     imageUrl: pickImage(detail),
     price,
     listPrice,
-    currency: "TRY",
+    currency: m.currency,
     inStock: anySizeInStock(color.sizes),
     category,
     gender,
@@ -353,12 +533,15 @@ function categoryRank(name: string, categoryUrl?: string): number {
  */
 const CATEGORY_CONCURRENCY = Number(process.env.INDITEX_CONCURRENCY ?? 8);
 
-export function makeInditexAdapter(site: InditexSite): () => Promise<ProductRecord[]> {
-  return async function listProducts(): Promise<ProductRecord[]> {
+export function makeInditexAdapter(
+  site: InditexSite,
+): (country?: CountryCode) => Promise<ProductRecord[]> {
+  return async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
+    const m = await resolveMarket(site, country);
     // 0 = the whole tree. This used to default to 6 leaves, which for Pull&Bear
     // meant six near-identical bundle-widget rails: 34 products, no discounts.
     const maxCategories = Number(process.env.INDITEX_MAX_CATEGORIES ?? 0);
-    const all = leafCategories(await categoryTree(site))
+    const all = leafCategories(await categoryTree(site, m))
       .filter((c) => c.id && c.categoryUrl && c.name && !/^empty$/i.test(c.name))
       // stable sort keeps the site's own order within each rank
       .sort((a, b) => categoryRank(a.name!, a.categoryUrl) - categoryRank(b.name!, b.categoryUrl));
@@ -381,7 +564,7 @@ export function makeInditexAdapter(site: InditexSite): () => Promise<ProductReco
           // tsconfig. The public collector repo typechecks this file.
           let ids: number[];
           try {
-            ids = await categoryProductIds(site, cat);
+            ids = await categoryProductIds(site, m, cat);
           } catch {
             continue; // a dead category shouldn't stop the crawl
           }
@@ -391,10 +574,11 @@ export function makeInditexAdapter(site: InditexSite): () => Promise<ProductReco
             const csv = fresh.slice(i, i + PRODUCTS_ARRAY_CHUNK).join(",");
             try {
               const data = await getJson<any>(
-                `${api(site, 3)}/productsArray?productIds=${csv}&languageId=-43&appId=1`,
+                `${api(site, m, 3)}/productsArray?productIds=${csv}&languageId=${m.languageId}&appId=1`,
+                { country: m.country },
               );
               for (const p of data.products ?? []) {
-                const rec = mapProduct(site, p, cat.name ?? null, cat.gender ?? null);
+                const rec = mapProduct(site, m, p, cat.name ?? null, cat.gender ?? null);
                 const prev = byId.get(rec?.externalId ?? "");
                 if (rec && !prev) byId.set(rec.externalId, rec);
                 // A sectionless rail (Landing/sale widget) can win the dedupe
@@ -441,12 +625,12 @@ function storeCookies(domain: string, res: Response): void {
   }
 }
 
-async function rawGet(domain: string, url: string): Promise<string> {
+async function rawGet(domain: string, url: string, acceptLanguage: string): Promise<string> {
   const res = await fetch(url, {
     headers: {
       "User-Agent": UA,
       Accept: "text/html,application/xhtml+xml",
-      "Accept-Language": "tr-TR,tr;q=0.9",
+      "Accept-Language": acceptLanguage,
       ...(jarFor(domain).size > 0 ? { Cookie: cookieHeader(domain) } : {}),
     },
   });
@@ -459,9 +643,9 @@ async function rawGet(domain: string, url: string): Promise<string> {
  * Fetch an HTML page, transparently solving Akamai's "interstitial"
  * challenge (a bm-verify token plus a trivial arithmetic proof-of-work).
  */
-async function fetchHtml(domain: string, path: string): Promise<string> {
+async function fetchHtml(domain: string, path: string, acceptLanguage: string): Promise<string> {
   const url = `https://${domain}${path}`;
-  let html = await rawGet(domain, url);
+  let html = await rawGet(domain, url, acceptLanguage);
   const bm = html.match(/"bm-verify": "([^"]+)"/);
   if (!bm) return html;
 
@@ -481,7 +665,7 @@ async function fetchHtml(domain: string, path: string): Promise<string> {
   });
   storeCookies(domain, res);
 
-  html = await rawGet(domain, url);
+  html = await rawGet(domain, url, acceptLanguage);
   if (html.includes('"bm-verify"')) throw new Error(`Akamai interstitial persisted at ${url}`);
   return html;
 }

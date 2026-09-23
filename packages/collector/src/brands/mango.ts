@@ -1,6 +1,7 @@
 import type { ProductRecord, SizeVariant, Availability } from "../types";
 import { getJson, getText } from "../http";
 import { toMinor } from "../normalize";
+import { ALL_COUNTRIES, currencyFor, type CountryCode } from "../../../../lib/countries";
 
 const SITE = "https://shop.mango.com";
 const ORCH = "https://online-orchestrator.mango.com";
@@ -21,6 +22,44 @@ const CONCURRENCY = Number(process.env.MANGO_CONCURRENCY ?? 16);
 // If more than this share of seeded products fail their price fetch, the run
 // is broken (Akamai block, API change) — throw rather than ship a shard.
 const MAX_FAILURE_RATIO = 0.1;
+
+/** One market's storefront: `shop.mango.com/{path}` and the orchestrator's `languageIso`. */
+export interface MangoSite {
+  country: CountryCode;
+  /** e.g. "gb/en" — the prefix of every page and product url in this market. */
+  path: string;
+  /** `languageIso` for v4/products; it must match `path` or the detail has no url. */
+  lang: string;
+}
+
+/**
+ * Storefront path per market, probed 2026-09-23.
+ *
+ * English wherever Mango serves it. Eight markets have NO English site:
+ * `/{cc}/en` answers 308 to the local language (de/de, at/de, ch/de, fr/fr,
+ * be/fr, es/es, it/it, pt/pt), and those use exactly where that redirect lands.
+ * The orchestrator will return an English NAME for them (`languageIso=en`), but
+ * then v4 carries no `url` at all — a product link has to come from the same
+ * language as the page it points to, so names there are in the local language.
+ *
+ * TR stays Turkish: it is production and the app's Turkish classifier reads it.
+ */
+const SITE_PATHS: Record<string, string> = {
+  TR: "tr/tr",
+  AE: "ae/en", SA: "sa/en", GB: "gb/en", US: "us/en", CA: "ca/en", AU: "au/en",
+  IE: "ie/en", NL: "nl/en", FI: "fi/en", SE: "se/en", DK: "dk/en", NO: "no/en",
+  DE: "de/de", AT: "at/de", CH: "ch/de", FR: "fr/fr", BE: "be/fr",
+  ES: "es/es", IT: "it/it", PT: "pt/pt",
+};
+
+export function siteFor(country: CountryCode): MangoSite {
+  const path = SITE_PATHS[country];
+  if (!path) throw new Error(`mango: no storefront path configured for ${country}`);
+  return { country, path, lang: path.split("/")[1] };
+}
+
+/** Every market the collector can sweep has a storefront here (pinned by a test). */
+export const MANGO_COUNTRIES = ALL_COUNTRIES.filter((c) => c in SITE_PATHS);
 
 /** One colour-level entry of a PLP's catalogItemsData flight payload. */
 interface CatalogItem {
@@ -106,60 +145,163 @@ interface Seed {
   gender?: ProductRecord["gender"];
 }
 
-/** Section from a PLP path: /tr/tr/c/<section>/... — the crawl context. */
-function pathGender(path: string): ProductRecord["gender"] {
-  const section = path.replace("/tr/tr/c/", "").split("/")[0] ?? "";
-  if (section === "kadin") return "kadin";
-  if (section === "erkek") return "erkek";
-  if (section.includes("cocuk") || section === "kids" || section === "teen") return "cocuk";
-  return null;
+/**
+ * Top-level section slug -> gender, in every storefront language we sweep.
+ * Mango's sections are always women / men / teen / kids / home, localised.
+ */
+const SECTION_GENDER: Record<string, ProductRecord["gender"]> = {
+  kadin: "kadin", women: "kadin", damen: "kadin", femme: "kadin",
+  mujer: "kadin", donna: "kadin", mulher: "kadin",
+  erkek: "erkek", men: "erkek", herren: "erkek", homme: "erkek",
+  hombre: "erkek", uomo: "erkek", homem: "erkek",
+  cocuk: "cocuk", kids: "cocuk", kinder: "cocuk", enfants: "cocuk",
+  ninos: "cocuk", bambini: "cocuk", crianca: "cocuk", teen: "cocuk",
+};
+
+/** Section from a PLP path: /{cc}/{lang}/c/[f/]<section>/... — the crawl context. */
+export function pathGender(path: string): ProductRecord["gender"] {
+  const section = path.match(/\/c\/(?:f\/)?([^/]+)/)?.[1] ?? "";
+  if (section in SECTION_GENDER) return SECTION_GENDER[section];
+  // Older TR slugs carried suffixes (cocuk-giyim, ...).
+  return section.includes("cocuk") ? "cocuk" : null;
 }
 
 /**
- * The words Mango has used for its sale sections.
+ * The words Mango has used for its sale sections, in every language we sweep.
  *
  * It renamed them from "indirim" to "promosyon": the homepage now links
  * /tr/tr/c/kadin/promosyon/7914393e and friends, so nothing matched and the
  * adapter threw on every run — mango went stale from 2026-09-16 until it was
  * noticed three days later. Both words are accepted now. Keeping the old one
  * costs nothing and means a rename back does not break the crawl a second time.
+ * Elsewhere (2026-09-23): GB/IE "mid-season-sale--50", DE/DK/SA "promotion",
+ * AE "special-prices-up-to-40-off".
  */
-const SALE_WORDS = ["indirim", "promosyon"];
+const SALE_WORDS = [
+  "indirim", "promosyon", "promotion", "promocion", "sale", "rebajas",
+  "soldes", "saldi", "saldos", "special-prices",
+];
+
+/**
+ * Category ids are GLOBAL: women's sale is 7914393e under /tr/tr/c/kadin/promosyon,
+ * /gb/en/c/women/mid-season-sale--50 and /de/de/c/damen/promotion alike, and the
+ * filtered PLP resolves it under ANY slug in ANY market — /fr/fr/c/f/women/sale/7914393e
+ * listed 603 products on a day the French site linked no sale at all (sampled
+ * prices: 27/29 PROMOTION). Slugs only feed `pathGender`.
+ */
+interface KnownCategory {
+  hash: string;
+  tr: string;
+  en: string;
+}
+
+/** Sale sections, women first (primary audience), then men, teen girls, boys. */
+const SALE_CATEGORIES: KnownCategory[] = [
+  { hash: "7914393e", tr: "kadin/promosyon", en: "women/sale" },
+  { hash: "106c5d6d", tr: "erkek/promosyon", en: "men/sale" },
+  { hash: "f841db18", tr: "teen/teena/promosyon", en: "teen/teena/sale" },
+  { hash: "8e52a668", tr: "cocuk/erkek-cocuk/promosyon", en: "kids/boys/sale" },
+];
+const SALE_HASHES = new Set([
+  ...SALE_CATEGORIES.map((c) => c.hash),
+  // kids/girls, teen boys, home, baby girls, baby boys, newborn
+  "69ea8b6f", "8f46eb8e", "644c3fdb", "21b82eda", "c60003dd", "d86d5ed0",
+]);
+
+/**
+ * "See all" per section, for a market with no sale running: the full catalogue
+ * is still worth tracking, a drop is a drop. Linked on US/CA/AU nav (2026-09-23),
+ * and like the sale ids they resolve everywhere (FR women 2,812, SE 2,587).
+ */
+const SEE_ALL_CATEGORIES: KnownCategory[] = [
+  { hash: "a5143b28", tr: "kadin/tumunu-gor", en: "women/see-all" },
+  { hash: "c6638443", tr: "erkek/tumunu-gor", en: "men/see-all" },
+  { hash: "1760c387", tr: "teen/teena/tumunu-gor", en: "teen/teena/see-all" },
+  { hash: "7a5a133b", tr: "cocuk/erkek-cocuk/tumunu-gor", en: "kids/boys/see-all" },
+];
+
+function knownPaths(list: KnownCategory[], site: MangoSite): string[] {
+  return list.map((c) => `/${site.path}/c/${site.lang === "tr" ? c.tr : c.en}/${c.hash}`);
+}
+
+/**
+ * Women first, then men, then kids/teen; home and anything unknown last.
+ * Within a section the known ids lead, so GB's seven linked sale sections pick
+ * teen girls and boys rather than whatever sorts first (baby-boys).
+ */
+function saleRank(path: string): number {
+  const g = pathGender(path);
+  const section = g === "kadin" ? 0 : g === "erkek" ? 1 : g === "cocuk" ? 2 : 3;
+  const known = SALE_CATEGORIES.findIndex((c) => path.endsWith(`/${c.hash}`));
+  return section * 10 + (known < 0 ? 9 : known);
+}
 
 /**
  * Sale category paths, women first (primary audience), then men, then the rest.
+ * A path is a sale section if it carries a known sale id or a sale word.
  * Pure and exported so the filter that broke above is covered by a test rather
  * than only by a live run.
  */
 export function pickSalePaths(paths: Iterable<string>, max: number): string[] {
-  const segRank = (p: string) => (p.includes("/kadin/") ? 0 : p.includes("/erkek/") ? 1 : 2);
   return [...paths]
-    .filter((p) => SALE_WORDS.some((w) => p.includes(w)))
-    .sort((a, b) => segRank(a) - segRank(b) || a.localeCompare(b))
+    .filter(
+      (p) =>
+        SALE_HASHES.has(p.split("/").pop() ?? "") ||
+        SALE_WORDS.some((w) => p.split("/").slice(3).join("/").includes(w)),
+    )
+    .sort((a, b) => saleRank(a) - saleRank(b) || a.localeCompare(b))
     .slice(0, max);
 }
 
-async function seedProducts(max: number): Promise<Seed[]> {
-  const home = await getText(`${SITE}/tr/tr`, { headers: { Accept: "text/html" } });
-  const catPaths = new Set<string>();
-  for (const m of home.matchAll(/\/tr\/tr\/c\/[a-zA-Z0-9/_-]+/g)) catPaths.add(m[0]);
+/**
+ * Sale sections by id, as served on 2026-09-19. The ids outlive the links:
+ * on 2026-09-22 the homepage stopped linking /c/ categories at all and the
+ * crawl threw on every run, while /c/f/kadin/promosyon/7914393e still listed
+ * ~2k products. These are the floor when no page links a sale section.
+ */
+export const KNOWN_SALE_PATHS = knownPaths(SALE_CATEGORIES, siteFor("TR"));
 
-  const salePaths = pickSalePaths(catPaths, MAX_SEED_CATEGORIES);
-  if (salePaths.length === 0) {
-    throw new Error(
-      `mango: no sale category links on homepage (looked for ${SALE_WORDS.join("/")} in ${catPaths.size} category paths)`,
-    );
-  }
+/** See-all sections for a market: the fallback when its sale pages list nothing. */
+export const seeAllPaths = (site: MangoSite): string[] => knownPaths(SEE_ALL_CATEGORIES, site);
 
-  const byId = new Map<string, Seed>();
-  for (const path of salePaths) {
+/** Sale paths found on the pages, or the known sale ids when none are linked. */
+export function seedPaths(found: Iterable<string>, max: number, site: MangoSite = siteFor("TR")): string[] {
+  const sale = pickSalePaths(found, max);
+  return sale.length > 0 ? sale : knownPaths(SALE_CATEGORIES, site).slice(0, max);
+}
+
+/** /{path}/c/<x> -> /{path}/c/f/<x>: the filtered PLP, which embeds every item. */
+export function filteredUrl(path: string, site: MangoSite): string {
+  return `${SITE}${path.replace(`/${site.path}/c/`, `/${site.path}/c/f/`)}`;
+}
+
+/** Links matching /{path}/<kind>/..., e.g. kind "c" (categories) or "h" (sections). */
+function linksOf(html: string, site: MangoSite, kind: "c" | "h"): string[] {
+  const re = new RegExp(`/${site.path}/${kind}/[a-zA-Z0-9/_-]+`, "g");
+  return html.match(re) ?? [];
+}
+
+type SeedMap = Map<string, Seed>;
+
+/** Load PLPs into `byId`. Returns how many pages failed (fetch or parse). */
+async function seedFrom(paths: string[], site: MangoSite, byId: SeedMap, max: number, strict: boolean) {
+  let failed = 0;
+  for (const path of paths) {
     if (byId.size >= max) break;
-    // /tr/tr/c/kadin/... -> /tr/tr/c/f/kadin/... (filtered PLP; embeds all items)
-    const url = `${SITE}${path.replace("/tr/tr/c/", "/tr/tr/c/f/")}`;
-    // A failed page must THROW, not silently shrink the catalog to whatever
-    // loaded — the collector treats a truncated-but-nonzero run as success.
-    const html = await getText(url, { headers: { Accept: "text/html" } });
-    const items = parseCatalogItems(html);
+    let items: CatalogItem[];
+    try {
+      // A failed page must THROW, not silently shrink the catalog to whatever
+      // loaded — the collector treats a truncated-but-nonzero run as success.
+      const html = await getText(filteredUrl(path, site), {
+        headers: { Accept: "text/html" },
+        country: site.country,
+      });
+      items = parseCatalogItems(html);
+    } catch (err) {
+      if (strict) throw err;
+      failed++;
+      continue;
+    }
     // Group colour entries per product, deterministically ordered by numeric
     // id within the category so the subset kept under the cap is stable
     // run-to-run.
@@ -177,7 +319,39 @@ async function seedProducts(max: number): Promise<Seed[]> {
       }
     }
   }
-  if (byId.size === 0) throw new Error("mango: sale PLPs yielded zero product ids");
+  return failed;
+}
+
+async function seedProducts(site: MangoSite, max: number): Promise<Seed[]> {
+  // The homepage plus every section page it links (/h/women, /h/damen, ...):
+  // the homepage alone stopped linking /c/ categories on 2026-09-22.
+  const home = await getText(`${SITE}/${site.path}`, {
+    headers: { Accept: "text/html" },
+    country: site.country,
+  }).catch(() => "");
+  const catPaths = new Set<string>(linksOf(home, site, "c"));
+  for (const page of new Set(linksOf(home, site, "h"))) {
+    // One missing section page is not a broken crawl; the fallback ids cover it.
+    const html = await getText(`${SITE}${page}`, {
+      headers: { Accept: "text/html" },
+      country: site.country,
+    }).catch(() => "");
+    for (const p of linksOf(html, site, "c")) catPaths.add(p);
+  }
+  const salePaths = seedPaths(catPaths, MAX_SEED_CATEGORIES, site);
+
+  const byId: SeedMap = new Map();
+  const failed = await seedFrom(salePaths, site, byId, max, false);
+  if (failed > 0 && byId.size > 0) {
+    // Some sale pages loaded and some did not: that is a truncated catalogue.
+    throw new Error(`mango ${site.country}: ${failed}/${salePaths.length} sale PLPs failed`);
+  }
+  if (byId.size === 0) {
+    // No sale running (or its ids retired): track the full catalogue instead.
+    // Strict — if these fail too, the run is broken, not merely sale-less.
+    await seedFrom(seeAllPaths(site).slice(0, MAX_SEED_CATEGORIES), site, byId, max, true);
+  }
+  if (byId.size === 0) throw new Error(`mango ${site.country}: PLPs yielded zero product ids`);
   return [...byId.values()].slice(0, max);
 }
 
@@ -227,7 +401,9 @@ export function buildRecord(
   seed: Seed,
   prices: Record<string, any>,
   detail: any,
+  country: CountryCode = "TR",
 ): ProductRecord | null {
+  const site = siteFor(country);
   const lead = seed.colors[0];
   // Prefer the colour the PLP grid shows; fall back to any priced colour.
   const priceEntry =
@@ -274,13 +450,14 @@ export function buildRecord(
 
   return {
     brand: "mango",
+    country,
     externalId: seed.id,
     name: detail?.name ?? `Mango ${seed.id}`,
-    url: detail?.url ? `${SITE}${detail.url}` : `${SITE}/tr/tr`,
+    url: detail?.url ? `${SITE}${detail.url}` : `${SITE}/${site.path}`,
     imageUrl,
     price: toMinor(priceEntry.price),
     listPrice: typeof orig === "number" && orig > priceEntry.price ? toMinor(orig) : null,
-    currency: "TRY",
+    currency: currencyFor(country),
     // Listed on the filtered sale PLP with at least one sellable size.
     inStock: sizeList.some((s) => s.availability !== "out_of_stock"),
     category: family,
@@ -291,20 +468,21 @@ export function buildRecord(
 }
 
 /** Fetch prices (required) + detail (best-effort) for one seeded product. */
-async function fetchOne(seed: Seed): Promise<ProductRecord | null> {
+async function fetchOne(seed: Seed, site: MangoSite): Promise<ProductRecord | null> {
+  const cc = site.country;
   const [prices, detail] = await Promise.all([
     getJson<Record<string, any>>(
-      `${ORCH}/v3/prices/products?channelId=shop&countryIso=TR&productId=${seed.id}`,
-      { headers: HEADERS, retries: 1 },
+      `${ORCH}/v3/prices/products?channelId=shop&countryIso=${cc}&productId=${seed.id}`,
+      { headers: HEADERS, retries: 1, country: cc },
     ).catch(() => null),
     // NB: v4's language param is `languageIso` (v3 detail's was `language`).
     getJson<any>(
-      `${ORCH}/v4/products?channelId=shop&countryIso=TR&languageIso=tr&productId=${seed.id}`,
-      { headers: HEADERS, retries: 1 },
+      `${ORCH}/v4/products?channelId=shop&countryIso=${cc}&languageIso=${site.lang}&productId=${seed.id}`,
+      { headers: HEADERS, retries: 1, country: cc },
     ).catch(() => null),
   ]);
   if (!prices) return null; // discontinued / bogus id scraped from HTML
-  return buildRecord(seed, prices, detail);
+  return buildRecord(seed, prices, detail, cc);
 }
 
 /** Run `fn` over `items` with bounded concurrency. */
@@ -319,12 +497,13 @@ async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise
 
 export const brand = "mango";
 
-export async function listProducts(): Promise<ProductRecord[]> {
-  const seeds = await seedProducts(MAX_PRODUCTS);
+export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
+  const site = siteFor(country);
+  const seeds = await seedProducts(site, MAX_PRODUCTS);
   const byId = new Map<string, ProductRecord>();
   let failures = 0;
   await pool(seeds, CONCURRENCY, async (seed) => {
-    const rec = await fetchOne(seed);
+    const rec = await fetchOne(seed, site);
     if (rec) byId.set(rec.externalId, rec);
     else failures++;
   });
@@ -333,9 +512,9 @@ export async function listProducts(): Promise<ProductRecord[]> {
   // instead of shipping a silently truncated catalog.
   if (failures > seeds.length * MAX_FAILURE_RATIO) {
     throw new Error(
-      `mango: ${failures}/${seeds.length} products failed price fetch — aborting run`,
+      `mango ${country}: ${failures}/${seeds.length} products failed price fetch — aborting run`,
     );
   }
-  if (byId.size === 0) throw new Error("mango: zero products built from sale PLP seeds");
+  if (byId.size === 0) throw new Error(`mango ${country}: zero products built from PLP seeds`);
   return [...byId.values()];
 }
