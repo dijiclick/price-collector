@@ -83,6 +83,18 @@ function leafSections(
   return out;
 }
 
+/**
+ * Top-level sections that are not Zara's own catalogue. zara.com/us and /ca
+ * carry a whole MASSIMO DUTTI section (~5.6k products, same names, prices and
+ * references as massimodutti.com) — collected under "zara" they duplicated
+ * Massimo Dutti in the feed and put its products behind Zara's logo. PRE-OWNED
+ * is resale, priced per item, not a discount on anything. Seen 2026-09-23.
+ */
+const FOREIGN_SECTION = /massimo|dutti|pre-?owned/i;
+export function ownSections(cats: ZaraCategory[]): ZaraCategory[] {
+  return cats.filter((c) => !FOREIGN_SECTION.test(String(c.name ?? "")));
+}
+
 /** Zara listing availability -> orderable? Unknown values default to in stock. */
 function buyable(availability: any): boolean {
   const a = String(availability ?? "").toLowerCase();
@@ -96,6 +108,9 @@ export function mapComponent(
   country: CountryCode = "TR",
 ): ProductRecord | null {
   if (!c?.id || !c?.seo?.keyword || !c?.seo?.seoProductId) return null;
+  // Another brand's product sold on zara.com (see ownSections) — not Zara's.
+  const group = c?.brand?.brandGroupCode;
+  if (group && group !== "zara") return null;
   const color = c.detail?.colors?.[0] ?? {};
   const price: number | undefined = color.price ?? c.price;
   if (typeof price !== "number" || price <= 0) return null;
@@ -188,7 +203,7 @@ export async function listProducts(country: CountryCode = "TR"): Promise<Product
   // truncation.
   const maxCategories = Number(process.env.ZARA_MAX_CATEGORIES ?? 0);
   const tree = await getJson<{ categories: ZaraCategory[] }>(`${base}/categories?ajax=true`, { country });
-  const genderByCat = leafSections(tree.categories ?? []);
+  const genderByCat = leafSections(ownSections(tree.categories ?? []));
   const unique = [...genderByCat.keys()];
   const leaves = maxCategories > 0 ? unique.slice(0, maxCategories) : unique;
 

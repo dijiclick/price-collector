@@ -85,21 +85,23 @@ export const COUNTRIES = {
     launched: true,
   },
   // Wave 2 (2026-09-23): the markets that pay for subscriptions. Swept by the
-  // collector, invisible in the app until `launched` flips on real data.
+  // collector, invisible in the app until `launched` flips on real data. US, CA,
+  // AU, CH and NO flipped after their first sweep; the EU waits on the DSA
+  // trader declaration.
   US: {
     currency: "USD", symbol: "$", symbolBefore: true,
     proxyExit: "us", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-US", launched: false,
+    dateLocale: "en-US", launched: true,
   },
   CA: {
     currency: "CAD", symbol: "CA$", symbolBefore: true,
     proxyExit: "ca", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-CA", launched: false,
+    dateLocale: "en-CA", launched: true,
   },
   AU: {
     currency: "AUD", symbol: "A$", symbolBefore: true,
     proxyExit: "au", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-AU", launched: false,
+    dateLocale: "en-AU", launched: true,
   },
   IE: {
     currency: "EUR", symbol: "€", symbolBefore: true,
@@ -154,7 +156,7 @@ export const COUNTRIES = {
   CH: {
     currency: "CHF", symbol: "CHF", symbolBefore: true,
     proxyExit: "ch", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-CH", launched: false,
+    dateLocale: "en-CH", launched: true,
   },
   SE: {
     currency: "SEK", symbol: "kr", symbolBefore: false,
@@ -169,7 +171,7 @@ export const COUNTRIES = {
   NO: {
     currency: "NOK", symbol: "kr", symbolBefore: false,
     proxyExit: "no", minPrice: 5000, buckets: [50000, 150000],
-    dateLocale: "en-NO", launched: false,
+    dateLocale: "en-NO", launched: true,
   },
 } satisfies Record<string, CountryInfo>;
 

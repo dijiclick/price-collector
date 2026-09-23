@@ -26,6 +26,12 @@ const TR_ONLY: CountryCode[] = ["TR"];
  */
 const EVERYWHERE: CountryCode[] = [...ALL_COUNTRIES];
 /**
+ * Where an Inditex brand has no storefront of its own, the store list maps the
+ * country to a worldwide ("WW") store that prices in another currency, and the
+ * adapter refuses it. Seen on the first sweep, 2026-09-23.
+ */
+const except = (...no: CountryCode[]): CountryCode[] => ALL_COUNTRIES.filter((c) => !no.includes(c));
+/**
  * Everywhere but the Gulf. H&M's `api.hm.com` answers 422 "validlocale" for
  * `en_ae`/`en_sa` — Gulf H&M is Alshaya's own platform on `ae.hm.com`
  * (verified 2026-09-20). Every other market answered 200 on 2026-09-23.
@@ -44,14 +50,14 @@ export const BRANDS: BrandInfo[] = [
   { slug: "zara", label: "ZARA", category: "Giyim", logo: "/brands/zara.svg", countries: EVERYWHERE },
   { slug: "mango", label: "MANGO", category: "Giyim", logo: "/brands/mango.svg", countries: EVERYWHERE },
   { slug: "hm", label: "H&M", category: "Giyim", logo: "/brands/hm.svg", countries: HM },
-  { slug: "bershka", label: "BERSHKA", category: "Giyim", logo: "/brands/bershka.svg", countries: EVERYWHERE },
-  { slug: "stradivarius", label: "Stradivarius", category: "Giyim", logo: "/brands/stradivarius.svg", countries: EVERYWHERE },
-  { slug: "pullandbear", label: "PULL&BEAR", category: "Giyim", logo: "/brands/pullandbear.svg", countries: EVERYWHERE },
-  { slug: "massimodutti", label: "Massimo Dutti", category: "Giyim", logo: "/brands/massimodutti.svg", countries: EVERYWHERE },
+  { slug: "bershka", label: "BERSHKA", category: "Giyim", logo: "/brands/bershka.svg", countries: except("AU") },
+  { slug: "stradivarius", label: "Stradivarius", category: "Giyim", logo: "/brands/stradivarius.svg", countries: except("AU") },
+  { slug: "pullandbear", label: "PULL&BEAR", category: "Giyim", logo: "/brands/pullandbear.svg", countries: except("NO") },
+  { slug: "massimodutti", label: "Massimo Dutti", category: "Giyim", logo: "/brands/massimodutti.svg", countries: except("AU") },
   { slug: "koton", label: "KOTON", category: "Giyim", logo: "/brands/koton.svg", countries: TR_ONLY },
   { slug: "guess", label: "GUESS", category: "Giyim", logo: "/brands/guess.svg", countries: GUESS },
   { slug: "penti", label: "penti", category: "İç giyim", logo: "/brands/penti.png", countries: TR_ONLY },
-  { slug: "oysho", label: "OYSHO", category: "İç giyim", logo: "/brands/oysho.svg", countries: EVERYWHERE },
+  { slug: "oysho", label: "OYSHO", category: "İç giyim", logo: "/brands/oysho.svg", countries: except("AU", "NO") },
   { slug: "sephora", label: "SEPHORA", category: "Kozmetik", logo: "/brands/sephora.svg", countries: TR_ONLY },
   { slug: "gratis", label: "gratis", category: "Kozmetik", logo: "/brands/gratis.svg", countries: TR_ONLY },
   { slug: "rossmann", label: "ROSSMANN", category: "Kozmetik", logo: "/brands/rossmann.svg", countries: TR_ONLY },
