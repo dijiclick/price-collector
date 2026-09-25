@@ -1,5 +1,6 @@
 import type { ProductRecord } from "../types";
 import { getJson } from "../http";
+import { blanketPromotionPct, revertBlanketPromotion } from "../normalize";
 
 const API = "https://api.gratis.retter.io/1oakekr4e/CALL";
 const ORIGIN = { Origin: "https://www.gratis.com" };
@@ -59,32 +60,33 @@ function groupKey(p: any): string | null {
 }
 
 /**
- * What a shopper actually pays.
+ * What a shopper actually pays at the shelf — NOT the Gratis Kart price.
  *
- * Gratis carries the campaign price in `promotionPrice` and leaves
- * `discountedPrice`/`normalPrice` at the shelf figure with `discountRate: 0`,
- * so reading the latter reported the wrong number AND no discount at all. It is
- * not a rounding error: a sample of 250 products found 73% mispriced, with
- * L'Oréal True Match listed at ₺1.849,00 against a real ₺462,00, and Note
- * Mineral Concealer at ₺949,00 against ₺237,00.
+ * Every product in the search response carries a `promotionPrice` labelled
+ * "Gratis Kart Fiyatı" / "Gratis Kart ile": the loyalty-card price. (Sampled
+ * live 2026-09-25: 1,224 of 1,224 products carried that label, and on 217 of
+ * them it undercut the shelf price.) This adapter used to take it as `price`,
+ * which is how the app's first onboarding card came to lead with a Gratis
+ * "−89%" whose shelf price was ₺364 — a figure no one pays without the card.
  *
- * `promotionLabel` is "Kampanya Fiyatı" and `discountedText` is usually "Gratis
- * Kart ile", i.e. it needs the (free) loyalty card. We treat it as the price
- * anyway because that is already this project's rule: Rossmann's adapter takes
- * `crm_price` — its own card price — as `price` and demotes the shelf price to
- * `listPrice`. One brand quoting card prices and another quoting shelf prices
- * would make the feed's comparisons meaningless.
+ * It is also what produced the recurring mass fake drops. Gratis switches
+ * card-only campaigns on at 00:00 and off at 09:00 Turkish time, and on
+ * 2026-09-23 21:29Z the card price of 3,271 products fell to exactly half the
+ * shelf price (2,916 of them at −50% on the nose) and came back at 06:44Z the
+ * next morning — one price_drop and one price_rise per product, and pushes to
+ * anyone tracking them. The same 50%-on/50%-off pair appears ~a dozen times in
+ * September's events. None of it was a shelf price.
+ *
+ * So the price is `discountedPrice` (the shelf price, which carries Gratis's
+ * own real markdowns), and the list price is `normalPrice` when that is
+ * genuinely higher. `promotionPrice` is ignored entirely.
  */
 export function payablePrice(prices: any): { price: number; list: number | null } | null {
   const normal: unknown = prices?.normalPrice;
   const shelf: unknown = prices?.discountedPrice ?? normal;
   if (typeof shelf !== "number" || shelf <= 0) return null;
-  const promo: unknown = prices?.promotionPrice;
-  const price = typeof promo === "number" && promo > 0 && promo < shelf ? promo : shelf;
-  // Whichever figure the shopper is being saved against, and only when it is
-  // genuinely higher — never a fabricated "was".
-  const candidates = [typeof normal === "number" ? normal : 0, shelf].filter((v) => v > price);
-  return { price, list: candidates.length ? Math.max(...candidates) : null };
+  const list = typeof normal === "number" && normal > shelf ? normal : null;
+  return { price: shelf, list };
 }
 
 function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | null {
@@ -202,5 +204,14 @@ export async function listProducts(): Promise<ProductRecord[]> {
       }
     }),
   );
-  return [...byId.values()];
+  const recs = [...byId.values()];
+  // Belt and braces for the overnight pattern above: if the shelf field ever
+  // starts carrying a catalogue-wide card campaign too, a third of the store at
+  // one exact percent is a promotion, not a markdown.
+  const blanket = blanketPromotionPct(recs);
+  if (blanket != null) {
+    const n = revertBlanketPromotion(recs, blanket);
+    console.warn(`gratis: ${n} products at a blanket -${blanket}% — kept at shelf price`);
+  }
+  return recs;
 }

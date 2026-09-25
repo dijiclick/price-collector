@@ -59,7 +59,7 @@ function extractListing(html: string): any | null {
   }
 }
 
-function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | null {
+export function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | null {
   const id = p?.productId != null ? String(p.productId) : "";
   const price = Number(p?.actualPrice);
   const orig = Number(p?.originalPrice);

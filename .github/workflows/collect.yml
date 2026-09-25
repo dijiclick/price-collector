@@ -49,10 +49,16 @@ jobs:
       - run: npm ci --omit=dev --ignore-scripts
       - name: Collect prices
         env:
-          # Two brands sit out the main sweep, for different reasons.
-          #
-          # ROSSMANN 403s GitHub's Azure ranges and answers 200 from GCP, so the
-          # free e2-micro box collects it hourly (ONLY_BRANDS=rossmann).
+          # ROSSMANN is back in the main sweep (2026-09-25). It 403s GitHub's
+          # Azure ranges, and the GCP e2-micro box that used to collect it
+          # stopped writing on 2026-09-06 — the day the database moved from
+          # Neon to Hetzner, so its DATABASE_URL almost certainly still points
+          # at Neon. rossmann.ts already sends `proxy: true`: after the direct
+          # attempt is refused, getJson retries through DATAIMPULSE_PROXY with a
+          # Turkish exit (`__cr.tr`), which answers 200 (verified 2026-09-25,
+          # exit 88.245.x, Türk Telekom). ~80 GraphQL pages a sweep.
+          # If that GCP box is ever revived, stop it or put rossmann back here —
+          # two collectors on one brand double-send its pushes.
           #
           # SEPHORA is the only brand that reaches us through the paid
           # residential proxy — Akamai blocks datacenter egress outright. At
@@ -61,7 +67,7 @@ jobs:
           # bandwidth to catch 14 price changes. collect-sephora.yml runs it
           # every 4 hours instead: ~3,2 GB/month, and cosmetics prices do not
           # move fast enough to notice the difference.
-          SKIP_BRANDS: rossmann,sephora
+          SKIP_BRANDS: sephora
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SEPHORA_CLIENT_ID: ${{ secrets.SEPHORA_CLIENT_ID }}
           DATAIMPULSE_PROXY: ${{ secrets.DATAIMPULSE_PROXY }}

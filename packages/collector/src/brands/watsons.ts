@@ -23,7 +23,7 @@ function occ(url: string) {
   return getJson<any>(url, { headers: HEADERS, proxy: true, retries: 1 });
 }
 
-function mapProduct(p: any, category: string | null): ProductRecord | null {
+export function mapProduct(p: any, category: string | null): ProductRecord | null {
   const code = String(p.code ?? "");
   const value = p.price?.value;
   if (!code || typeof value !== "number" || value <= 0) return null;
@@ -38,19 +38,20 @@ function mapProduct(p: any, category: string | null): ProductRecord | null {
       : `${SITE}${img.url}`
     : null;
 
-  // Watsons Card (MEMBER) price is the headline discount shoppers actually get and
-  // is shown prominently on-site. When it's lower than the shelf price, treat it as
-  // the deal: price = member, listPrice = shelf (strikethrough).
-  const member = (p.otherPrices ?? []).find((o: any) => o.priceSource === "MEMBER")?.value;
-  const onSale = typeof member === "number" && member > 0 && member < value;
+  // `price.value` is the shelf price. The Watsons Card price arrives in
+  // `otherPrices` as priceSource "MEMBER" and used to be taken as the deal —
+  // but it needs the card, so it is not what a shopper pays at the shelf and
+  // must not become the price (same rule as Gratis Kart and ROSSMANN Card).
+  // No listPrice is derived from anything else here: nothing in this response
+  // is a strikethrough.
   return {
     brand: "watsons",
     externalId: code,
     name: p.name ?? "",
     url: p.url ? `${SITE}${p.url}` : SITE,
     imageUrl,
-    price: toMinor(onSale ? member : value),
-    listPrice: onSale ? toMinor(value) : null,
+    price: toMinor(value),
+    listPrice: null,
     currency: "TRY",
     inStock: p.stock?.stockLevelStatus !== "outOfStock",
     category,

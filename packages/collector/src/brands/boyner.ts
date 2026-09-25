@@ -55,16 +55,38 @@ function collectBarcodes(p: any): string[] | null {
   return out.size > 0 ? [...out] : null;
 }
 
-function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | null {
-  const id = p?.ID != null ? String(p.ID) : "";
+/**
+ * Boyner prices, by `PriceInfo.CampaignType` (surveyed live 2026-09-25):
+ *
+ * - `discount` — a direct markdown: StrikeThrough crossed out, Actual paid.
+ * - `inBasketWithDiscount` — an "Özel Fiyat" campaign: CampaignPrice is the
+ *   price the product page prints as "Sepette …" and every basket gets it with
+ *   no code, card or minimum; Actual is the price printed above it.
+ * - `bestOffer` — a "Sepette %N İndirim" coupon-style offer whose price lives
+ *   ONLY in `PriceInfo.Price`. That price is never read. When a bestOffer
+ *   product also carries a CampaignPrice, the product page shows CampaignPrice
+ *   as the plain price and does NOT print Actual at all (checked on
+ *   p-15930828: "649,95 TL · %30 İndirim Sepette 454,96 TL", no 799,99
+ *   anywhere) — so quoting Actual as its was-price invented a discount the
+ *   shop does not show. Only a StrikeThrough can make it a deal there.
+ *
+ * Loyalty offers (Hopi "paracık") and multi-buy / basket-threshold campaigns
+ * ("2 Ürün ve Üzeri %25", "Her 3000 TL'ye 300 TL") appear in `Campaigns[]`
+ * with no price of their own and are never read either.
+ */
+export function boynerPrice(p: any): { price: number; oldPrice: number } {
   const camp = Number(p?.CampaignPrice);
   const actual = Number(p?.ActualPriceToShowOnScreen);
   const strike = Number(p?.StrikeThroughPriceToShowOnScreen);
-  // Two discount shapes: in-basket campaigns put the deal in CampaignPrice with
-  // the shelf price (ActualPrice) as the "old" price; direct markdowns cross out
-  // StrikeThrough. Handle both so we don't miss the campaign majority.
-  const price = camp > 0 ? camp : actual;
-  const oldPrice = camp > 0 ? actual : strike;
+  const type = p?.PriceInfo?.CampaignType;
+  if (camp > 0 && type === "bestOffer") return { price: camp, oldPrice: strike > actual ? strike : NaN };
+  if (camp > 0) return { price: camp, oldPrice: actual };
+  return { price: actual, oldPrice: strike };
+}
+
+export function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | null {
+  const id = p?.ID != null ? String(p.ID) : "";
+  const { price, oldPrice } = boynerPrice(p);
   if (!id || !Number.isFinite(price) || price <= 0) return null;
   const uri: string | undefined = p?.FriendlyURI;
   const sizes = pickSizes(p);

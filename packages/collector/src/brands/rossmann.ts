@@ -54,21 +54,21 @@ const num = (v: unknown): number => {
 
 /**
  * Rossmann never puts its discounts in Magento's regular/final price — those are
- * always equal. Real deals live in custom attributes, exactly as the storefront's
- * own price store renders them (priority order matches the site's displayType()):
- *   1. crm_price      — "ROSSMANN Card ile" loyalty price (the vast majority)
- *   2. ross_60_price / special_price — direct markdown
- *   3. cmp_100/50/20_price — "N TL üzeri alışverişe" basket-threshold price
- * Like boyner's CampaignPrice: campaign price becomes `price`, the shelf price
- * becomes `listPrice`.
+ * always equal. Its deals live in custom attributes (priority order matches the
+ * site's displayType()):
+ *   1. crm_price      — "ROSSMANN Card ile": the LOYALTY-CARD price
+ *   2. ross_60_price / special_price — a direct markdown, paid by everyone
+ *   3. cmp_100/50/20_price — "N TL üzeri alışverişe": only with a basket over N TL
+ *
+ * Only (2) is a price a normal shopper pays at the shelf, so only (2) may become
+ * `price`. This used to take crm_price first — sampled live 2026-09-25, 64 of
+ * 100 products had a card price under the shelf price and not one had a direct
+ * markdown, so ~85% of the brand's "deals" were card-only prices. Same rule as
+ * Gratis's `promotionPrice` (the Gratis Kart price) and Watsons's MEMBER price.
  */
 export function campaignPrice(p: any, base: number): number {
   const special = num(p?.ross_60_price) || num(p?.special_price);
-  const cmp = num(p?.cmp_100_price) || num(p?.cmp_50_price) || num(p?.cmp_20_price);
-  for (const candidate of [num(p?.crm_price), special, cmp]) {
-    if (candidate > 0 && candidate < base) return candidate;
-  }
-  return 0;
+  return special > 0 && special < base ? special : 0;
 }
 
 export function mapProduct(p: any, category: string | null): ProductRecord | null {
@@ -104,7 +104,7 @@ export const brand = "rossmann";
 
 export async function listProducts(): Promise<ProductRecord[]> {
   const FIELDS = `sku barcode name url_key stock_status small_image { url }
-    crm_price special_price ross_60_price cmp_100_price cmp_50_price cmp_20_price
+    special_price ross_60_price
     price_range { minimum_price { regular_price { value } final_price { value } } }`;
   // `price from 0` matches everything sellable and is the only broad filter this
   // schema accepts — `sku like` is rejected outright.

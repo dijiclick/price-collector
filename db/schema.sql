@@ -288,3 +288,48 @@ ALTER TABLE push_devices ADD COLUMN IF NOT EXISTS premium_until TIMESTAMPTZ;
 ALTER TABLE push_devices ADD COLUMN IF NOT EXISTS grandfathered_cap INTEGER;
 CREATE INDEX IF NOT EXISTS idx_push_devices_install ON push_devices (install_id)
   WHERE install_id IS NOT NULL
+;
+
+-- ---------------------------------------------------------------------------
+-- Url lookups (2026-09-25). findProductByUrl matches `url = ANY(...)` and
+-- `url LIKE prefix || '%'`, and with no index on url both were a scan of the
+-- whole table (~1.8M rows, 1-2s each on production). text_pattern_ops serves
+-- both: equality and left-anchored LIKE under a non-C collation.
+--
+-- Built on production by hand with CREATE INDEX CONCURRENTLY, so this line is
+-- a no-op there. Never let a plain CREATE INDEX on products be the first to
+-- build an index on a live database - it blocks the collector's writes for the
+-- whole build.
+CREATE INDEX IF NOT EXISTS idx_products_url_pattern ON products (url text_pattern_ops);
+
+-- ---------------------------------------------------------------------------
+-- Quiet hours for pushes (2026-09-25).
+--
+-- The device's IANA time zone, sent by /api/push/sync. Nullable: a device that
+-- never sent one keeps today's behaviour and is pushed at any hour.
+ALTER TABLE push_devices ADD COLUMN IF NOT EXISTS tz TEXT;
+
+-- Alerts held back from ONE device because it was night there (22:00-08:00
+-- local). The event itself is marked sent as usual - everyone else got it -
+-- and this row is what delivers it to the sleeping device after 08:00. A row
+-- whose event is more than a day old by then is dropped, not sent.
+CREATE TABLE IF NOT EXISTS push_held (
+  event_id  INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  token     TEXT NOT NULL REFERENCES push_devices(token) ON DELETE CASCADE,
+  held_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (event_id, token)
+);
+
+-- ---------------------------------------------------------------------------
+-- Per-client rate limits for the API (lib/rate-limit.ts), fixed windows.
+-- `client` is a salted hash of the caller's IP, never the address itself, and
+-- rows are deleted a day after their window. lib/rate-limit.ts also creates
+-- this on first use, because only the collector applies this file.
+CREATE TABLE IF NOT EXISTS rate_limits (
+  bucket        TEXT NOT NULL,
+  client        TEXT NOT NULL,
+  window_start  TIMESTAMPTZ NOT NULL,
+  hits          INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (bucket, client, window_start)
+);
+CREATE INDEX IF NOT EXISTS rate_limits_window_idx ON rate_limits (window_start)

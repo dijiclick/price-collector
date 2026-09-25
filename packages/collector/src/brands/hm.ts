@@ -1,6 +1,6 @@
 import type { ProductRecord } from "../types";
 import { getJson } from "../http";
-import { toMinor } from "../normalize";
+import { toMinor, blanketPromotionPct, revertBlanketPromotion } from "../normalize";
 import { currencyFor, type CountryCode } from "../../../../lib/countries";
 
 /**
@@ -98,6 +98,9 @@ export function markMatches(mark: string, currency: string): boolean {
   return (MARKS[currency] ?? [currency]).includes(mark);
 }
 
+/** The priceType rows H&M uses for a reduced price. Anything else is ignored. */
+const REDUCED = new Set(["redPrice", "yellowPrice"]);
+
 export function mapProduct(
   p: any,
   category: string | null,
@@ -117,13 +120,18 @@ export function mapProduct(
     .filter(Boolean);
   const original = prices.find((x) => x.priceType === "whitePrice")?.price ?? prices[0]?.price;
   // H&M colour-codes the reduced price and the colour differs by market —
-  // tr_tr and en_gb use "yellowPrice", en_us/de_at "redPrice" — so take the
-  // cheapest entry instead of matching a name: the sale row is whichever
-  // undercuts the white price.
-  const current = prices.reduce(
-    (lo: number, x) => (x.price < lo ? x.price : lo),
-    original as number,
-  );
+  // tr_tr and en_gb have used "yellowPrice", en_us/de_at "redPrice" — so take
+  // the cheapest of THOSE. Only the two known reduced-price rows: an unknown
+  // priceType (a member or club price under a new name) must not become the
+  // sale price just because it is the smallest number in the array.
+  //
+  // Even redPrice is not proof of a markdown: H&M prints its members-only,
+  // multi-buy campaigns in the same row. That is caught per department in
+  // `revertBlanketPromotions` below, not here, because one product alone
+  // cannot tell the two apart.
+  const current = prices
+    .filter((x) => REDUCED.has(x.priceType ?? ""))
+    .reduce((lo: number, x) => (x.price < lo ? x.price : lo), original as number);
   if (typeof current !== "number" || current <= 0) return null;
   return {
     brand: "hm",
@@ -177,8 +185,12 @@ export async function listProducts(country: CountryCode = "TR"): Promise<Product
   // when it is done.
   const maxPages = Number(process.env.HM_MAX_PAGES ?? 500);
   const byId = new Map<string, ProductRecord>();
+  const byRoot = new Map<string, Set<string>>();
   let checked = false;
   for (const cat of CATS) {
+    const root = cat.split("_")[0];
+    const ids = byRoot.get(root) ?? new Set<string>();
+    byRoot.set(root, ids);
     for (let page = 1; page <= maxPages; page++) {
       const url =
         `${api}?page=${page}&pageSize=72&touchPoint=Desktop&categoryId=${cat}&pageId=/${cat.split("_")[0]}`;
@@ -190,11 +202,50 @@ export async function listProducts(country: CountryCode = "TR"): Promise<Product
         checked = true;
       }
       for (const p of list) {
-        const rec = mapProduct(p, cat.split("_")[0], country);
-        if (rec) byId.set(rec.externalId, rec);
+        const rec = mapProduct(p, root, country);
+        if (!rec) continue;
+        byId.set(rec.externalId, rec);
+        ids.add(rec.externalId);
       }
       if (page >= (data?.pagination?.totalPages ?? 1)) break;
     }
   }
+  const departments = [...byRoot.values()].map((ids) =>
+    [...ids].map((id) => byId.get(id)!).filter(Boolean),
+  );
+  const reverted = revertBlanketPromotions(departments);
+  if (reverted > 0) {
+    console.warn(`hm ${country}: ${reverted} products at a blanket member/multi-buy % — kept at full price`);
+  }
   return [...byId.values()];
+}
+
+/**
+ * H&M runs members-only, conditional campaigns — "−20% for members when you buy
+ * two" (FI/SE/NL/AT, 2026-09-23→25), "−25% on womenswear for members over 50 €"
+ * (DE) — and the listing API prints them in the SAME `redPrice` row as a real
+ * markdown. There is no flag that separates them; the campaign shows up only in
+ * a site-wide banner. A guest cart charged 59,99 € for the FI skirt the listing
+ * put at 48,00 €. Reading those rows as sales told the app 28k of 29k Finnish
+ * products were 20% off.
+ *
+ * So the footprint decides: a department where one exact percent covers a large
+ * share of EVERY product is running a blanket promotion (see
+ * `blanketPromotionPct`), and those products are stored at full price. The
+ * campaigns exclude sale items, so a real markdown at another percent survives.
+ *
+ * Each department is judged on its own, because DE ran its campaign on
+ * womenswear only; a product listed in two departments is reverted if either
+ * one is a blanket at that product's percent. Percents are all decided before
+ * anything is reverted, so the order of departments cannot matter.
+ */
+export function revertBlanketPromotions(
+  departments: { price: number; listPrice: number | null }[][],
+): number {
+  const found = departments
+    .map((recs) => ({ recs, pct: blanketPromotionPct(recs) }))
+    .filter((d): d is { recs: typeof d.recs; pct: number } => d.pct != null);
+  let n = 0;
+  for (const { recs, pct } of found) n += revertBlanketPromotion(recs, pct);
+  return n;
 }
