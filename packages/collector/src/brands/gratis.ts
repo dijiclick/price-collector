@@ -104,7 +104,9 @@ function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | nu
     externalId: id,
     barcodes: ean.length >= 8 && ean.length <= 14 ? [ean] : null,
     name: p.attributes?.displayName ?? "",
-    url: p.shareLink ?? `https://www.gratis.com/p-${id}`,
+    // `/p-<id>` is a 404 on gratis.com; any slug before `-p-<id>` 308s to the
+    // canonical page (verified 2026-09-24), so the fallback carries one.
+    url: p.shareLink ?? `https://www.gratis.com/urun-p-${id}`,
     imageUrl: p.imageUrls?.[0]?.fileUrl ?? null,
     price: current,
     listPrice: money.list,

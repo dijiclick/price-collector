@@ -65,17 +65,24 @@ export interface PushContent {
   pct?: number;
 }
 
-/** APNs payload. `content-available` stays off: these are user-facing alerts. */
+/**
+ * APNs payload. `content-available` stays off: these are user-facing alerts.
+ *
+ * The data goes under `body` because that is the only key expo-notifications
+ * reads for a remote push (`NotificationRecords.swift`: `userInfo["body"]`).
+ * Top-level keys never reach JS — every tap arrived with no productId and the
+ * foreground filter saw no kind or pct. They stay top-level too, harmlessly.
+ */
 export function buildApnsPayload(c: PushContent): Record<string, unknown> {
+  const data = { productId: c.productId, kind: c.kind, ...(c.pct != null ? { pct: c.pct } : {}) };
   return {
     aps: {
       alert: { title: c.title, body: c.body },
       sound: "default",
       "thread-id": String(c.productId),
     },
-    productId: c.productId,
-    kind: c.kind,
-    ...(c.pct != null ? { pct: c.pct } : {}),
+    ...data,
+    body: data,
   };
 }
 

@@ -47,7 +47,12 @@ export function fold(s: string): string {
  */
 // prettier-ignore
 export const PRODUCT_TYPES: ProductType[] = [
-  { key: "makyaj",     label: "Makyaj",        re: /ruj|lipstick|fondoten|foundation|maskara|mascara|allik|blush|\boje\b|nail|tirnak|manikur|eyeliner|kapatici|concealer|makyaj|makeup|parlatici|lip gloss|dudak parlat|\bfar\b|eyeshadow|goz far|pudra|powder|dudak kalem|lip liner|kas kalem|brow|likit ruj|highlight|bronzer|aydinlatici|rimel|kirpik|\blash|primer|kontur|contour|duzeltici|corrector|sunger|sponge|firca|brush|aplikator/i },
+  // Words that are ALSO colours, fabrics or cartoon names live in the weak
+  // makeup rule at the very end, so a garment rule gets them first. Measured
+  // 2026-09-24: "Brushed-inside joggers" (2,722 rows), "BBW BROWN" (741),
+  // "Pudra" the powder-pink colour (220), "SpongeBob", "Contour bra", Finnish
+  // "nailon" — all were filing clothing under Makeup.
+  { key: "makyaj",     label: "Makyaj",        re: /ruj|lipstick|fondoten|foundation|maskara|mascara|allik|(?:cream|liquid|stick|powder|baked) blush|\bblusher\b|blush (?:stick|palette)|\boje\b|\bnail (?:polish|lacquer|colou?r)|tirnak|manikur|eyeliner|kapatici|concealer|makyaj|makeup|parlatici|lip gloss|dudak parlat|\bfar\b|eyeshadow|goz far|pudrasi|(?:toz|kompakt|sabitleyici|mineral) pudra|(?:face|setting|loose|pressed|compact|translucent) powder|dudak kalem|lip liner|kas kalem|\beyebrow|\bbrows?\b|likit ruj|highlighter|bronzer|aydinlatici|rimel|kirpik|\blash|kontur|duzeltici|corrector|sunger|makeup sponge|firca|\bbrush(?:es)?\b|aplikator/i },
   { key: "parfum",     label: "Parfüm",        re: /parfum|perfume|\bedt\b|\bedp\b|\bkoku\b|deodorant|eau de/i },
   // `durulanmayan` (leave-in) and a BOUNDED `sac … krem` — "Saç İçin
   // Durulanmayan Bakım Kremi" says saç and krem four words apart, which
@@ -102,6 +107,8 @@ export const PRODUCT_TYPES: ProductType[] = [
   { key: "ust",        label: "Üst Giyim",     re: /tisort|t-?shirt|tshirt|\btee\b|gomlek|\bshirt|bluz|blouse|\btop\b|\bust\b|atlet|\btank|\bbody\b|bodysuit|\bcrop|halter|bustier|bustiyer|korse|corset/i },
   { key: "alt",        label: "Alt Giyim",     re: /pantolon|trouser|\bpants\b|\bpant\b|\bjean|denim|\bkot\b|etek|\bskirt|\bsort|\bshort|bermuda|\btayt\b|jogger|palazzo|chino|esofman|kapri|capri|biker|\bpnt\b/i },
   { key: "aksesuar",   label: "Aksesuar",      re: /atki|scarf|sapka|\bhat\b|\bcap\b|\bbere\b|beanie|kemer|\bbelt|taki|jewel|kolye|necklace|kupe|earring|yuzuk|\bring\b|bileklik|bilezik|bracelet|charm|gozluk|sunglass|glasses|eldiven|glove|\bsaat\b|watch|sac band|headband|\btoka\b|fular|\bsal\b|shawl|bros|brooch|piercing|anahtarlik|keychain/i },
+  // Weak makeup words, LAST on purpose — see the strong makyaj rule above.
+  { key: "makyaj",     label: "Makyaj",        re: /blush|pudra|powder|highlight|primer|contour|sponge|\bnails?\b/i },
 ];
 
 /** Classify a product into a canonical type key, or null if nothing matches. */

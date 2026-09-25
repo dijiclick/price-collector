@@ -151,6 +151,19 @@ export const priceBuckets = (): readonly [number, number] => COUNTRIES[market].b
 /** Locale tag for dates. Follows the LANGUAGE, not the market — a date is words. */
 export const dateLocale = (): string => (lang === "en" ? "en-US" : "tr-TR");
 
+/**
+ * A percentage, written the way the reader's language writes it.
+ *
+ * Turkish puts the sign BEFORE the number ("%61"), English after it ("61%").
+ * `off` marks a discount with a leading minus: "−%61" / "−61%". The minus is
+ * U+2212, not a hyphen — the glyph every discount pill in the app has always
+ * used, so Turkish output is byte-for-byte what the screens hardcoded before.
+ */
+export function percent(n: number, opts: { off?: boolean } = {}, l: "tr" | "en" = lang): string {
+  const body = l === "en" ? `${n}%` : `%${n}`;
+  return opts.off ? `−${body}` : body;
+}
+
 /** Plain grouped integer: 3037 -> "3.037" / "3,037". Counts, not money. */
 export const nf = (n: number): string => n.toLocaleString(numberLocale());
 

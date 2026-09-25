@@ -4,12 +4,18 @@ import { toMinor } from "../normalize";
 
 const SITE = "https://www.koton.com";
 // Akinon storefront: any category page returns JSON with ?format=json.
-const CATS = ["kadin-giyim", "erkek-giyim", "cocuk"];
+// Accessories and underwear are separate trees, not children of kadin-giyim.
+// None of their ~3,750 products was ever stored (2026-09-24: 0 of 100 sampled
+// from each), so a pasted Koton bag, hat or bra always answered "not found".
+const CATS = ["kadin-giyim", "erkek-giyim", "cocuk", "kadin-aksesuar", "kadin-ic-giyim", "erkek-aksesuar"];
 // The crawled category slug IS the section: it maps 1:1 to a gender.
 const CAT_GENDER: Record<string, ProductRecord["gender"]> = {
   "kadin-giyim": "kadin",
   "erkek-giyim": "erkek",
   cocuk: "cocuk",
+  "kadin-aksesuar": "kadin",
+  "kadin-ic-giyim": "kadin",
+  "erkek-aksesuar": "erkek",
 };
 
 const MAX_CATEGORIES = Number(process.env.KOTON_MAX_CATEGORIES ?? CATS.length);
