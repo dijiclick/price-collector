@@ -43,6 +43,11 @@ function gql<T = any>(query: string): Promise<T> {
     // `proxy: true` is a fallback (see getJson): the direct attempt still runs
     // first and costs nothing when it is not blocked.
     proxy: true,
+    // From GitHub every page goes through rotating residential exits, and ~90
+    // pages x 2 proxy tries lost the whole brand to one flaky exit on the first
+    // run (2026-09-25, "fetch failed"). Five proxy tries per page makes a
+    // brand-wide failure vanishingly rare; a direct 403 still costs ~nothing.
+    retries: 6,
   });
 }
 
