@@ -28,6 +28,27 @@ export interface PushRow {
   tz?: string | null;
   /** events.ts — when the drop was detected, for dropping stale held alerts. */
   event_ts?: string | Date | null;
+  /**
+   * push_devices.prefs — Bildirim tercihleri as the app synced them. null for
+   * every device that never sent any, which keeps today's behaviour exactly.
+   * Typed loosely because it is read from a jsonb column; go through
+   * `devicePrefs` before trusting it.
+   */
+  prefs?: unknown;
+}
+
+/** The app's NotifPrefs, as /api/push/sync stores them (lib/push.ts PushPrefs). */
+export interface DevicePrefs {
+  drop: boolean;
+  target: boolean;
+  restock: boolean;
+  minPct: number;
+  /**
+   * Absent (both) = quiet hours never chosen in the app: the fixed 22:00-08:00
+   * default applies. null/null = switched off: never quiet. A window = that one.
+   */
+  quietFrom?: string | null;
+  quietTo?: string | null;
 }
 
 /**
@@ -136,16 +157,128 @@ export function localHour(tz: string, now: Date): number | null {
   return Number.isInteger(h) ? h % 24 : null;
 }
 
+const minuteFormats = new Map<string, Intl.DateTimeFormat | null>();
+
+/** Minutes since local midnight (0-1439) in `tz` at `now`, or null for an unusable zone. */
+export function localMinutes(tz: string, now: Date): number | null {
+  let f = minuteFormats.get(tz);
+  if (f === undefined) {
+    try {
+      f = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "numeric", minute: "numeric", hourCycle: "h23" });
+    } catch {
+      f = null;
+    }
+    minuteFormats.set(tz, f);
+  }
+  if (!f) return null;
+  const parts = f.formatToParts(now);
+  const h = Number(parts.find((p) => p.type === "hour")?.value);
+  const m = Number(parts.find((p) => p.type === "minute")?.value);
+  return Number.isInteger(h) && Number.isInteger(m) ? (h % 24) * 60 + m : null;
+}
+
+/** "HH:MM" → minutes since midnight, or null. Mirrors the app's `parseHm`. */
+function parseHm(hm: string | null): number | null {
+  if (!hm) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hm);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  return h > 23 || min > 59 ? null : h * 60 + min;
+}
+
 /**
- * Whether it is night for this device. No zone, or one this runtime cannot
- * read, is never quiet — that is exactly the behaviour every device had before
- * the app started sending one.
+ * Whether it is night for this device.
+ *
+ * No zone, or one this runtime cannot read, is never quiet — that is exactly
+ * the behaviour every device had before the app started sending one.
+ *
+ * Without prefs, or with prefs whose quiet keys are ABSENT (never chosen in
+ * the app), the window is the fixed 22:00-08:00. With a chosen window it is
+ * the device's own quietFrom-quietTo (which may wrap midnight). Quiet hours
+ * explicitly switched off (null, or from === to — what the app's own
+ * `inQuietHours` treats as off) mean never quiet.
  */
-export function inQuietHours(tz: string | null | undefined, now: Date): boolean {
+export function inQuietHours(
+  tz: string | null | undefined,
+  now: Date,
+  prefs?: DevicePrefs | null,
+): boolean {
   if (!tz) return false;
-  const h = localHour(tz, now);
-  if (h === null) return false;
-  return h >= QUIET_START_HOUR || h < QUIET_END_HOUR;
+  // No prefs, or prefs whose quiet hours were never chosen: the default night.
+  if (!prefs || prefs.quietFrom === undefined || prefs.quietTo === undefined) {
+    const h = localHour(tz, now);
+    if (h === null) return false;
+    return h >= QUIET_START_HOUR || h < QUIET_END_HOUR;
+  }
+  const f = parseHm(prefs.quietFrom ?? null);
+  const t = parseHm(prefs.quietTo ?? null);
+  if (f === null || t === null || f === t) return false;
+  const cur = localMinutes(tz, now);
+  if (cur === null) return false;
+  return f < t ? cur >= f && cur < t : cur >= f || cur < t;
+}
+
+/* ------------------------------------------------ notification preferences */
+
+/**
+ * push_devices.prefs, read defensively. Anything that is not a complete, sane
+ * preference set is treated as "no prefs" — today's behaviour — so a bad row
+ * can cost a device its filtering, never its alerts. A JSON string is parsed
+ * too, in case a writer ever double-encodes the jsonb.
+ */
+export function devicePrefs(raw: unknown): DevicePrefs | null {
+  let v = raw;
+  if (typeof v === "string") {
+    try {
+      v = JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const { drop, target, restock, minPct, quietFrom, quietTo } = v as Record<string, unknown>;
+  if (typeof drop !== "boolean" || typeof target !== "boolean" || typeof restock !== "boolean") return null;
+  if (typeof minPct !== "number" || !Number.isFinite(minPct)) return null;
+  const base: DevicePrefs = { drop, target, restock, minPct };
+  // Only a complete pair counts as a choice. Absent, or half a window (which
+  // no writer produces), falls back to the default rather than guessing.
+  if (quietFrom === undefined || quietTo === undefined) return base;
+  const hm = (x: unknown) => x === null || typeof x === "string";
+  if (!hm(quietFrom) || !hm(quietTo)) return null;
+  return { ...base, quietFrom: quietFrom as string | null, quietTo: quietTo as string | null };
+}
+
+/**
+ * Whether this device wants this kind of alert at all — the server-side twin
+ * of the app's `shouldAlert` (apps/mobile/src/state/prefs.ts), minus quiet
+ * hours, which only DELAY an alert and are handled by the hold path.
+ *
+ * minPct applies to plain drops only: a hit target is the alert someone asked
+ * for by name, and a restock has no percentage.
+ */
+export function allowedByPrefs(
+  prefs: DevicePrefs | null,
+  kind: "drop" | "target" | "restock",
+  pct: number,
+): boolean {
+  if (!prefs) return true;
+  if (kind === "drop" && !prefs.drop) return false;
+  if (kind === "target" && !prefs.target) return false;
+  if (kind === "restock" && !prefs.restock) return false;
+  if (kind === "drop" && Math.abs(pct) < prefs.minPct) return false;
+  return true;
+}
+
+/** The row's prefs gate, in the same kind vocabulary the app sees (`buildMessage`). */
+function wanted(r: PushRow): boolean {
+  const m = buildMessage(r);
+  return allowedByPrefs(devicePrefs(r.prefs), m.data.kind, m.data.pct ?? 0);
+}
+
+/** Night for this row's device, by its own window when it synced one. */
+function asleep(r: PushRow, now: Date): boolean {
+  return inQuietHours(r.tz, now, devicePrefs(r.prefs));
 }
 
 /* ---------------------------------------------------------------- sending */
@@ -229,6 +362,12 @@ export interface PushNotifyOpts {
  * mark is per EVENT, so leaving it unmarked would re-send to all of them. The
  * held pair is delivered on the first run after 08:00 local, or dropped if the
  * event is by then more than a day old. Devices with no tz are never held.
+ *
+ * Device prefs (push_devices.prefs, Bildirim tercihleri): a device that muted
+ * the alert's kind, or set a minimum discount a plain drop does not reach, is
+ * skipped for that event for good. A device that CHOSE quiet hours uses its
+ * own window instead of 22:00-08:00 (chosen off = never held); one that never
+ * touched them, or sent no prefs at all, keeps 22:00-08:00 exactly as before.
  */
 export async function pushNotify(db: Db, opts: PushNotifyOpts = {}): Promise<number> {
   const now = opts.now ?? new Date();
@@ -238,17 +377,20 @@ export async function pushNotify(db: Db, opts: PushNotifyOpts = {}): Promise<num
   // 1. Alerts held overnight whose device is awake now. First, so a device
   //    that just woke gets the older news before anything new.
   const held = await db.query<PushRow>(
-    `SELECT w.token, w.target, e.id AS event_id, e.product_id, e.old_price, e.new_price, e.pct, p.name, p.brand, p.currency, w.size, e.type, d.lang, d.tz, e.ts AS event_ts
+    `SELECT w.token, w.target, e.id AS event_id, e.product_id, e.old_price, e.new_price, e.pct, p.name, p.brand, p.currency, w.size, e.type, d.lang, d.tz, d.prefs, e.ts AS event_ts
      FROM push_held h
      JOIN events e ON e.id = h.event_id
      JOIN push_devices d ON d.token = h.token
      JOIN push_watch w ON w.token = h.token AND w.product_id = e.product_id
      JOIN products p ON p.id = e.product_id`,
   );
-  const awake = held.filter((r) => !inQuietHours(r.tz, now));
+  const awake = held.filter((r) => !asleep(r, now));
   const stale = awake.filter((r) => isStale(r, now));
-  const dueHeld = awake.filter((r) => !isStale(r, now));
-  const releasedHeld: PushRow[] = [...stale];
+  // Muted since it was held (the person switched that kind off overnight):
+  // released without sending, exactly like a stale one.
+  const muted = awake.filter((r) => !isStale(r, now) && !wanted(r));
+  const dueHeld = awake.filter((r) => !isStale(r, now) && wanted(r));
+  const releasedHeld: PushRow[] = [...stale, ...muted];
   if (dueHeld.length) {
     const outcomes = await deliver(dueHeld);
     dueHeld.forEach((r, i) => {
@@ -274,7 +416,7 @@ export async function pushNotify(db: Db, opts: PushNotifyOpts = {}): Promise<num
     // whose chosen size is the one that returned (e.size is set by the differ).
     // A pair already held is skipped: if another device's transient failure
     // kept the event unmarked, the held row — not this — delivers it here.
-    `SELECT w.token, w.target, e.id AS event_id, e.product_id, e.old_price, e.new_price, e.pct, p.name, p.brand, p.currency, w.size, e.type, d.lang, d.tz, e.ts AS event_ts
+    `SELECT w.token, w.target, e.id AS event_id, e.product_id, e.old_price, e.new_price, e.pct, p.name, p.brand, p.currency, w.size, e.type, d.lang, d.tz, d.prefs, e.ts AS event_ts
      FROM events e
      JOIN push_watch w ON w.product_id = e.product_id
        AND ( (e.type = 'price_drop' AND (w.target IS NULL OR e.new_price <= w.target))
@@ -286,8 +428,14 @@ export async function pushNotify(db: Db, opts: PushNotifyOpts = {}): Promise<num
   );
 
   const failedEventIds = new Set<number>();
-  const hold = rows.filter((r) => inQuietHours(r.tz, now));
-  const due = rows.filter((r) => !inQuietHours(r.tz, now));
+  // Bildirim tercihleri first: a device that switched this kind off, or whose
+  // minimum discount this drop does not reach, is simply not a recipient. It is
+  // neither held nor counted as a failure, so the per-event mark below still
+  // lands and nothing retries it for that device later.
+  const wantedRows = rows.filter(wanted);
+  const skipped = rows.length - wantedRows.length;
+  const hold = wantedRows.filter((r) => asleep(r, now));
+  const due = wantedRows.filter((r) => !asleep(r, now));
 
   if (hold.length) {
     await db.query(
@@ -322,7 +470,8 @@ export async function pushNotify(db: Db, opts: PushNotifyOpts = {}): Promise<num
   if (rows.length || held.length) {
     console.log(
       `push: sent ${sent}/${due.length + dueHeld.length} notifications ` +
-        `(${hold.length} held for quiet hours, ${stale.length} stale held dropped, ${deadTokens.size} dead tokens pruned)`,
+        `(${hold.length} held for quiet hours, ${stale.length} stale held dropped, ` +
+        `${skipped + muted.length} skipped by device prefs, ${deadTokens.size} dead tokens pruned)`,
     );
   }
   return sent;

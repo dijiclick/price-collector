@@ -320,6 +320,15 @@ CREATE TABLE IF NOT EXISTS push_held (
   PRIMARY KEY (event_id, token)
 );
 
+-- Bildirim tercihleri (2026-09-26): {drop, target, restock, minPct,
+-- quietFrom, quietTo} as the app syncs them, so the collector can apply them
+-- to BACKGROUND pushes too (the OS shows those without running app JS).
+-- Nullable: a device that never sent prefs keeps today's behaviour exactly -
+-- every kind, any size of drop, and the fixed 22:00-08:00 quiet hours.
+-- quietFrom/quietTo ABSENT from the object means "never chosen" (still the
+-- 22:00-08:00 default); present as null means "switched off" (never quiet).
+ALTER TABLE push_devices ADD COLUMN IF NOT EXISTS prefs JSONB;
+
 -- ---------------------------------------------------------------------------
 -- Per-client rate limits for the API (lib/rate-limit.ts), fixed windows.
 -- `client` is a salted hash of the caller's IP, never the address itself, and
