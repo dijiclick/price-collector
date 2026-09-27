@@ -338,6 +338,12 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
   } catch (err) {
     console.error("push notifier failed:", err instanceof Error ? err.message : err);
   }
+  try {
+    const { pushReminders } = await import("./push-reminder");
+    await pushReminders(db);
+  } catch (err) {
+    console.error("push reminders failed:", err instanceof Error ? err.message : err);
+  }
   await db.close();
   failOnBlocked(results, label);
 }

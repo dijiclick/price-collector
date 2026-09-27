@@ -341,4 +341,7 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   hits          INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (bucket, client, window_start)
 );
-CREATE INDEX IF NOT EXISTS rate_limits_window_idx ON rate_limits (window_start)
+CREATE INDEX IF NOT EXISTS rate_limits_window_idx ON rate_limits (window_start);
+
+-- Day-3 reminder (packages/collector/src/push-reminder.ts): set once the one reminder went out.
+ALTER TABLE push_devices ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ;
