@@ -47,6 +47,18 @@ jobs:
       # --omit=dev keeps PGlite's wasm (a local-dev fallback) out of CI, which
       # is why tsx sits in dependencies: CI genuinely needs it to run TypeScript.
       - run: npm ci --omit=dev --ignore-scripts
+      # Mango's pages sit behind Vercel's bot challenge, which only a real
+      # browser passes from a runner IP (curl_cffi-style TLS impersonation
+      # still gets 429). packages/collector/src/browser.ts drives a Scrapling
+      # session through browser_fetch.py; pinned because it is fetched fresh
+      # on every run.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Scrapling (Mango)
+        run: |
+          pip install "scrapling[fetchers]==0.4.15"
+          scrapling install
       - name: Collect prices
         env:
           # ROSSMANN is back in the main sweep (2026-09-25). It 403s GitHub's

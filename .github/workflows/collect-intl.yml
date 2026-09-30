@@ -56,6 +56,20 @@ jobs:
           cache: npm
       - if: steps.pick.outputs.run == '1'
         run: npm ci --omit=dev --ignore-scripts
+      # Mango's pages sit behind Vercel's bot challenge, which only a real
+      # browser passes from a runner IP (curl_cffi-style TLS impersonation
+      # still gets 429). packages/collector/src/browser.ts drives a Scrapling
+      # session through browser_fetch.py; pinned because it is fetched fresh
+      # on every run.
+      - if: steps.pick.outputs.run == '1'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - if: steps.pick.outputs.run == '1'
+        name: Install Scrapling (Mango)
+        run: |
+          pip install "scrapling[fetchers]==0.4.15"
+          scrapling install
       - if: steps.pick.outputs.run == '1'
         name: Collect ${{ matrix.country }}
         env:

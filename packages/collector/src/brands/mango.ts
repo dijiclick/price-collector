@@ -1,5 +1,6 @@
 import type { ProductRecord, SizeVariant, Availability } from "../types";
-import { getJson, getText } from "../http";
+import { getJson } from "../http";
+import { browserText } from "../browser";
 import { toMinor } from "../normalize";
 import { ALL_COUNTRIES, currencyFor, type CountryCode } from "../../../../lib/countries";
 
@@ -292,11 +293,7 @@ async function seedFrom(paths: string[], site: MangoSite, byId: SeedMap, max: nu
     try {
       // A failed page must THROW, not silently shrink the catalog to whatever
       // loaded — the collector treats a truncated-but-nonzero run as success.
-      const html = await getText(filteredUrl(path, site), {
-        headers: { Accept: "text/html" },
-        country: site.country,
-        impersonate: true,
-      });
+      const html = await browserText(filteredUrl(path, site));
       items = parseCatalogItems(html);
     } catch (err) {
       if (strict) throw err;
@@ -326,19 +323,11 @@ async function seedFrom(paths: string[], site: MangoSite, byId: SeedMap, max: nu
 async function seedProducts(site: MangoSite, max: number): Promise<Seed[]> {
   // The homepage plus every section page it links (/h/women, /h/damen, ...):
   // the homepage alone stopped linking /c/ categories on 2026-09-22.
-  const home = await getText(`${SITE}/${site.path}`, {
-    headers: { Accept: "text/html" },
-    country: site.country,
-    impersonate: true,
-  }).catch(() => "");
+  const home = await browserText(`${SITE}/${site.path}`).catch(() => "");
   const catPaths = new Set<string>(linksOf(home, site, "c"));
   for (const page of new Set(linksOf(home, site, "h"))) {
     // One missing section page is not a broken crawl; the fallback ids cover it.
-    const html = await getText(`${SITE}${page}`, {
-      headers: { Accept: "text/html" },
-      country: site.country,
-      impersonate: true,
-    }).catch(() => "");
+    const html = await browserText(`${SITE}${page}`).catch(() => "");
     for (const p of linksOf(html, site, "c")) catPaths.add(p);
   }
   const salePaths = seedPaths(catPaths, MAX_SEED_CATEGORIES, site);
