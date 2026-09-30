@@ -295,6 +295,7 @@ async function seedFrom(paths: string[], site: MangoSite, byId: SeedMap, max: nu
       const html = await getText(filteredUrl(path, site), {
         headers: { Accept: "text/html" },
         country: site.country,
+        impersonate: true,
       });
       items = parseCatalogItems(html);
     } catch (err) {
@@ -328,6 +329,7 @@ async function seedProducts(site: MangoSite, max: number): Promise<Seed[]> {
   const home = await getText(`${SITE}/${site.path}`, {
     headers: { Accept: "text/html" },
     country: site.country,
+    impersonate: true,
   }).catch(() => "");
   const catPaths = new Set<string>(linksOf(home, site, "c"));
   for (const page of new Set(linksOf(home, site, "h"))) {
@@ -335,6 +337,7 @@ async function seedProducts(site: MangoSite, max: number): Promise<Seed[]> {
     const html = await getText(`${SITE}${page}`, {
       headers: { Accept: "text/html" },
       country: site.country,
+      impersonate: true,
     }).catch(() => "");
     for (const p of linksOf(html, site, "c")) catPaths.add(p);
   }

@@ -41,6 +41,15 @@ export interface FetchOpts {
    * asking for until its own task parameterises it.
    */
   country?: CountryCode;
+  /**
+   * Send with a real browser's TLS/HTTP2 fingerprint (via impit) instead of
+   * Node's. shop.mango.com sits behind Vercel's bot checkpoint since
+   * 2026-09-28: Node's fetch and plain curl get 429 `x-vercel-mitigated:
+   * challenge` from any network, while the same request with Chrome's
+   * handshake gets the page. Headers alone do not help — it reads the TLS
+   * fingerprint.
+   */
+  impersonate?: boolean;
 }
 
 /**
@@ -99,9 +108,27 @@ export async function getJson<T = any>(url: string, opts: FetchOpts = {}): Promi
   throw lastErr;
 }
 
+/**
+ * One impersonating client, loaded on first use: impit is a native module and
+ * only Mango needs it, so every other adapter (and every test) never loads it.
+ */
+let impit: Promise<import("impit").Impit> | undefined;
+function getImpit() {
+  impit ??= import("impit").then(({ Impit }) => new Impit({ browser: "chrome" }));
+  return impit;
+}
+
 /** GET raw text (for HTML seeding, e.g. Mango). */
 export async function getText(url: string, opts: FetchOpts = {}): Promise<string> {
   const country = opts.country ?? DEFAULT_COUNTRY;
+  if (opts.impersonate) {
+    // No UA override: impit sends Chrome's own headers to match its handshake.
+    const res = await (await getImpit()).fetch(url, {
+      headers: { "Accept-Language": acceptLanguage(country), ...opts.headers },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+    return res.text();
+  }
   const res = await fetch(url, {
     headers: { "User-Agent": UA, "Accept-Language": acceptLanguage(country), ...opts.headers },
     // @ts-expect-error undici dispatcher
