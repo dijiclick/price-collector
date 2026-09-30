@@ -303,6 +303,20 @@ CREATE INDEX IF NOT EXISTS idx_push_devices_install ON push_devices (install_id)
 CREATE INDEX IF NOT EXISTS idx_products_url_pattern ON products (url text_pattern_ops);
 
 -- ---------------------------------------------------------------------------
+-- The deal feed (2026-09-30). /api/shelves and /api/deals only ever look at
+-- in-stock, discounted, imaged rows of one market - ~40k of TR's ~185k - but
+-- with no index for that the planner walked every TR row by country: 7,3s on
+-- the database, 28s at the endpoint on a cache miss, and the iOS Deals tab sat
+-- on skeletons. The predicate is the literal prefix of DISCOUNTED and the feed
+-- gates in lib/db.ts, so every feed query implies it; last_seen serves FRESH.
+-- Measured after: 129ms on the database, under 1s at the endpoint uncached.
+--
+-- Built on production by hand with CREATE INDEX CONCURRENTLY (same reason as
+-- above), so this line is a no-op there.
+CREATE INDEX IF NOT EXISTS idx_products_feed ON products (country, last_seen)
+  WHERE in_stock AND image_url IS NOT NULL AND current_list_price > current_price;
+
+-- ---------------------------------------------------------------------------
 -- Quiet hours for pushes (2026-09-25).
 --
 -- The device's IANA time zone, sent by /api/push/sync. Nullable: a device that
