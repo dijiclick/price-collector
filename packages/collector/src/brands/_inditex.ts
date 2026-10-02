@@ -346,9 +346,24 @@ function imageScore(url: string): number {
   if (/^a\d+$/.test(v)) return 5;
   return 4; // unknown views
 }
-export function pickImage(detail: any): string | null {
+/**
+ * `colorId` narrows to that colour's own photos (xmedia carries a `colorCode`
+ * per colour). Bershka gives every colour its own bundle over ONE shared detail
+ * holding all colours' media, so ranking across them handed every colour the
+ * same photo. Unknown or absent colour: rank across everything, as before.
+ */
+export function pickImage(detail: any, colorId?: string | number | null): string | null {
+  const all: any[] = detail?.xmedia ?? [];
+  const own = colorId == null ? [] : all.filter((x) => String(x?.colorCode) === String(colorId));
+  const urls = collectUrls(own.length > 0 ? own : all);
+  if (urls.length === 0 && own.length > 0) return pickImage(detail);
+  if (urls.length === 0) return null;
+  return urls.reduce((best, u) => (imageScore(u) < imageScore(best) ? u : best));
+}
+
+function collectUrls(xmedia: any[]): string[] {
   const urls: string[] = [];
-  for (const x of detail?.xmedia ?? []) {
+  for (const x of xmedia) {
     for (const item of x?.xmediaItems ?? []) {
       for (const media of item?.medias ?? []) {
         const url = media?.url ?? media?.extraInfo?.deliveryUrl;
@@ -356,8 +371,7 @@ export function pickImage(detail: any): string | null {
       }
     }
   }
-  if (urls.length === 0) return null;
-  return urls.reduce((best, u) => (imageScore(u) < imageScore(best) ? u : best));
+  return urls;
 }
 
 /**

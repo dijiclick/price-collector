@@ -112,7 +112,8 @@ export function mapProduct(
     // Per-country form (`/gb/…`, `/us/…`, `/no/en/…`) matches Bershka's own
     // sitemaps; the PDPs themselves are Akamai-blocked from Node.
     url: `${m.urlPrefix}/${encodeURI(String(p.productUrl).replace(/-l\d+$/, ""))}-c0p${real.id ?? p.id}.html`,
-    imageUrl: pickImage(real.detail),
+    // This bundle's own colour — see pickImage.
+    imageUrl: pickImage(real.detail, color.id),
     price,
     listPrice,
     currency: m.currency,
