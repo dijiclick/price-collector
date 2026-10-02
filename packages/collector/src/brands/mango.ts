@@ -130,7 +130,11 @@ export function parseCatalogItems(html: string): CatalogItem[] {
   return best.map((e) => ({
       productId: e.productId,
       colorId: String(e.colorId ?? ""),
-      sizes: Array.isArray(e.sizes) ? e.sizes.map(String) : [],
+      // Strings until ~2026-09-28, {label} objects since; String({}) silently
+      // became "[object Object]" and marked every size out of stock.
+      sizes: Array.isArray(e.sizes)
+        ? e.sizes.map((s: any) => String(s && typeof s === "object" ? s.label ?? "" : s).trim()).filter(Boolean)
+        : [],
       price: typeof e.price === "number" ? e.price : 0,
       portraitId: String(e.portraitId ?? ""),
       index: typeof e.index === "number" ? e.index : 0,
