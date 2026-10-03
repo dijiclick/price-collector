@@ -183,7 +183,7 @@ export function contentHash(r: ProductRecord): string {
   // Appended only when present, unlike the fields above: an absent gallery
   // keeps every existing fingerprint unchanged, while a product that gains one
   // hashes differently ONCE — which is exactly what writes the backfill.
-  if (r.images?.length) parts.push(r.images);
+  if ((r.images?.length ?? 0) > 1) parts.push(r.images);
   h.update(JSON.stringify(parts));
   return h.digest("hex");
 }
@@ -318,10 +318,16 @@ async function upsertChanged(
     // for records whose adapter collected one — a record without `images`
     // leaves an existing gallery alone, like the COALESCEd columns above.
     const gallery: any[] = [];
+    const single: number[] = [];
     for (const { rec: r } of chunk) {
       const id = map.get(key(r.brand, countryOf(r), r.externalId));
-      if (id != null && r.images?.length) gallery.push(id, r.images);
+      if (id == null || !r.images) continue;
+      // One photo is not a gallery: the product page shows imageUrl anyway.
+      if (r.images.length > 1) gallery.push(id, r.images);
+      else single.push(id);
     }
+    // An adapter that now finds one photo (or stored one before this rule) clears the row.
+    if (single.length) await db.query("DELETE FROM product_images WHERE product_id = ANY($1::int[])", [single]);
     if (gallery.length) {
       const values = Array.from({ length: gallery.length / 2 }, (_, i) => `($${2 * i + 1}::int, $${2 * i + 2}::text[])`).join(",");
       await db.query(
