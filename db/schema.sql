@@ -201,6 +201,16 @@ CREATE INDEX IF NOT EXISTS email_codes_expiry_idx ON email_codes(expires_at);
 -- inside a comment.
 ALTER TABLE products ADD COLUMN IF NOT EXISTS country TEXT NOT NULL DEFAULT 'TR';
 
+-- The product page's photo gallery (2026-10-03), image_url first. URLs only —
+-- photos are hotlinked from the brands' CDNs, never stored. Its own table, not
+-- a products column: ~1.8M products x ~5 URLs is ~1 GB, and inline it would
+-- widen every products row ~40%, which the feed scans. Only the product page
+-- reads it, by primary key. No row = no gallery; the app shows image_url alone.
+CREATE TABLE IF NOT EXISTS product_images (
+  product_id  INTEGER PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+  urls        TEXT[] NOT NULL
+);
+
 -- The real key from here on. Both writers (the collector's upsertChanged and
 -- lib/db.ts's upsertLiveProduct) conflict on it, and ON CONFLICT works from a
 -- unique INDEX alone — which is why the old two-column CONSTRAINT can be

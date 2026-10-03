@@ -1,8 +1,9 @@
-import type { ProductRecord } from "../types";
+import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
 import type { CountryCode } from "../../../../lib/countries";
 import {
   pickImage,
+  pickImages,
   pickVariants,
   sizeInStock,
   anySizeInStock,
@@ -99,13 +100,15 @@ export function mapProduct(
   const price = Number(size?.price);
   if (!Number.isFinite(price) || price <= 0) return null;
   const oldPrice = Number(size?.oldPrice);
+  const imageUrl = pickImage(detail);
   return {
     brand: "oysho",
     country: m.country,
     externalId: String(p.id),
     name: p.name ?? "",
     url: encodeURI(`${m.urlPrefix}/${p.productUrl}`),
-    imageUrl: pickImage(detail),
+    imageUrl,
+    images: cleanGallery(pickImages(detail), imageUrl),
     price,
     listPrice: Number.isFinite(oldPrice) && oldPrice > price ? oldPrice : null,
     currency: m.currency,

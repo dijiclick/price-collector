@@ -1,8 +1,35 @@
-import type { ProductRecord } from "../types";
+import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
 
 const BASE = "https://www.penti.com/pentiwebservices/v2/penti";
+
+/** Penti CDN urls carry {0}/{1} resize placeholders -> substitute width/height. */
+function sized(url: string): string {
+  const raw = url.startsWith("http") ? url : `https://www.penti.com${url}`;
+  return raw.replace("{0}", "500").replace("{1}", "650").replace(/ /g, "%20");
+}
+
+/**
+ * The PDP gallery lives in `allListImages`, not `images`: `images` only ever
+ * holds the PRIMARY shot twice (formats `thumbnail` and `product`, the same
+ * url — 1000/1000 rows sampled 2026-10-03), while `allListImages` lists every
+ * photo of this colour code in display order (`<code>_front.jpg`,
+ * `<code>_view1.jpg`, …). The code carries the colour suffix (`…-BK3`), so
+ * requiring it in the file name keeps every photo on the same colour. A few
+ * rows lead with a video (`<code>_1.mp4`, even a stray `denemeyeni.mp4`);
+ * anything that is not a still image is dropped.
+ */
+export function galleryOf(p: any, code: string, first: string | null): string[] | null {
+  const shots: string[] = [];
+  for (const u of p?.allListImages ?? []) {
+    if (typeof u !== "string") continue;
+    const file = u.split("?")[0].split("/").pop() ?? "";
+    if (!/\.(jpe?g|png|webp)$/i.test(file) || !file.startsWith(code)) continue;
+    shots.push(sized(u));
+  }
+  return cleanGallery(shots, first);
+}
 
 function mapProduct(p: any): ProductRecord | null {
   const code = String(p.code ?? "");
@@ -10,12 +37,7 @@ function mapProduct(p: any): ProductRecord | null {
   if (!code || typeof value !== "number" || value <= 0) return null;
   const prev = p.price?.previousPrice?.value;
   const img = p.images?.find((i: any) => i.imageType === "PRIMARY") ?? p.images?.[0];
-  // Penti CDN urls carry {0}/{1} resize placeholders -> substitute width/height.
-  let imageUrl: string | null = null;
-  if (img?.url) {
-    const raw = img.url.startsWith("http") ? img.url : `https://www.penti.com${img.url}`;
-    imageUrl = raw.replace("{0}", "500").replace("{1}", "650");
-  }
+  const imageUrl: string | null = img?.url ? sized(img.url) : null;
   /**
    * Penti publishes the printed EAN on every row and we simply never read it.
    *
@@ -38,6 +60,7 @@ function mapProduct(p: any): ProductRecord | null {
     name: p.name ?? "",
     url: p.url ? `https://www.penti.com/tr${p.url}` : "https://www.penti.com/tr",
     imageUrl,
+    images: galleryOf(p, code, imageUrl),
     price: toMinor(value),
     listPrice: typeof prev === "number" && prev > value ? toMinor(prev) : null,
     currency: "TRY",

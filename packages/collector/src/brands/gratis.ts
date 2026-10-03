@@ -1,4 +1,4 @@
-import type { ProductRecord } from "../types";
+import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
 import { blanketPromotionPct, revertBlanketPromotion } from "../normalize";
 
@@ -89,6 +89,31 @@ export function payablePrice(prices: any): { price: number; list: number | null 
   return { price: shelf, list };
 }
 
+/**
+ * Photo gallery from `imageUrls[]`, which is the PDP's own list in display
+ * order: numbered shots (`<id>_01.jpg`, `_02.jpg`, ...) followed by extras the
+ * page does NOT show in its carousel — `<id>_variant.jpg` is the round shade
+ * chip in the colour picker and `<id>_richContent.jpg` is a marketing panel.
+ * Only numbered photos are kept. Every Gratis id is one shade, so they are all
+ * of the same variant as imageUrl.
+ *
+ * Note the SEARCH response trims `imageUrls` to its first entry (600/600
+ * sampled 2026-10-03); the full list only comes from `Product/getProductDetail`,
+ * one request per product. So from the crawl this yields [imageUrl] — the
+ * mapping is ready for a detail pass, but none is made (12k extra requests on
+ * an endpoint that rate-limits at concurrency 6).
+ */
+export function galleryOf(p: any, first: string | null): string[] | null {
+  const shots: string[] = [];
+  for (const i of p?.imageUrls ?? []) {
+    const url = i?.fileUrl;
+    if (typeof url !== "string") continue;
+    const name = String(i?.fileName ?? url.split("/").pop() ?? "");
+    if (/_\d+\.(jpe?g|png|webp)$/i.test(name) || /-\d+_\d+x\d+\.(jpe?g|png|webp)$/i.test(url)) shots.push(url);
+  }
+  return cleanGallery(shots, first);
+}
+
 function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | null {
   const id = String(p.id ?? "");
   // Gratis prices are already integer minor units (84800 = 848,00 ₺).
@@ -101,6 +126,7 @@ function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | nu
   // nothing — a half-read code is worse than none, because it would match the
   // wrong product rather than fail.
   const ean = String(p.attributes?.eanUpc ?? "").replace(/\D/g, "");
+  const imageUrl: string | null = p.imageUrls?.[0]?.fileUrl ?? null;
   return {
     brand: "gratis",
     externalId: id,
@@ -109,7 +135,8 @@ function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | nu
     // `/p-<id>` is a 404 on gratis.com; any slug before `-p-<id>` 308s to the
     // canonical page (verified 2026-09-24), so the fallback carries one.
     url: p.shareLink ?? `https://www.gratis.com/urun-p-${id}`,
-    imageUrl: p.imageUrls?.[0]?.fileUrl ?? null,
+    imageUrl,
+    images: galleryOf(p, imageUrl),
     price: current,
     listPrice: money.list,
     currency: "TRY",
@@ -120,6 +147,9 @@ function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | nu
     colorName: p.attributes?.colorName ?? null,
   };
 }
+
+/** Exposed for gratis.test.ts. */
+export const mapProductForTest = mapProduct;
 
 export const brand = "gratis";
 

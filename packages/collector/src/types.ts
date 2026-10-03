@@ -31,6 +31,13 @@ export interface ProductRecord {
   name: string;
   url: string;
   imageUrl: string | null;
+  /**
+   * The product page's photo gallery, in display order, imageUrl first. Only
+   * real photos of THIS colour (no videos, swatches, size charts or marketing
+   * cards), deduplicated, at most MAX_GALLERY. Absent/null = the adapter does
+   * not collect a gallery; the app then shows imageUrl alone.
+   */
+  images?: string[] | null;
   /** Current selling price, in minor units (kuruş). */
   price: number;
   /** Original / strikethrough price in minor units, or null if not on sale. */
@@ -102,4 +109,27 @@ export interface PriceEvent {
   pct: number | null;
   /** For a per-size back_in_stock event: which size returned. Omitted otherwise. */
   size?: string;
+}
+
+/** Most photos kept per product: enough for a gallery, small enough to store ~160k times. */
+export const MAX_GALLERY = 6;
+
+/**
+ * Normalise a gallery: drop non-http entries and duplicates (by URL without its
+ * query string, so two renditions of one photo count once), keep `first` in
+ * front when given, cap at MAX_GALLERY. Returns null when nothing is left, so
+ * the upsert's COALESCE keeps a gallery an earlier run found.
+ */
+export function cleanGallery(urls: (string | null | undefined)[], first?: string | null): string[] | null {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const u of [first, ...urls]) {
+    if (typeof u !== "string" || !/^https?:\/\//.test(u)) continue;
+    const k = u.split("?")[0];
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(u);
+    if (out.length === MAX_GALLERY) break;
+  }
+  return out.length ? out : null;
 }

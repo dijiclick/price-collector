@@ -1,4 +1,4 @@
-import type { ProductRecord } from "../types";
+import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
 
@@ -76,6 +76,21 @@ export function campaignPrice(p: any, base: number): number {
   return special > 0 && special < base ? special : 0;
 }
 
+/**
+ * Magento's `media_gallery`: every enabled ProductImage, by `position` (the
+ * order the PDP shows). ProductVideo entries and disabled images are dropped.
+ * Rossmann SKUs are single shades, so every photo is the same variant.
+ */
+export function galleryOf(media: any[] | null | undefined, first: string | null): string[] | null {
+  const shots = (Array.isArray(media) ? media : [])
+    .filter((m) => m && m.disabled !== true && m.__typename !== "ProductVideo" && !m.video_content)
+    .filter((m) => typeof m.url === "string" && !/placeholder/i.test(m.url))
+    .map((m, i) => ({ url: m.url as string, pos: Number.isFinite(Number(m.position)) ? Number(m.position) : 1e6 + i }))
+    .sort((a, b) => a.pos - b.pos)
+    .map((m) => m.url);
+  return cleanGallery(shots, first);
+}
+
 export function mapProduct(p: any, category: string | null): ProductRecord | null {
   const sku = String(p.sku ?? "");
   const min = p.price_range?.minimum_price ?? {};
@@ -97,6 +112,7 @@ export function mapProduct(p: any, category: string | null): ProductRecord | nul
     name: p.name ?? "",
     url: `${SITE}/${p.url_key}`,
     imageUrl: p.small_image?.url ?? null,
+    images: galleryOf(p.media_gallery, p.small_image?.url ?? null),
     price: toMinor(price),
     listPrice: listPrice != null && listPrice > price ? toMinor(listPrice) : null,
     currency: "TRY",
@@ -109,6 +125,7 @@ export const brand = "rossmann";
 
 export async function listProducts(): Promise<ProductRecord[]> {
   const FIELDS = `sku barcode name url_key stock_status small_image { url }
+    media_gallery { url position disabled __typename }
     special_price ross_60_price
     price_range { minimum_price { regular_price { value } final_price { value } } }`;
   // `price from 0` matches everything sellable and is the only broad filter this

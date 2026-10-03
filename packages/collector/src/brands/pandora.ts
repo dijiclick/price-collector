@@ -1,4 +1,4 @@
-import type { ProductRecord, SizeVariant } from "../types";
+import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
 
@@ -89,16 +89,66 @@ function prices(hit: any): { price: number; listPrice: number | null } | null {
   };
 }
 
+/**
+ * The PDP carousel, in the order tr.pandora.net renders it (read from three
+ * rendered pages, 2026-10-03): the on-model detail shot, the packshot, the
+ * on-model shot, then the packshot angles (V2…V5). The page shows the `_rect`
+ * crops of these — not `main`/`modelshot`/`singlepackshot` (the same photos
+ * uncropped), not the `_rect_base` crops, not `bracelet_builder` (a cut-out for
+ * the bracelet designer), not `engraveshot`. It also interleaves
+ * `styledmodelimage_rect` campaign pictures (`Q324_E_PDP_MODEL_STYLED_17…`),
+ * which are left out here as marketing imagery, not photos of this item.
+ */
+const PDP_VIEWS = ["modeldetailshot_rect", "main_rect_center", "modelshot_rect", "singlepackshot_rect_center"];
+
+const fileOf = (url: string) => url.split("?")[0].split("/").pop() ?? url;
+
+/**
+ * Gallery from `imageGroups` (search with expand=images&allImages=true).
+ * imageUrl leads; a crop of the very photo imageUrl already shows (same file
+ * name in another view folder — `main` vs `main_rect_center`) is skipped, so
+ * the gallery does not open with the packshot twice. Images are per product,
+ * not per size (no group carries variationAttributes), so all match imageUrl.
+ *
+ * Campaign shots also get filed under these views (`modelshot_rect/
+ * 2026_collection_mixed_…_model_single_08_1x1_RGB.png`, which the PDP did not
+ * render). The product's own photos are named after its id (`792751C01_V3_RGB`),
+ * so when imageUrl is, every other photo must be too. A product whose own shots
+ * are not id-named (the A050 gift box: `2025_eCom_Giftbox_pink_v2_0N`) is left
+ * unfiltered.
+ */
+export function galleryOf(groups: any[] | null | undefined, first: string | null, productId?: string): string[] | null {
+  const gs: any[] = Array.isArray(groups) ? groups : [];
+  const seen = new Set(first ? [fileOf(first)] : []);
+  const idNamed = !!productId && !!first && fileOf(first).startsWith(productId);
+  const urls: string[] = [];
+  for (const view of PDP_VIEWS) {
+    for (const g of gs) {
+      if (g?.viewType !== view || g?.variationAttributes) continue;
+      for (const i of g.images ?? []) {
+        const link = i?.link;
+        if (typeof link !== "string" || seen.has(fileOf(link))) continue;
+        if (idNamed && !fileOf(link).startsWith(productId!)) continue;
+        seen.add(fileOf(link));
+        urls.push(link);
+      }
+    }
+  }
+  return cleanGallery(urls, first);
+}
+
 export function mapHit(hit: any): ProductRecord | null {
   const id = String(hit?.productId ?? "");
   const p = id ? prices(hit) : null;
   if (!p) return null;
+  const imageUrl: string | null = hit.image?.link ?? null;
   return {
     brand: "pandora",
     externalId: id,
     name: hit.productName ?? "",
     url: hit.c_slugURL ?? `${SITE}/tr/${id}.html`,
-    imageUrl: hit.image?.link ?? null,
+    imageUrl,
+    images: galleryOf(hit.imageGroups, imageUrl, id),
     ...p,
     currency: "TRY",
     // `orderable` is true for every hit including sold-out ones; c_productInStock
@@ -175,7 +225,13 @@ export async function listProducts(): Promise<ProductRecord[]> {
     const url =
       `${SCAPI}/search/shopper-search/v1/organizations/${ORG}/product-search` +
       `?siteId=${SITE_ID}&refine=${encodeURIComponent("cgid=root")}` +
-      `&limit=${PAGE_SIZE}&offset=${offset}`;
+      `&limit=${PAGE_SIZE}&offset=${offset}` +
+      // The gallery rides on the requests we already make: `allImages=true`
+      // adds every hit's imageGroups. Naming `expand` replaces the default set,
+      // so the defaults are listed alongside `images` — verified 2026-10-03 to
+      // return the same fields as the bare call, plus imageGroups (~3.5x the
+      // bytes, direct to SCAPI, no proxy).
+      `&expand=availability,images,prices,represented_products,variations,custom_properties&allImages=true`;
     // A failure before we have anything is a real outage (block, bad token) —
     // let it throw so the run reports it instead of silently reporting an empty
     // catalog, which reads as "nothing on sale" and strands the brand's data.

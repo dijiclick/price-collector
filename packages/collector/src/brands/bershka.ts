@@ -1,8 +1,9 @@
-import type { ProductRecord } from "../types";
+import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
 import type { CountryCode } from "../../../../lib/countries";
 import {
   pickImage,
+  pickImages,
   pickVariants,
   anySizeInStock,
   genderFromText,
@@ -102,6 +103,8 @@ export function mapProduct(
   // Bershka's own reference endpoint: `00125041` and the full `0012504171228`
   // both resolve to displayReference `0125/041`.
   const ref = String(real.detail?.displayReference ?? "").replace(/\D/g, "");
+  // This bundle's own colour — see pickImage.
+  const imageUrl = pickImage(real.detail, color.id);
   return {
     brand: "bershka",
     country: m.country,
@@ -112,8 +115,8 @@ export function mapProduct(
     // Per-country form (`/gb/…`, `/us/…`, `/no/en/…`) matches Bershka's own
     // sitemaps; the PDPs themselves are Akamai-blocked from Node.
     url: `${m.urlPrefix}/${encodeURI(String(p.productUrl).replace(/-l\d+$/, ""))}-c0p${real.id ?? p.id}.html`,
-    // This bundle's own colour — see pickImage.
-    imageUrl: pickImage(real.detail, color.id),
+    imageUrl,
+    images: cleanGallery(pickImages(real.detail, color.id), imageUrl),
     price,
     listPrice,
     currency: m.currency,

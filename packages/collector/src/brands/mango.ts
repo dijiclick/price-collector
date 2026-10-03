@@ -1,4 +1,4 @@
-import type { ProductRecord, SizeVariant, Availability } from "../types";
+import { cleanGallery, type ProductRecord, type SizeVariant, type Availability } from "../types";
 import { getJson } from "../http";
 import { browserText } from "../browser";
 import { toMinor } from "../normalize";
@@ -378,6 +378,59 @@ export function lookImage(color: any): string | null {
   return null;
 }
 
+/** Where a view code sits in the gallery: model, garment, mid-shot, then the rest, detail crops last. */
+function viewRank(code: string): number {
+  if (code === "O1") return 0;
+  if (code === "B") return 1;
+  if (code === "F") return 2;
+  if (/^D\d+$/.test(code)) return 9;
+  // Letter codes (R = back, ...) before the bare numeric asset codes, which are
+  // mostly aliases of a letter view and only stand alone for an unnamed shot.
+  return /^\d+$/.test(code) ? 4 : 3;
+}
+
+/**
+ * Every photo of ONE colour, in gallery order, as raw asset paths.
+ *
+ * A colour can carry several looks ("00", "01": the same colour styled again on
+ * another model). Each look's `images` lists every view twice — once under its
+ * letter code (O1, B, F, R, D0...) and once under its numeric asset code (001,
+ * 900, 002...) — so a path's rank comes from the best code that names it.
+ * Looks run in order (first look's O1/B/F/rest, then the next look's), and the
+ * detail crops of every look go last: they are too tight to lead a gallery.
+ *
+ * The swatch (`bulletImg`) is never included — it is a flat patch of colour,
+ * capped at 200px (see lookImage). Nor is anything that is not a still image.
+ */
+export function lookGallery(color: any): string[] {
+  const looks = color?.looks;
+  if (!looks || typeof looks !== "object") return [];
+  const swatch = typeof color?.bulletImg === "string" ? color.bulletImg : null;
+  const main: string[] = [];
+  const crops: string[] = [];
+  for (const look of Object.values<any>(looks)) {
+    const images = look?.images;
+    if (!images || typeof images !== "object") continue;
+    // A letter code is authoritative: "030" alone looks like an unnamed shot,
+    // but it is D0's asset, so it ranks as a detail crop.
+    const rank = new Map<string, { r: number; named: boolean }>();
+    for (const [code, v] of Object.entries<any>(images)) {
+      const img = v?.img;
+      if (typeof img !== "string" || !img || img === swatch) continue;
+      if (/video|\.(mp4|mov|webm|m3u8)(\?|$)/i.test(img)) continue;
+      const named = !/^\d+$/.test(code);
+      const r = viewRank(code);
+      const prev = rank.get(img);
+      if (!prev || (named && !prev.named) || (named === prev.named && r < prev.r)) {
+        rank.set(img, { r, named });
+      }
+    }
+    const ordered = [...rank.entries()].sort((a, b) => a[1].r - b[1].r);
+    for (const [img, { r }] of ordered) (r === 9 ? crops : main).push(img);
+  }
+  return [...new Set([...main, ...crops])];
+}
+
 /**
  * Scene7 serves a 200x200 thumbnail for a bare asset path, so every URL needs an
  * explicit rendition. 480x672 is the grid cell's 5:7 aspect. `wid` alone is not
@@ -438,6 +491,10 @@ export function buildRecord(
       ? `https://media.mango.com/is/image/punto/${seed.id}-${lead.colorId}-${lead.portraitId}`
       : null;
   const imageUrl = withRendition(lookImage(ownColor) ?? constructed, assets);
+  const images = cleanGallery(
+    lookGallery(ownColor).map((p) => withRendition(p, assets)),
+    imageUrl,
+  );
 
   const family =
     detail?.families?.find((f: any) => f.isMainFamily)?.label ??
@@ -451,6 +508,7 @@ export function buildRecord(
     name: detail?.name ?? `Mango ${seed.id}`,
     url: detail?.url ? `${SITE}${detail.url}` : `${SITE}/${site.path}`,
     imageUrl,
+    images,
     price: toMinor(priceEntry.price),
     listPrice: typeof orig === "number" && orig > priceEntry.price ? toMinor(orig) : null,
     currency: currencyFor(country),

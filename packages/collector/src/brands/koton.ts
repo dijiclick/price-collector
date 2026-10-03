@@ -1,4 +1,4 @@
-import type { ProductRecord, ProductVariants, SizeVariant } from "../types";
+import { cleanGallery, type ProductRecord, type ProductVariants, type SizeVariant } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
 
@@ -27,20 +27,32 @@ const MAX_CATEGORIES = Number(process.env.KOTON_MAX_CATEGORIES ?? CATS.length);
 const MAX_PAGES = Number(process.env.KOTON_MAX_PAGES ?? 170);
 const PAGE_SIZE = 100;
 
-function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | null {
+export function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | null {
   const pk = p?.pk;
   const price = parseFloat(p?.price); // major units as string, e.g. "1799.99"
   if (!pk || !Number.isFinite(price) || price <= 0) return null;
   const retail = parseFloat(p?.retail_price);
-  const img = [...(p.productimage_set ?? [])].sort(
-    (a: any, b: any) => (a.order ?? 0) - (b.order ?? 0),
-  )[0];
+  // `productimage_set` is the PDP gallery of this SKU (one colour); the colour
+  // swatch lives apart in `attributes.swatch`, so it never appears here.
+  // Inactive rows are images the shop has taken down: kept out of the gallery,
+  // and only a last resort for the card image (which predates this filter).
+  const all = [...(p.productimage_set ?? [])]
+    .filter(Boolean)
+    .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+  const shots = all.filter((im: any) => im.status == null || im.status === "active");
+  const img = shots[0] ?? all[0];
   return {
     brand: "koton",
     externalId: String(pk),
     name: p.name ?? "",
     url: p.absolute_url ? `${SITE}${p.absolute_url}` : SITE,
     imageUrl: img?.image ?? null,
+    images: cleanGallery(
+      shots
+        .map((im: any) => im.image)
+        .filter((u: unknown) => typeof u === "string" && !/\.(mp4|mov|webm)(\?|$)/i.test(u)),
+      img?.image ?? null,
+    ),
     price: toMinor(price),
     listPrice: Number.isFinite(retail) && retail > price ? toMinor(retail) : null,
     currency: "TRY",

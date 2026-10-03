@@ -1,4 +1,4 @@
-import type { ProductRecord } from "../types";
+import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
 
@@ -23,6 +23,46 @@ function occ(url: string) {
   return getJson<any>(url, { headers: HEADERS, proxy: true, retries: 1 });
 }
 
+const abs = (url: string) => (url.startsWith("http") ? url : `${SITE}${url}`);
+const FORMATS = ["product", "zoom", "thumbnail"];
+
+/**
+ * SAP Commerce image list: PRIMARY is the lead shot, and the PDP carousel is
+ * the GALLERY entries ordered by `galleryIndex` — each shot published in three
+ * renditions (`zoom` 1200², `product` 365×385, `thumbnail` 195²), every one at
+ * its own hashed path, so a rendition cannot be derived from another. Take ONE
+ * format for the whole gallery — the one imageUrl came from, so images[0] and
+ * the rest match — falling back per shot when that rendition is missing.
+ * Watsons ids are single shades, so every shot is the same variant.
+ *
+ * The SEARCH response (what the crawl reads) carries only the PRIMARY
+ * thumbnail — 40/40 sampled 2026-10-03 — and the GALLERY entries appear only
+ * on `/products/{code}`, one proxied request per product. So from the crawl
+ * this is [imageUrl]; no detail pass is made.
+ */
+export function galleryOf(images: any[] | null | undefined, first: string | null, format?: string): string[] | null {
+  const list: any[] = Array.isArray(images) ? images : [];
+  const order = format ? [format, ...FORMATS.filter((f) => f !== format)] : FORMATS;
+  const shots = new Map<number, any[]>();
+  for (const i of list) {
+    if (i?.imageType !== "GALLERY" || typeof i?.url !== "string") continue;
+    const idx = Number(i.galleryIndex);
+    if (!Number.isFinite(idx)) continue;
+    shots.set(idx, [...(shots.get(idx) ?? []), i]);
+  }
+  const urls = [...shots.keys()]
+    .sort((a, b) => a - b)
+    .map((idx) => {
+      const renditions = shots.get(idx)!;
+      for (const f of order) {
+        const hit = renditions.find((r) => r.format === f);
+        if (hit) return abs(hit.url);
+      }
+      return null;
+    });
+  return cleanGallery(urls, first);
+}
+
 export function mapProduct(p: any, category: string | null): ProductRecord | null {
   const code = String(p.code ?? "");
   const value = p.price?.value;
@@ -32,11 +72,7 @@ export function mapProduct(p: any, category: string | null): ProductRecord | nul
     p.images?.find((i: any) => i.imageType === "PRIMARY" && i.format === "product") ??
     p.images?.find((i: any) => i.imageType === "PRIMARY") ??
     p.images?.[0];
-  const imageUrl = img?.url
-    ? img.url.startsWith("http")
-      ? img.url
-      : `${SITE}${img.url}`
-    : null;
+  const imageUrl = img?.url ? abs(img.url) : null;
 
   // `price.value` is the shelf price. The Watsons Card price arrives in
   // `otherPrices` as priceSource "MEMBER" and used to be taken as the deal —
@@ -50,6 +86,7 @@ export function mapProduct(p: any, category: string | null): ProductRecord | nul
     name: p.name ?? "",
     url: p.url ? `${SITE}${p.url}` : SITE,
     imageUrl,
+    images: galleryOf(p.images, imageUrl, img?.format),
     price: toMinor(value),
     listPrice: null,
     currency: "TRY",

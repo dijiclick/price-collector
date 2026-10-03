@@ -1,4 +1,4 @@
-import type { ProductRecord } from "../types";
+import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
 import { toMinor, blanketPromotionPct, revertBlanketPromotion } from "../normalize";
 import { currencyFor, type CountryCode } from "../../../../lib/countries";
@@ -101,6 +101,34 @@ export function markMatches(mark: string, currency: string): boolean {
 /** The priceType rows H&M uses for a reduced price. Anything else is ignored. */
 const REDUCED = new Set(["redPrice", "yellowPrice"]);
 
+/**
+ * The photo kinds H&M tags its listing images with (2026-10-03, 576 products
+ * across all four roots: only these three occur). An allow-list, so a swatch,
+ * video poster or size chart under a new tag stays out rather than slipping in.
+ */
+const PHOTO_TYPES = new Set(["DescriptiveStillLife", "Lookbook", "DescriptiveDetail"]);
+
+/**
+ * One listing row is ONE article (one colour) — its siblings are separate rows
+ * under `swatches` — so every photo on it is the same colour. Order: the
+ * still-life card image, the model shot, then `images[]` as served (more
+ * lookbook shots, then detail crops). `swatches[].productImage` are the OTHER
+ * colours' card images and are never read.
+ */
+export function hmGallery(p: any): string[] | null {
+  const typed = (info: any, url: unknown) =>
+    typeof url === "string" && (!info?.assetType || PHOTO_TYPES.has(info.assetType)) ? url : null;
+  const first = p?.productImage ?? p?.images?.[0]?.url ?? null;
+  return cleanGallery(
+    [
+      typed(p?.productImageInfo, p?.productImage),
+      typed(p?.modelImageInfo, p?.modelImage),
+      ...(Array.isArray(p?.images) ? p.images : []).map((im: any) => typed(im, im?.url)),
+    ],
+    first,
+  );
+}
+
 export function mapProduct(
   p: any,
   category: string | null,
@@ -141,6 +169,7 @@ export function mapProduct(
     // The API's url is already the market's own PDP (`/en_gb/productpage.…`).
     url: `https://www2.hm.com${p.url ?? `/${localeFor(country)}/productpage.${id}.html`}`,
     imageUrl: p.productImage ?? p.images?.[0]?.url ?? null,
+    images: hmGallery(p),
     price: toMinor(current),
     listPrice: typeof original === "number" && original > current ? toMinor(original) : null,
     currency: currencyFor(country),

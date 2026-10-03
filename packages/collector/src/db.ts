@@ -170,18 +170,21 @@ async function inChunks<T>(items: T[], size: number, fn: (chunk: T[]) => Promise
  */
 export function contentHash(r: ProductRecord): string {
   const h = createHash("sha1");
-  h.update(
-    JSON.stringify([
-      r.name, r.url, r.imageUrl ?? null, r.category ?? null,
-      classifyType(r.category, r.name, r.brand),
-      subtypeForName(classifyType(r.category, r.name, r.brand), r.name),
-      r.groupKey ?? null, r.colorName ?? null,
-      r.price, r.listPrice ?? null, r.inStock,
-      r.variants ?? undefined,
-      r.gender ?? undefined,
-      r.barcodes?.length ? r.barcodes : undefined,
-    ]),
-  );
+  const parts: unknown[] = [
+    r.name, r.url, r.imageUrl ?? null, r.category ?? null,
+    classifyType(r.category, r.name, r.brand),
+    subtypeForName(classifyType(r.category, r.name, r.brand), r.name),
+    r.groupKey ?? null, r.colorName ?? null,
+    r.price, r.listPrice ?? null, r.inStock,
+    r.variants ?? undefined,
+    r.gender ?? undefined,
+    r.barcodes?.length ? r.barcodes : undefined,
+  ];
+  // Appended only when present, unlike the fields above: an absent gallery
+  // keeps every existing fingerprint unchanged, while a product that gains one
+  // hashes differently ONCE — which is exactly what writes the backfill.
+  if (r.images?.length) parts.push(r.images);
+  h.update(JSON.stringify(parts));
   return h.digest("hex");
 }
 
@@ -310,6 +313,24 @@ async function upsertChanged(
       params,
     );
     for (const row of rows) map.set(key(row.brand, row.country, row.external_id), row.id);
+
+    // Galleries go to their own table (see db/schema.sql: product_images), only
+    // for records whose adapter collected one — a record without `images`
+    // leaves an existing gallery alone, like the COALESCEd columns above.
+    const gallery: any[] = [];
+    for (const { rec: r } of chunk) {
+      const id = map.get(key(r.brand, countryOf(r), r.externalId));
+      if (id != null && r.images?.length) gallery.push(id, r.images);
+    }
+    if (gallery.length) {
+      const values = Array.from({ length: gallery.length / 2 }, (_, i) => `($${2 * i + 1}::int, $${2 * i + 2}::text[])`).join(",");
+      await db.query(
+        `INSERT INTO product_images (product_id, urls) VALUES ${values}` +
+          " ON CONFLICT (product_id) DO UPDATE SET urls = EXCLUDED.urls" +
+          " WHERE product_images.urls IS DISTINCT FROM EXCLUDED.urls",
+        gallery,
+      );
+    }
   });
 }
 

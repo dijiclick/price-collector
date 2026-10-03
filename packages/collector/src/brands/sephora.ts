@@ -1,4 +1,4 @@
-import type { ProductRecord } from "../types";
+import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
 
@@ -72,18 +72,85 @@ function mapHit(h: any): ProductRecord | null {
     imgs.find((i) => /principal|media_pr/i.test(i.link ?? ""))?.link ??
     imgs.find((i) => !/swatch/i.test(i.link ?? ""))?.link;
   const img = principal ?? h.image?.link ?? h.image?.disBaseLink ?? null;
+  // Search hits carry no image_groups in practice (only `image`), so this is
+  // usually [img]; attachGalleries() fills the real gallery afterwards.
   return {
     brand: "sephora",
     externalId: id,
     name: h.product_name ?? "",
     url: productUrl(h.product_name ?? "", id),
     imageUrl: img,
+    images: galleryFromGroups(h.image_groups, img),
     price: toMinor(price),
     listPrice: typeof original === "number" && original > price ? toMinor(original) : null,
     currency: "TRY",
     inStock: h.orderable !== false,
     category: typeof h.c_brand === "string" ? h.c_brand : null,
   };
+}
+
+const NOT_A_PHOTO = /swatch|thumbnail|video|\.(mp4|webm|mov)(\?|$)/i;
+const bare = (u: string) => u.split("?")[0];
+
+/**
+ * The PDP gallery from a product's `image_groups`.
+ *
+ * A master carries one `hi-res` group with no variation_attributes — the photos
+ * the master page shows, `media_principal` first, then `media_1..5` — plus, on
+ * some products, regional duplicates (`hi-res-AE`, `hi-res-SA`) of the same
+ * shots under other file names. Use only the group that holds the principal
+ * shot (imageUrl), so every photo is of the same variant and the regional
+ * copies never double the gallery; fall back to a plain `hi-res` group. Swatch
+ * chips and thumbnails are dropped.
+ */
+export function galleryFromGroups(groups: any[] | null | undefined, principal: string | null): string[] | null {
+  const gs: any[] = Array.isArray(groups) ? groups : [];
+  const holds = (g: any) =>
+    principal != null && (g?.images ?? []).some((i: any) => typeof i?.link === "string" && bare(i.link) === bare(principal));
+  const group =
+    gs.find((g) => !g?.variation_attributes && holds(g)) ??
+    gs.find(holds) ??
+    gs.find((g) => g?.view_type === "hi-res" && !g?.variation_attributes);
+  const links = (group?.images ?? [])
+    .map((i: any) => i?.link)
+    .filter((l: unknown): l is string => typeof l === "string" && !NOT_A_PHOTO.test(l));
+  return cleanGallery(links, principal);
+}
+
+/** OCAPI's hard cap on ids in one `/products/(…)` call (25 is a 400). */
+const DETAIL_BATCH = 24;
+
+/**
+ * Search hits only ever carry one `image`, so the gallery needs the product
+ * resource. `/products/(id,…)` takes 24 ids per call, and `select` trims the
+ * answer to the image links (~22 KB per batch instead of ~245 KB) — about 250
+ * small requests for the whole catalogue. Best-effort: a failed batch leaves
+ * those products on [imageUrl], and the upsert keeps any gallery stored before.
+ */
+export async function attachGalleries(recs: ProductRecord[], concurrency: number): Promise<void> {
+  const byId = new Map(recs.map((r) => [r.externalId, r]));
+  const ids = [...byId.keys()];
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += DETAIL_BATCH) batches.push(ids.slice(i, i + DETAIL_BATCH));
+  const select = "(data.(id,image_groups.(view_type,variation_attributes,images.(link))))";
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, batches.length) }, async () => {
+      while (next < batches.length) {
+        const batch = batches[next++];
+        const res = await getJson<any>(
+          withKey(`/products/(${batch.map(encodeURIComponent).join(",")})?expand=images&select=${select}`),
+          { proxy: true },
+        ).catch(() => null);
+        for (const p of res?.data ?? []) {
+          const rec = byId.get(String(p?.id ?? ""));
+          if (!rec) continue;
+          const g = galleryFromGroups(p.image_groups, rec.imageUrl);
+          if (g && g.length > (rec.images?.length ?? 0)) rec.images = g;
+        }
+      }
+    }),
+  );
 }
 
 /** Exposed for sephora.test.ts — the price mapping is where the fake-discount bug lived. */
@@ -140,5 +207,10 @@ export async function listProducts(): Promise<ProductRecord[]> {
       while (next < offsets.length) absorb(await page(offsets[next++]).catch(() => null));
     }),
   );
-  return [...byId.values()];
+  const recs = [...byId.values()];
+  // The gallery pass (attachGalleries) is OFF: ~250 extra requests a run, some
+  // through the paid proxy, and it returns the master product's photos rather
+  // than the shade's. Opt in with SEPHORA_GALLERY=1 once that is worth it.
+  if (process.env.SEPHORA_GALLERY === "1") await attachGalleries(recs, PAGE_CONCURRENCY);
+  return recs;
 }

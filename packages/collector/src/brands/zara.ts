@@ -1,4 +1,4 @@
-import type { ProductRecord, ProductVariants, Availability } from "../types";
+import { cleanGallery, type ProductRecord, type ProductVariants, type Availability } from "../types";
 import { getJson } from "../http";
 import { currencyFor, type CountryCode } from "../../../../lib/countries";
 
@@ -103,6 +103,38 @@ function buyable(availability: any): boolean {
   return a === "in_stock" || a === "low_on_stock";
 }
 
+/** Width Zara's CDN renders `{width}` at for the card and the gallery. */
+const IMG_WIDTH = "750";
+
+/**
+ * One colour's photos from its listing `xmedia`, in Zara's order, `{width}`
+ * filled in. A listing holds ~3 of the page's 6-12 photos.
+ *
+ * Entries carry `type` and `kind`. Kept: `type: "image"` of kind "full" (lead
+ * model shot), "other" (more shots, flat lays) and "plain" (packshots) — all
+ * real photos, checked by eye on 2026-10-03. Dropped: `type: "hls"` (kind
+ * "animation", a `master.m3u8` video) and kind "double" (a ~4000x2250 two-up
+ * desktop composite, `allowedScreens: ["large"]`, with no top-level url).
+ *
+ * Both of those can be FIRST in the list, which is why the card image comes
+ * from here too: taking `xmedia[0]` blindly gave video playlists as card images
+ * and, for "double"-led listings (most of a TRF jeans grid sampled 2026-10-03),
+ * no card image at all.
+ */
+export function zaraGallery(xmedia: any[] | undefined): string[] {
+  const out: string[] = [];
+  for (const x of xmedia ?? []) {
+    const url = typeof x?.url === "string" ? x.url : "";
+    if (!url.startsWith("http")) continue;
+    if (x?.type != null && x.type !== "image") continue;
+    if (x?.kind === "double") continue;
+    if (Array.isArray(x?.allowedScreens) && !x.allowedScreens.includes("small")) continue;
+    if (/\.(m3u8|mp4|webm|mov)(?:$|\?)/i.test(url)) continue;
+    out.push(url.replace("{width}", IMG_WIDTH));
+  }
+  return out;
+}
+
 export function mapComponent(
   c: any,
   gender: Gender = null,
@@ -115,8 +147,8 @@ export function mapComponent(
   const color = c.detail?.colors?.[0] ?? {};
   const price: number | undefined = color.price ?? c.price;
   if (typeof price !== "number" || price <= 0) return null;
-  const xmedia = color.xmedia?.[0];
-  const imageUrl = xmedia?.url ? String(xmedia.url).replace("{width}", "750") : null;
+  const gallery = zaraGallery(color.xmedia);
+  const imageUrl = gallery[0] ?? null;
   return {
     brand: "zara",
     country,
@@ -124,6 +156,7 @@ export function mapComponent(
     name: c.name ?? "",
     url: `${zaraBase(country)}/${c.seo.keyword}-p${c.seo.seoProductId}.html?v1=${c.id}`,
     imageUrl,
+    images: cleanGallery(gallery, imageUrl),
     // Integer minor units in every market (59000 = 590,00 ₺, 2799 = £27.99,
     // 37900 = 379 kr, 5990 = CHF 59.90). The listing carries no currency code,
     // so it comes from the country table.

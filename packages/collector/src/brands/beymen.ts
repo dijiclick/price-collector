@@ -1,4 +1,4 @@
-import type { ProductRecord, SizeVariant } from "../types";
+import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getText } from "../http";
 import { toMinor } from "../normalize";
 
@@ -59,6 +59,25 @@ function extractListing(html: string): any | null {
   }
 }
 
+/** Fill a `{width}`/`{height}` image template at the PDP's 645x860 rendition. */
+const sized = (u: string) => u.replace("{width}", "645").replace("{height}", "860");
+
+/**
+ * The listing's `images[]` IS the product page gallery, in its order (IMG_01,
+ * IMG_02... for fashion; MP_<uuid>_1, _2... for marketplace sellers). A Beymen
+ * product is one colour (`variant`), so every entry is that colour. Only still
+ * images are kept.
+ */
+export function beymenGallery(images: unknown, first: string | null): string[] | null {
+  const list = Array.isArray(images) ? images : [];
+  return cleanGallery(
+    list
+      .filter((u): u is string => typeof u === "string" && /\.(jpe?g|png|webp|avif)(\?|$)/i.test(u))
+      .map(sized),
+    first,
+  );
+}
+
 export function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | null {
   const id = p?.productId != null ? String(p.productId) : "";
   const price = Number(p?.actualPrice);
@@ -67,6 +86,7 @@ export function mapProduct(p: any, gender: ProductRecord["gender"]): ProductReco
   if (!p?.hasDiscount || !(Number.isFinite(orig) && orig > price)) return null;
   // Image urls are templates with {width}/{height} placeholders.
   const img: string | undefined = p?.images?.[0];
+  const imageUrl = img ? sized(img) : null;
   const sizes: SizeVariant[] = (p?.sizes ?? [])
     .map((s: any) => ({
       label: String(s?.sizeName ?? "").trim(),
@@ -78,7 +98,8 @@ export function mapProduct(p: any, gender: ProductRecord["gender"]): ProductReco
     externalId: id,
     name: p?.displayName ?? "",
     url: p?.productUrl ? `${SITE}${p.productUrl}` : SITE,
-    imageUrl: img ? img.replace("{width}", "645").replace("{height}", "860") : null,
+    imageUrl,
+    images: beymenGallery(p?.images, imageUrl),
     price: toMinor(price),
     listPrice: toMinor(orig),
     currency: "TRY",

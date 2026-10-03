@@ -1,4 +1,4 @@
-import type { ProductRecord, ProductVariants, SizeVariant, Availability } from "../types";
+import { cleanGallery, type ProductRecord, type ProductVariants, type SizeVariant, type Availability } from "../types";
 import { getJson } from "../http";
 import { currencyFor, type CountryCode } from "../../../../lib/countries";
 
@@ -374,6 +374,146 @@ function collectUrls(xmedia: any[]): string[] {
   return urls;
 }
 
+/* ------------------------------------------------------------------ */
+/* Photo gallery                                                       */
+/* ------------------------------------------------------------------ */
+
+const mediaUrl = (m: any): string | null => {
+  const u = m?.url ?? m?.extraInfo?.deliveryUrl;
+  return typeof u === "string" && u.startsWith("http") ? u : null;
+};
+
+/**
+ * The view part of an asset's file name — the segment after its LAST dash,
+ * lower-cased: `02830700800-a1t.jpg` → "a1t", `07670351700-A6M.jpg` → "a6m",
+ * `00928741400-13-p.jpg` → "p". Wider than viewCode (which only reads
+ * letters+digits) because Bershka and Pull&Bear suffix their views. "" when
+ * the file has no dash (Pull&Bear's `COLOR_700.jpg` swatch).
+ */
+function viewToken(url: string): string {
+  const stem = (url.split("?")[0].split("/").pop() ?? "").replace(/\.[a-z0-9]+$/i, "");
+  const i = stem.lastIndexOf("-");
+  return i < 0 ? "" : stem.slice(i + 1).toLowerCase();
+}
+
+/** Videos ride in the same lists: `format` 4 with a `.m3u8`/`.mp4` url. Format 1 is a still. */
+function isStill(m: any, url: string): boolean {
+  if (m?.format != null && Number(m.format) !== 1) return false;
+  return !/\.(m3u8|mp4|webm|mov)(?:$|\?)/i.test(url);
+}
+
+/**
+ * Views that are never a photo of the garment, even inside the brand's own PDP
+ * gallery: the "-r" cutout/swatch and "-i" spec cards, plus Oysho's "-a13"/"-a14"
+ * — the dark "Product details / Technical features" panel, which Oysho puts
+ * SECOND in its gallery (206 of 287 colours sampled 2026-10-03). Matched on the
+ * bare token only: Stradivarius leads its gallery with a real "-a15" photo and
+ * Pull&Bear's "-a13m" is a photo, so this is deliberately not "a13 and up".
+ */
+const NOT_A_PHOTO = /^(r\d*|i\d*|a1[34])$/;
+
+/** Sort key for the no-locations fallback: a1 < a2 < … < a10, letters first. */
+function viewOrder(url: string): [string, number] {
+  const m = viewToken(url).match(/^([a-z]*)(\d*)/);
+  return [m?.[1] ?? "", m?.[2] ? Number(m[2]) : 0];
+}
+
+/**
+ * The colour group a gallery is built from: `colorId`'s own xmedia when it has
+ * any, otherwise the colour of the image pickImage chose — so a brand that keeps
+ * one row per product (and lets pickImage rank across every colour) still gets a
+ * gallery of ONE colour, the one on its card.
+ */
+function galleryGroup(detail: any, colorId: string | number | null | undefined, first: string): any[] {
+  const all: any[] = detail?.xmedia ?? [];
+  if (colorId != null) {
+    const own = all.filter((x) => String(x?.colorCode) === String(colorId));
+    if (collectUrls(own).length > 0) return own;
+  }
+  const home = all.find((x) => collectUrls([x]).includes(first));
+  if (!home) return [];
+  return all.filter((x) => String(x?.colorCode) === String(home.colorCode));
+}
+
+/**
+ * The product page's photo gallery for one colour, `pickImage(detail, colorId)`
+ * first. Pass the result through `cleanGallery`.
+ *
+ * Source of truth is the brand's own PDP gallery: each colour's
+ * `xmediaLocations[set].locations` maps a screen slot to an ordered list of
+ * media ids, and slot 1 is the product page carousel — verified 2026-10-03 on
+ * every colour sampled across Massimo Dutti, Stradivarius, Pull&Bear, Bershka
+ * and Oysho (~950). The brand already leaves swatches, cutouts and size
+ * placeholders out of it; what it does include and we drop is videos and
+ * NOT_A_PHOTO. Set 0 is the default look (a colour can carry dozens of sets).
+ *
+ * The view code means different things per brand (Massimo Dutti's real photos
+ * are "-o1".."-o16", which imageScore ranks as infographics), so ranking alone
+ * cannot pick a gallery. It is only the fallback for a payload with no
+ * locations: every still of the colour, minus imageScore 8/9, one per view,
+ * ordered by (imageScore, view order).
+ */
+export function pickImages(detail: any, colorId?: string | number | null): string[] {
+  const first = pickImage(detail, colorId);
+  if (!first) return [];
+  const group = galleryGroup(detail, colorId, first);
+
+  const out: string[] = [first];
+  const seenViews = new Set<string>([viewToken(first)].filter(Boolean));
+  const seenUrls = new Set<string>([first.split("?")[0]]);
+  const add = (url: string) => {
+    const view = viewToken(url);
+    const key = url.split("?")[0];
+    if (seenUrls.has(key) || (view && seenViews.has(view))) return; // one url per view
+    seenUrls.add(key);
+    if (view) seenViews.add(view);
+    out.push(url);
+  };
+
+  const byId = new Map<string, any>();
+  for (const x of group) {
+    for (const item of x?.xmediaItems ?? []) {
+      for (const m of item?.medias ?? []) if (m?.idMedia != null) byId.set(String(m.idMedia), m);
+    }
+  }
+  let fromLocations = false;
+  for (const x of group) {
+    const locs: any[] = x?.xmediaLocations ?? [];
+    const sets = locs.map((l) => Number(l?.set)).filter(Number.isFinite);
+    if (sets.length === 0) continue;
+    const set = sets.includes(0) ? 0 : Math.min(...sets);
+    const pdp = locs.find((l) => Number(l?.set) === set)?.locations?.find((l: any) => Number(l?.location) === 1);
+    for (const id of pdp?.mediaLocations ?? []) {
+      fromLocations = true;
+      const m = byId.get(String(id));
+      const url = mediaUrl(m);
+      if (url && isStill(m, url) && !NOT_A_PHOTO.test(viewToken(url))) add(url);
+    }
+  }
+  if (fromLocations) return out;
+
+  const stills: string[] = [];
+  for (const x of group) {
+    for (const item of x?.xmediaItems ?? []) {
+      for (const m of item?.medias ?? []) {
+        const url = mediaUrl(m);
+        if (url && isStill(m, url) && imageScore(url) < 8 && !NOT_A_PHOTO.test(viewToken(url))) stills.push(url);
+      }
+    }
+  }
+  stills
+    .map((url, i) => ({ url, i, score: imageScore(url), order: viewOrder(url) }))
+    .sort(
+      (a, b) =>
+        a.score - b.score ||
+        a.order[0].localeCompare(b.order[0]) ||
+        a.order[1] - b.order[1] ||
+        a.i - b.i,
+    )
+    .forEach(({ url }) => add(url));
+  return out;
+}
+
 /**
  * Stock state of a single size.
  *
@@ -498,13 +638,15 @@ export function mapProduct(
     ? String(detail.displayReference).replace(/\D/g, "")
     : String(p.id);
 
+  const imageUrl = pickImage(detail);
   return {
     brand: site.brand,
     country: m.country,
     externalId,
     name,
     url,
-    imageUrl: pickImage(detail),
+    imageUrl,
+    images: cleanGallery(pickImages(detail), imageUrl),
     price,
     listPrice,
     currency: m.currency,
