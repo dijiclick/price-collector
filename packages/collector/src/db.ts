@@ -88,15 +88,34 @@ export async function connect(): Promise<Db> {
   };
 }
 
+/**
+ * Apply db/schema.sql, every run.
+ *
+ * Each statement runs under a 3s lock_timeout. `ALTER TABLE … IF NOT EXISTS`
+ * takes an ACCESS EXCLUSIVE lock BEFORE it checks whether there is anything to
+ * do, so a no-op ALTER queued behind one long read stalls every query on that
+ * table behind it — the API included. 2026-10-03: an 11-minute stale-recheck
+ * SELECT plus four parallel collector jobs migrating at startup held the feed
+ * at 60s timeouts until the queries were cancelled by hand. The schema is
+ * almost always already in place, so a statement that cannot get its lock is
+ * skipped with a warning rather than waited on; a genuinely new column is
+ * applied by hand on production first anyway.
+ */
 export async function migrate(db: Db): Promise<void> {
   const sql = readFileSync(schemaPath, "utf8");
   for (const stmt of sql.split(/;\s*\n/).map((s) => s.trim()).filter(Boolean)) {
+    const guarded = `DO $migrate$ BEGIN PERFORM set_config('lock_timeout', '3s', true); EXECUTE $stmt$${stmt}$stmt$; END $migrate$`;
     try {
-      await db.query(stmt);
+      await db.query(/^(--[^\n]*\n\s*)*(ALTER|CREATE)\b/i.test(stmt) ? guarded : stmt);
     } catch (err) {
-      // schema uses IF NOT EXISTS; ignore benign "already exists" races
       const msg = err instanceof Error ? err.message : String(err);
-      if (!/already exists/i.test(msg)) throw err;
+      // schema uses IF NOT EXISTS; ignore benign "already exists" races
+      if (/already exists/i.test(msg)) continue;
+      if (/lock timeout/i.test(msg)) {
+        console.warn(`migrate: skipped (table busy): ${stmt.replace(/--[^\n]*\n/g, "").trim().slice(0, 90)}`);
+        continue;
+      }
+      throw err;
     }
   }
 }
