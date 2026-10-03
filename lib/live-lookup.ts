@@ -477,7 +477,7 @@ async function pentiByBarcode(barcode: string): Promise<LiveProduct | null> {
     listPrice: typeof prev === "number" && prev > value ? toMinor(prev) : null,
     inStock: p.stock?.stockLevelStatus !== "outOfStock",
     category: p.categoryName ?? null,
-    type: classifyType(name, p.categoryName ?? null),
+    type: classifyType(p.categoryName ?? null, name, "penti"),
     gender: null,
     colorName: null,
   };
@@ -718,7 +718,7 @@ async function boynerUrl(url: string): Promise<LiveProduct | null> {
     inStock,
     // Same as the collector: the label goes in category for multi-brand shops.
     category: r.Brand?.Name ?? null,
-    type: classifyType(r.CategoryName ?? null, String(r.DisplayName)),
+    type: classifyType(r.CategoryName ?? null, String(r.DisplayName), "boyner"),
     gender,
     colorName: selected?.Title ?? null,
   };

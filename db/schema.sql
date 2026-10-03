@@ -31,6 +31,12 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS content_hash TEXT;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS product_subtype TEXT;
 CREATE INDEX IF NOT EXISTS products_subtype_idx ON products(product_subtype);
 
+-- Colour families the product is sold in (lib/colors.ts): the feed's colour
+-- filter matches any-of. Derived at write time from the colour field, the
+-- colour list in variants, and — failing both — the product name.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS color_families TEXT[];
+CREATE INDEX IF NOT EXISTS products_color_families_idx ON products USING GIN (color_families);
+
 -- Barcodes printed on the physical tags (EAN-13/UPC). An ARRAY because brands
 -- issue one per size — a shopper scans the tag of the size in their hand, not a
 -- product-level code. Null where the brand publishes none; those resolve by

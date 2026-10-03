@@ -82,8 +82,15 @@ export const PRODUCT_TYPES: ProductType[] = [
   //
   // Placed after cilt-bakim deliberately: "vücut kremi" is skincare's to claim
   // first, and this only picks up what nothing else wanted.
-  { key: "kisisel-bakim", label: "Kişisel Bakım", re: /hijyenik ped|\bped\b|tampon|molped|orkid|kotex|panty ?liner|islak mendil|\bmendil\b|dis macunu|dis fircasi|gargara|agiz bakim|mouthwash|toothpaste|toothbrush|dis ipi|vucut losyon|dus jeli|shower gel|\bbanyo\b|\bsabun|\bsoap\b|body lotion|body wash|tiras|shave|jilet|razor|epilas|\bagda\b|yara band|band-?aid|\bpamuk\b|kulak cubu/i },
-  { key: "ayakkabi",   label: "Ayakkabı",      re: /ayakkabi|\bshoe|sneaker|\bbot\b|\bboot|topuklu|\bheel|sandalet|sandal|terlik|slipper|espadril|babet|\bflat\b|cizme|loafer|makosen/i },
+  { key: "kisisel-bakim", label: "Kişisel Bakım", re: /hijyenik ped|\bped\b|tampon|molped|orkid|kotex|panty ?liner|islak mendil|\bmendil\b|dis macunu|dis fircasi|gargara|agiz bakim|mouthwash|toothpaste|toothbrush|dis ipi|vucut losyon|dus jeli|shower gel|\bbanyo\b|\bsabun|\bsoap\b|body lotion|body wash|tiras|shave|jilet|razor|epilas|\bagda\b|yara band|band-?aid|disk pamuk|pamuk ped|makyaj pamu|\bpamuk\b(?=\s*(?:\d|$|top|cubu))|kulak cubu/i },
+  // A sock is a sock whatever shoe it is FOR: "Sneaker Çorap", "Babet Çorap",
+  // "Bot Çorabı", "Kayak Çorabı" all landed in Ayakkabı (or nowhere) because the
+  // shoe word came first in this table. Turkish softens çorap to çorab- before a
+  // vowel, so both stems. "Çoraplı tayt bot" — a sock-boot — is a BOOT: the -lı
+  // adjective is excluded. Owner report 2026-10-02; 138 rows on the live feed.
+  { key: "ic-giyim",   label: "İç Giyim",      re: /\bcora[pb](?!li)|\bsocks?\b/i },
+  // `\bboot` must not take "bootcut": Bershka's bootcut JEANS were all shoes.
+  { key: "ayakkabi",   label: "Ayakkabı",      re: /ayakkabi|\bshoe|sneaker|\bbot\b|\bboot(?![- ]?cut)|topuklu|\bheel|sandalet|sandal|terlik|slipper|espadril|babet|\bflat\b|cizme|loafer|makosen/i },
   // `\bbag\b` used to be here on its own, and it quietly claimed garments:
   // folding turns the Turkish "bağ" (tie, strap) into "bag", so every "Bağ
   // detaylı gömlek" — a tie-detail SHIRT — was filed as a handbag. Mango names
@@ -93,7 +100,7 @@ export const PRODUCT_TYPES: ProductType[] = [
   { key: "mayo",       label: "Mayo & Plaj",   re: /\bmayo\b|bikini|plaj|beach|swim/i },
   // `\bklt\b` is Penti's own abbreviation for külot ("PRETTY LOLIPOP KLT., 1,
   // MERCAN"); without it a chunk of their catalogue carried no type at all.
-  { key: "ic-giyim",   label: "İç Giyim",      re: /ic giyim|ic camasir|underwear|lingerie|sutyen|\bbra\b|bralet|bralette|kulot|\bklt\b|panty|panties|brief|thong|slip\b|corap|\bsock|hosiery|tights|pijama|pajama|pyjama|gecelik|nightgown|homewear|loungewear|sabahlik|jartiyer|garter|legging|soket|\bskt\b|\bsne\b|\bsn\b|\blace\b|\bmesh\b|\b\dl[iu]?\b|\bsut\b|push ?up|highwaist|high waist|\b\d{2}[a-f]\b|\b\d\d-\d\d\b/i },
+  { key: "ic-giyim",   label: "İç Giyim",      re: /ic giyim|ic camasir|underwear|lingerie|sutyen|\bbra\b|bralet|bralette|kulot|\bklt\b|panty|panties|brief|thong|slip\b|cora[pb]|\bsock|hosiery|tights|pijama|pajama|pyjama|gecelik|nightgown|homewear|loungewear|sabahlik|jartiyer|garter|legging|soket|\bskt\b|\bsne\b|\bsn\b|\blace\b|\bmesh\b|\b\dl[iu]?\b|\bsut\b|push ?up|highwaist|high waist|\b\d{2}[a-f]\b|\b\d\d-\d\d\b/i },
   { key: "elbise",     label: "Elbise",        re: /elbise|dress|tulum|jumpsuit|salopet|romper/i },
   // `manto` and `pardosu` are Boyner's words for a coat — both were missing, so
   // "Kruvaze Manto" and "Oversize Pardösü" fell through to no type.
@@ -105,17 +112,54 @@ export const PRODUCT_TYPES: ProductType[] = [
   // NOT work for triko — tried, it moved 71 and broke 55, because "Moschino
   // Jeans" is a brand name that hits the Alt regex.)
   { key: "ust",        label: "Üst Giyim",     re: /tisort|t-?shirt|tshirt|\btee\b|gomlek|\bshirt|bluz|blouse|\btop\b|\bust\b|atlet|\btank|\bbody\b|bodysuit|\bcrop|halter|bustier|bustiyer|korse|corset/i },
-  { key: "alt",        label: "Alt Giyim",     re: /pantolon|trouser|\bpants\b|\bpant\b|\bjean|denim|\bkot\b|etek|\bskirt|\bsort|\bshort|bermuda|\btayt\b|jogger|palazzo|chino|esofman|kapri|capri|biker|\bpnt\b/i },
+  { key: "alt",        label: "Alt Giyim",     re: /pantolon|trouser|\bpants\b|\bpant\b|\bjean|denim|\bkot\b|etek|\bskirt|\bsort|\bshort(?!\s*-?\s*sleeve)|bermuda|\btayt\b|jogger|palazzo|chino|esofman|kapri|capri|biker|\bpnt\b/i },
   { key: "aksesuar",   label: "Aksesuar",      re: /atki|scarf|sapka|\bhat\b|\bcap\b|\bbere\b|beanie|kemer|\bbelt|taki|jewel|kolye|necklace|kupe|earring|yuzuk|\bring\b|bileklik|bilezik|bracelet|charm|gozluk|sunglass|glasses|eldiven|glove|\bsaat\b|watch|sac band|headband|\btoka\b|fular|\bsal\b|shawl|bros|brooch|piercing|anahtarlik|keychain/i },
   // Weak makeup words, LAST on purpose — see the strong makyaj rule above.
   { key: "makyaj",     label: "Makyaj",        re: /blush|pudra|powder|highlight|primer|contour|sponge|\bnails?\b/i },
 ];
 
 /** Classify a product into a canonical type key, or null if nothing matches. */
-export function classifyType(category: string | null | undefined, name: string): string | null {
-  const text = fold(`${category ?? ""} ${name ?? ""}`);
+/**
+ * Brands whose `category` is a DESIGNER LABEL, not a product category: Beymen and
+ * Boyner put "Karl Lagerfeld Jeans", "Tommy Jeans", "Billieblush" there. Trusting
+ * it would file T-shirts under Alt (jeans) and kids' tees under Makyaj (blush).
+ */
+const LABEL_NOT_CATEGORY = new Set(["beymen", "boyner"]);
+
+/**
+ * Brand dialects: words a brand uses differently from everyone else.
+ * Penti's "BOT" is a bikini BOTTOM ("HIPKINI BOT", "HIGH LEG BOT") — read as the
+ * Turkish "bot" (boot), all 60 of them sat in Ayakkabı.
+ */
+function dialect(brand: string | null | undefined, name: string): string {
+  if (brand === "penti") return name.replace(/\bBOT\b/gi, "bikini alt");
+  return name;
+}
+
+function firstType(text: string): string | null {
   for (const t of PRODUCT_TYPES) if (t.re.test(text)) return t.key;
   return null;
+}
+
+/**
+ * The product's type. Order of authority (owner report 2026-10-02 — socks and
+ * bikini bottoms on the Shoes shelf):
+ *   1. The brand's own category, when it names a type — the retailer already
+ *      decided ("Çorap", "Pantolon", "Bikini"), and a name word must not
+ *      overrule it ("Sneaker Çorap" filed under Çorap is a sock).
+ *   2. Otherwise category + name together, first rule wins (the table order
+ *      encodes the precedence fixes documented above).
+ * Measured over the 128k live TR rows before shipping; see productTypes.test.ts.
+ */
+export function classifyType(
+  category: string | null | undefined,
+  name: string,
+  brand?: string | null,
+): string | null {
+  const cat = brand && LABEL_NOT_CATEGORY.has(brand) ? "" : fold(category ?? "");
+  const byCategory = cat.trim() ? firstType(cat) : null;
+  if (byCategory) return byCategory;
+  return firstType(fold(`${category ?? ""} ${dialect(brand, name ?? "")}`));
 }
 
 /**
@@ -360,7 +404,7 @@ export const PRODUCT_SUBTYPES: Record<string, ProductSubtype[]> = {
   ],
   "ic-giyim": [
     { key: "pijama", label: "Pijama & Gecelik", re: /pijama|gecelik|sabahlik|uyku|pyjama|nightwear|bornoz/ },
-    { key: "corap", label: "Çorap", re: /corap|\bsock|kulotlu corap|patik|\bskt\b|soket/ },
+    { key: "corap", label: "Çorap", re: /cora[pb]|\bsock|kulotlu corap|patik|\bskt\b|soket/ },
     { key: "sutyen", label: "Sütyen", re: /sutyen|\bbra\b|bralet|bralette|bustiyer|push up|triangle|balconette/ },
     { key: "kulot", label: "Külot & Boxer", re: /kulot|\bslip\b|boxer|thong|string|brief|tanga|\bklt\b|brazilian|highleg/ },
     { key: "atlet", label: "Atlet & Body", re: /atlet|\bbody\b|fanila|singlet/ },

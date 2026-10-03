@@ -6,6 +6,7 @@ import type { ProductRecord, PriceEvent, Snap, ProductVariants } from "./types";
 import { classifyType } from "./productType";
 import { cleanListPrice } from "./normalize";
 import { subtypeForName } from "../../../lib/productTypes";
+import { colorFamilies } from "../../../lib/colors";
 import { DEFAULT_COUNTRY } from "../../../lib/countries";
 
 /** Minimal row-returning query interface both Neon (postgres.js) and PGlite satisfy. */
@@ -153,8 +154,8 @@ export function contentHash(r: ProductRecord): string {
   h.update(
     JSON.stringify([
       r.name, r.url, r.imageUrl ?? null, r.category ?? null,
-      classifyType(r.category, r.name),
-      subtypeForName(classifyType(r.category, r.name), r.name),
+      classifyType(r.category, r.name, r.brand),
+      subtypeForName(classifyType(r.category, r.name, r.brand), r.name),
       r.groupKey ?? null, r.colorName ?? null,
       r.price, r.listPrice ?? null, r.inStock,
       r.variants ?? undefined,
@@ -250,15 +251,21 @@ async function upsertChanged(
       // Pass the object as-is: postgres.js serialises it to JSONB. Stringifying
       // here would double-encode it (stored as a JSON *string*, not an object).
       params.push(r.brand, countryOf(r), r.externalId, r.name, r.url, r.imageUrl, r.category ?? null,
-        classifyType(r.category, r.name), subtypeForName(classifyType(r.category, r.name), r.name),
+        classifyType(r.category, r.name, r.brand), subtypeForName(classifyType(r.category, r.name, r.brand), r.name),
         r.variants ?? null, r.groupKey ?? null, r.colorName ?? null,
         r.gender ?? null, r.barcodes?.length ? r.barcodes : null,
-        r.price, r.listPrice, r.currency, r.inStock, hash);
+        r.price, r.listPrice, r.currency, r.inStock, hash,
+        // null when nothing names a colour, so the COALESCE below keeps what an
+        // earlier run with variants found (Zara refetches sizes in rotation).
+        (() => {
+          const f = colorFamilies(r.colorName, r.variants?.colors, r.name, classifyType(r.category, r.name, r.brand));
+          return f.length ? f : null;
+        })());
     }
     const rows = await db.query<{ id: number; brand: string; country: string; external_id: string }>(
       "INSERT INTO products (brand, country, external_id, name, url, image_url, category, product_type, product_subtype, variants, group_key, color_name, gender, barcodes," +
-        " current_price, current_list_price, currency, in_stock, content_hash) VALUES " +
-        placeholders(chunk.length, 19) +
+        " current_price, current_list_price, currency, in_stock, content_hash, color_families) VALUES " +
+        placeholders(chunk.length, 20) +
         // The three-column unique INDEX from schema phase A. It must exist in
         // production before this ships, or every write errors "no unique or
         // exclusion constraint matching the ON CONFLICT specification".
@@ -276,6 +283,7 @@ async function upsertChanged(
         // erase one we already have.
         " barcodes=COALESCE(EXCLUDED.barcodes, products.barcodes)," +
         " group_key=EXCLUDED.group_key, color_name=EXCLUDED.color_name," +
+        " color_families=COALESCE(EXCLUDED.color_families, products.color_families)," +
         " current_price=EXCLUDED.current_price," +
         " current_list_price=EXCLUDED.current_list_price, in_stock=EXCLUDED.in_stock," +
         " content_hash=EXCLUDED.content_hash," +
