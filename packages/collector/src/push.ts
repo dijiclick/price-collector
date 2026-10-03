@@ -49,6 +49,8 @@ export interface DevicePrefs {
    */
   quietFrom?: string | null;
   quietTo?: string | null;
+  /** Round-up and sale alerts (push-news.ts). Absent = on. */
+  news?: boolean;
 }
 
 /**
@@ -240,7 +242,8 @@ export function devicePrefs(raw: unknown): DevicePrefs | null {
   const { drop, target, restock, minPct, quietFrom, quietTo } = v as Record<string, unknown>;
   if (typeof drop !== "boolean" || typeof target !== "boolean" || typeof restock !== "boolean") return null;
   if (typeof minPct !== "number" || !Number.isFinite(minPct)) return null;
-  const base: DevicePrefs = { drop, target, restock, minPct };
+  const { news } = v as Record<string, unknown>;
+  const base: DevicePrefs = typeof news === "boolean" ? { drop, target, restock, minPct, news } : { drop, target, restock, minPct };
   // Only a complete pair counts as a choice. Absent, or half a window (which
   // no writer produces), falls back to the default rather than guessing.
   if (quietFrom === undefined || quietTo === undefined) return base;
@@ -420,11 +423,31 @@ export async function pushNotify(db: Db, opts: PushNotifyOpts = {}): Promise<num
      FROM events e
      JOIN push_watch w ON w.product_id = e.product_id
        AND ( (e.type = 'price_drop' AND (w.target IS NULL OR e.new_price <= w.target))
-          OR (e.type = 'back_in_stock' AND e.size IS NOT NULL AND w.size = e.size) )
+          OR (e.type = 'back_in_stock' AND e.size IS NOT NULL AND w.size = e.size)
+          -- Product-level restock → the watchers who never picked a size
+          -- (2026-10-03: 82% of tracked items). Only a real one: measured on
+          -- production, 250 such events on 31 tracked products in 30 days,
+          -- median outage 6.3h (scrape flicker), 30 after an outage of 24h+.
+          OR (e.type = 'back_in_stock' AND e.size IS NULL AND w.size IS NULL
+              -- fresh: months of these sit unmarked from before this existed
+              AND e.ts > $1::timestamptz - interval '24 hours'
+              -- out for at least a day: the last sold_out before it is 24h+ older
+              AND EXISTS (SELECT 1 FROM events so WHERE so.product_id = e.product_id AND so.type = 'sold_out'
+                          AND so.ts <= e.ts - interval '24 hours'
+                          AND NOT EXISTS (SELECT 1 FROM events b2 WHERE b2.product_id = e.product_id
+                                          AND b2.type = 'back_in_stock' AND b2.size IS NULL
+                                          AND b2.ts > so.ts AND b2.ts < e.ts))
+              -- and at most one a week per product (by event time, not by the
+              -- mark — every product-level event gets marked below)
+              AND NOT EXISTS (SELECT 1 FROM events c WHERE c.product_id = e.product_id AND c.type = 'back_in_stock'
+                              AND c.size IS NULL AND c.id <> e.id
+                              AND c.ts < e.ts AND c.ts > e.ts - interval '7 days'
+                              AND c.push_notified_at IS NOT NULL)) )
      JOIN products p ON p.id = e.product_id
      LEFT JOIN push_devices d ON d.token = w.token
      WHERE e.type IN ('price_drop','back_in_stock') AND e.push_notified_at IS NULL
        AND NOT EXISTS (SELECT 1 FROM push_held h WHERE h.event_id = e.id AND h.token = w.token)`,
+    [now.toISOString()],
   );
 
   const failedEventIds = new Set<number>();
@@ -458,13 +481,18 @@ export async function pushNotify(db: Db, opts: PushNotifyOpts = {}): Promise<num
   }
   // Mark everything pending except transient failures — including events with no
   // watchers at all, so the backlog stays clean, and events held for a sleeping
-  // device (push_held owns those pairs now). Size back_in_stock events are
-  // marked too; product-level (size null) back_in_stock is left alone (unnotified).
+  // device (push_held owns those pairs now). Every back_in_stock is marked —
+  // product-level ones included since 2026-10-03, matched or not, so a flicker
+  // is looked at exactly once. Only recent ones (the window the query reads):
+  // the old unmarked backlog stays as it is rather than being stamped "now",
+  // which would read as sends to the weekly cooldown.
   await db.query(
     `UPDATE events SET push_notified_at = now()
      WHERE push_notified_at IS NULL AND NOT (id = ANY($1))
-       AND (type = 'price_drop' OR (type = 'back_in_stock' AND size IS NOT NULL))`,
-    [[...failedEventIds]],
+       AND (type = 'price_drop'
+            OR (type = 'back_in_stock' AND size IS NOT NULL)
+            OR (type = 'back_in_stock' AND size IS NULL AND ts > $2::timestamptz - interval '24 hours'))`,
+    [[...failedEventIds], now.toISOString()],
   );
 
   if (rows.length || held.length) {

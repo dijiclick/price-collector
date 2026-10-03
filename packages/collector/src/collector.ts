@@ -344,6 +344,16 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
   } catch (err) {
     console.error("push reminders failed:", err instanceof Error ? err.message : err);
   }
+  // News (round-up, sale start, calendar) — capped and evening-only; never
+  // allowed to fail a collection run.
+  try {
+    const { detectBrandSales } = await import("./brand-sales");
+    await detectBrandSales(db);
+    const { pushNews } = await import("./push-news");
+    await pushNews(db);
+  } catch (err) {
+    console.error("push news failed:", err instanceof Error ? err.message : err);
+  }
   await db.close();
   failOnBlocked(results, label);
 }

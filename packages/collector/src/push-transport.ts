@@ -60,9 +60,22 @@ export function signApnsJwt(opts: {
 export interface PushContent {
   title: string;
   body: string;
-  productId: number;
-  kind: "drop" | "target" | "restock";
+  /** Absent on news pushes (round-up, sale start, calendar): they open a screen, not a product. */
+  productId?: number;
+  kind: "drop" | "target" | "restock" | "news";
   pct?: number;
+  /** Where a news push lands in the app (expo-router path). */
+  href?: string;
+}
+
+/** The data both transports carry, without undefined keys. */
+function pushData(c: PushContent): Record<string, string | number> {
+  return {
+    ...(c.productId != null ? { productId: c.productId } : {}),
+    kind: c.kind,
+    ...(c.pct != null ? { pct: c.pct } : {}),
+    ...(c.href ? { href: c.href } : {}),
+  };
 }
 
 /**
@@ -74,12 +87,12 @@ export interface PushContent {
  * foreground filter saw no kind or pct. They stay top-level too, harmlessly.
  */
 export function buildApnsPayload(c: PushContent): Record<string, unknown> {
-  const data = { productId: c.productId, kind: c.kind, ...(c.pct != null ? { pct: c.pct } : {}) };
+  const data = pushData(c);
   return {
     aps: {
       alert: { title: c.title, body: c.body },
       sound: "default",
-      "thread-id": String(c.productId),
+      "thread-id": c.productId != null ? String(c.productId) : "news",
     },
     ...data,
     body: data,
@@ -95,11 +108,7 @@ export function buildFcmMessage(token: string, c: PushContent): Record<string, u
     message: {
       token,
       notification: { title: c.title, body: c.body },
-      data: {
-        productId: String(c.productId),
-        kind: c.kind,
-        ...(c.pct != null ? { pct: String(c.pct) } : {}),
-      },
+      data: Object.fromEntries(Object.entries(pushData(c)).map(([k, v]) => [k, String(v)])),
       android: { priority: "high", notification: { channel_id: "price-drops" } },
     },
   };

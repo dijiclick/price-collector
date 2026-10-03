@@ -375,3 +375,51 @@ CREATE INDEX IF NOT EXISTS rate_limits_window_idx ON rate_limits (window_start);
 
 -- Day-3 reminder (packages/collector/src/push-reminder.ts): set once the one reminder went out.
 ALTER TABLE push_devices ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ;
+
+-- News pushes (packages/collector/src/push-news.ts, 2026-10-03): the evening
+-- deal round-up, brand sale starts and dated sale reminders. One row per
+-- (device, message); the latest sent_at per device is the 72h budget.
+CREATE TABLE IF NOT EXISTS push_news (
+  token   TEXT NOT NULL,
+  key     TEXT NOT NULL,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (token, key)
+);
+CREATE INDEX IF NOT EXISTS push_news_token_sent_idx ON push_news (token, sent_at DESC);
+
+
+-- A brand's sale started (packages/collector/src/brand-sales.ts, 2026-10-03):
+-- one row per brand and country per 21 days; push-news.ts announces it to the
+-- devices that track that brand.
+CREATE TABLE IF NOT EXISTS brand_sales (
+  brand      TEXT NOT NULL,
+  country    TEXT NOT NULL,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  drops      INT NOT NULL,
+  PRIMARY KEY (brand, country, started_at)
+);
+
+-- Anonymous app counts (app/api/ping, lib/ping.ts, 2026-10-03): installs,
+-- opens and push opens per day, platform and version. No identifier, no IP —
+-- a tally, so the people who decline analytics are counted too.
+CREATE TABLE IF NOT EXISTS app_pings (
+  day      DATE NOT NULL,
+  platform TEXT NOT NULL,
+  event    TEXT NOT NULL,
+  v        TEXT NOT NULL DEFAULT '',
+  kind     TEXT NOT NULL DEFAULT '',
+  n        INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, platform, event, v, kind)
+);
+
+
+-- ---------------------------------------------------------------------------
+-- Events by product (2026-10-03). The product-level restock rule (push.ts)
+-- looks up a product's sold_out / back_in_stock history per candidate event,
+-- and production's events (~3.9M rows) had no index on product_id at all — each
+-- lookup would have been a full scan.
+--
+-- Built on production by hand with CREATE INDEX CONCURRENTLY, so this line is
+-- a no-op there. Never let a plain CREATE INDEX on events be the first to build
+-- it on a live database: it blocks the collector's writes for the whole build.
+CREATE INDEX IF NOT EXISTS idx_events_product_type_ts ON events (product_id, type, ts);
