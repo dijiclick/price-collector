@@ -19,6 +19,27 @@ import * as rossmann from "./brands/rossmann";
 import * as bershka from "./brands/bershka";
 import * as boyner from "./brands/boyner";
 import * as beymen from "./brands/beymen";
+import * as lefties from "./brands/lefties";
+import * as vakko from "./brands/vakko";
+import * as vakkorama from "./brands/vakkorama";
+import * as nike from "./brands/nike";
+import * as newbalance from "./brands/newbalance";
+import * as puma from "./brands/puma";
+import * as superstep from "./brands/superstep";
+import * as modanisa from "./brands/modanisa";
+import * as network from "./brands/network";
+import * as ipekyol from "./brands/ipekyol";
+import * as twist from "./brands/twist";
+import * as lacoste from "./brands/lacoste";
+import * as pierrecardin from "./brands/pierrecardin";
+import * as derimod from "./brands/derimod";
+import * as marksandspencer from "./brands/marksandspencer";
+import * as victoriassecret from "./brands/victoriassecret";
+import * as lcw from "./brands/lcw";
+import * as defacto from "./brands/defacto";
+import * as mavi from "./brands/mavi";
+import * as colins from "./brands/colins";
+import * as mudo from "./brands/mudo";
 
 /**
  * Registered brand adapters. A per-brand timeout in the collector caps any slow adapter.
@@ -53,6 +74,28 @@ export const adapters: BrandAdapter[] = [
   { brand: bershka.brand, country: "TR", listProducts: bershka.listProducts },
   { brand: boyner.brand, country: "TR", listProducts: boyner.listProducts },
   { brand: beymen.brand, country: "TR", listProducts: beymen.listProducts },
+  // Added 2026-10-10 (competitor brand gap: Combup, Simlek, StokDrop).
+  { brand: lefties.brand, country: "TR", listProducts: lefties.listProducts },
+  { brand: vakko.brand, country: "TR", listProducts: vakko.listProducts },
+  { brand: vakkorama.brand, country: "TR", listProducts: vakkorama.listProducts },
+  { brand: nike.brand, country: "TR", listProducts: nike.listProducts },
+  { brand: newbalance.brand, country: "TR", listProducts: newbalance.listProducts },
+  { brand: puma.brand, country: "TR", listProducts: puma.listProducts },
+  { brand: superstep.brand, country: "TR", listProducts: superstep.listProducts },
+  { brand: modanisa.brand, country: "TR", listProducts: modanisa.listProducts },
+  { brand: network.brand, country: "TR", listProducts: network.listProducts },
+  { brand: ipekyol.brand, country: "TR", listProducts: ipekyol.listProducts },
+  { brand: twist.brand, country: "TR", listProducts: twist.listProducts },
+  { brand: lacoste.brand, country: "TR", listProducts: lacoste.listProducts },
+  { brand: pierrecardin.brand, country: "TR", listProducts: pierrecardin.listProducts },
+  { brand: derimod.brand, country: "TR", listProducts: derimod.listProducts },
+  { brand: marksandspencer.brand, country: "TR", listProducts: marksandspencer.listProducts },
+  { brand: victoriassecret.brand, country: "TR", listProducts: victoriassecret.listProducts },
+  { brand: lcw.brand, country: "TR", listProducts: lcw.listProducts },
+  { brand: defacto.brand, country: "TR", listProducts: defacto.listProducts },
+  { brand: mavi.brand, country: "TR", listProducts: mavi.listProducts },
+  { brand: colins.brand, country: "TR", listProducts: colins.listProducts },
+  { brand: mudo.brand, country: "TR", listProducts: mudo.listProducts },
 ];
 
 /**
