@@ -116,6 +116,10 @@ CREATE TABLE IF NOT EXISTS push_watch (
 -- Size the user cares about (colour is already the product row). Nullable; used
 -- to annotate drop alerts and drive back-in-stock notifications.
 ALTER TABLE push_watch ADD COLUMN IF NOT EXISTS size TEXT;
+-- "Aldım" (2026-10-10): what the user paid (minor units) and when. A drop below
+-- it within 30 days pushes a refund nudge (packages/collector/src/push.ts).
+ALTER TABLE push_watch ADD COLUMN IF NOT EXISTS bought_price INTEGER;
+ALTER TABLE push_watch ADD COLUMN IF NOT EXISTS bought_at TIMESTAMPTZ;
 ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS size TEXT;
 -- Target price (minor units): when set, only alert once the price is at/below it.
 -- push_watch already has `target`; mirror it on the email watchlist.
@@ -329,8 +333,84 @@ CREATE INDEX IF NOT EXISTS idx_products_url_pattern ON products (url text_patter
 --
 -- Built on production by hand with CREATE INDEX CONCURRENTLY (same reason as
 -- above), so this line is a no-op there.
-CREATE INDEX IF NOT EXISTS idx_products_feed ON products (country, last_seen)
+--
+-- REPLACED 2026-10-10 by idx_products_feed_country below. Keying it on
+-- last_seen made EVERY update of products non-HOT — a column in any index key
+-- or predicate blocks HOT for the whole table, and the collector bumps
+-- last_seen on every product it sees (~2M rows a cycle). Measured: 240k
+-- updates in 3 minutes, 0 HOT. Each one wrote a new entry into all eleven
+-- indexes (~1.2 GB), left ~1.1M dead tuples per cycle, and kept autovacuum
+-- rescanning those indexes every run. FRESH is a cheap filter on the rows the
+-- predicate already narrows, so the index does not need it.
+--
+-- The old index is dropped by hand (DROP INDEX CONCURRENTLY idx_products_feed)
+-- once the public collector repo carries this file — while an older copy
+-- still lists it, its migrate() would rebuild it with a plain CREATE INDEX.
+CREATE INDEX IF NOT EXISTS idx_products_feed_country ON products (country)
   WHERE in_stock AND image_url IS NOT NULL AND current_list_price > current_price;
+
+-- ---------------------------------------------------------------------------
+-- The feed cache (2026-10-10) — see lib/feed-cache.ts for the full story.
+-- A cache-missed /api/deals took 26 s and /api/meta 13 s: the Turkish feed is
+-- ~70k rows scattered one per heap page across a 1.8 GB table, on a disk that
+-- runs at ~90% utilisation while the collector writes. The collector copies the
+-- feed-eligible rows of each brand here right after writing it, and the API
+-- reads this instead (`FROM feed_items AS products` — same column names).
+--
+-- `sizeless` / `avail_sizes` replace `variants`, the bulky column, with the two
+-- facts the size filter and the size chips read.
+CREATE TABLE IF NOT EXISTS feed_items (
+  id                 INTEGER PRIMARY KEY,
+  country            TEXT NOT NULL,
+  brand              TEXT NOT NULL,
+  currency           TEXT NOT NULL,
+  name               TEXT NOT NULL,
+  url                TEXT NOT NULL,
+  image_url          TEXT,
+  category           TEXT,
+  product_type       TEXT,
+  product_subtype    TEXT,
+  gender             TEXT,
+  group_key          TEXT,
+  color_name         TEXT,
+  color_families     TEXT[],
+  current_price      INTEGER NOT NULL,
+  current_list_price INTEGER,
+  in_stock           BOOLEAN NOT NULL,
+  last_seen          TIMESTAMPTZ NOT NULL,
+  sizeless           BOOLEAN NOT NULL,
+  avail_sizes        TEXT[],
+  pct                INTEGER NOT NULL,
+  gk                 TEXT COLLATE "C" NOT NULL,
+  color_key          TEXT COLLATE "C" NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feed_items_country_brand ON feed_items (country, brand);
+
+-- Full-catalogue tallies (browse-all counts), per brand, rewritten by the same
+-- refresh. /api/meta sums these instead of counting every in-stock product.
+CREATE TABLE IF NOT EXISTS catalogue_counts (
+  country         TEXT NOT NULL,
+  brand           TEXT NOT NULL,
+  product_type    TEXT,
+  product_subtype TEXT,
+  gender          TEXT,
+  n               INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_catalogue_counts_country_brand ON catalogue_counts (country, brand);
+
+-- When each brand×market was last copied. The API only trusts the cache for a
+-- market whose newest refresh is recent (FEED_MAX_AGE_HOURS) and reads
+-- products otherwise — so a stalled collector degrades to slow, never stale.
+CREATE TABLE IF NOT EXISTS feed_refresh (
+  country      TEXT NOT NULL,
+  brand        TEXT NOT NULL,
+  refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (country, brand)
+);
+-- When the brand last recorded a price_drop in this market. The brand rail's
+-- "fresh drops" rings joined 24 h of events to products — ~9k random heap
+-- reads, 5 s cold — to learn what the collector already knew at write time.
+ALTER TABLE feed_refresh ADD COLUMN IF NOT EXISTS last_drop_at TIMESTAMPTZ;
 
 -- ---------------------------------------------------------------------------
 -- Quiet hours for pushes (2026-09-25).

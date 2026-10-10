@@ -35,6 +35,21 @@ export interface PushRow {
    * `devicePrefs` before trusting it.
    */
   prefs?: unknown;
+  /** "Aldım" (2026-10-10): what the user paid, minor units, and when. */
+  bought_price?: number | null;
+  bought_at?: string | Date | null;
+}
+
+/** How long after "Aldım" a drop below the paid price is worth a refund nudge. */
+export const PROTECT_DAYS = 30;
+
+/** Bought, inside the window at the event, and now cheaper than what was paid. */
+export function refundable(r: Pick<PushRow, "type" | "new_price" | "bought_price" | "bought_at" | "event_ts">): boolean {
+  if (r.type !== "price_drop" || !r.bought_price || !r.bought_at) return false;
+  const at = new Date(r.bought_at as string).getTime();
+  const ev = r.event_ts ? new Date(r.event_ts as string).getTime() : Date.now();
+  if (!Number.isFinite(at) || ev - at > PROTECT_DAYS * 86_400_000) return false;
+  return r.new_price < r.bought_price;
 }
 
 /** The app's NotifPrefs, as /api/push/sync stores them (lib/push.ts PushPrefs). */
@@ -84,12 +99,14 @@ const COPY = {
   tr: {
     restock: (size: string | null) => (size ? `Beden ${size} tekrar stokta 🎉` : "Tekrar stokta 🎉"),
     target: (drop: string) => `🎯 Hedefe ulaştı — ${drop}`,
+    refund: (saving: string, now: string) => `Aldığından ${saving} ucuz: ${now}. İade edip yeniden alabilirsin.`,
     withSize: (size: string, base: string) => `Beden ${size} · ${base}`,
     pct: (n: number) => `−%${n}`,
   },
   en: {
     restock: (size: string | null) => (size ? `Size ${size} is back in stock 🎉` : "Back in stock 🎉"),
     target: (drop: string) => `🎯 Hit your target — ${drop}`,
+    refund: (saving: string, now: string) => `${saving} cheaper than you paid: ${now}. You can return it and buy it again.`,
     withSize: (size: string, base: string) => `Size ${size} · ${base}`,
     pct: (n: number) => `−${n}%`,
   },
@@ -108,6 +125,18 @@ export function buildMessage(r: PushRow): PushMessage {
     };
   }
   const money = (m: number) => fromMinor(m, r.currency, r.lang);
+  // "Aldım": money they can get back beats any other framing of the drop.
+  // Sent as kind "target" — an alert the user explicitly asked for, so muting
+  // plain drops never swallows it, and older app builds already know the kind.
+  if (refundable(r)) {
+    return {
+      to: r.token,
+      title,
+      body: c.refund(money(r.bought_price! - r.new_price), money(r.new_price)),
+      data: { productId: r.product_id, kind: "target", pct: Math.abs(r.pct) },
+      channelId: "price-drops",
+    };
+  }
   const drop = `${money(r.old_price)} → ${money(r.new_price)} (${c.pct(Math.abs(r.pct))})`;
   const goal = r.target != null && r.new_price <= r.target;
   const base = goal ? c.target(drop) : drop;
@@ -372,15 +401,37 @@ export interface PushNotifyOpts {
  * own window instead of 22:00-08:00 (chosen off = never held); one that never
  * touched them, or sent no prefs at all, keeps 22:00-08:00 exactly as before.
  */
+/**
+ * The "Aldım" columns, if this database has them. They arrive with db/schema.sql,
+ * whose DDL is skipped when the table is busy (3 s lock_timeout) — a push query
+ * naming a missing column would stop EVERY push, so it asks first.
+ */
+async function boughtSql(db: Db): Promise<{ cols: string; orRefund: string }> {
+  const r = await db
+    .query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM information_schema.columns
+        WHERE table_name = 'push_watch' AND column_name IN ('bought_price', 'bought_at')`,
+    )
+    .catch(() => [{ n: 0 }]);
+  if ((r[0]?.n ?? 0) < 2) return { cols: "", orRefund: "" };
+  return {
+    cols: "w.bought_price, w.bought_at,",
+    // A drop below the paid price inside the window reaches the buyer even
+    // when a target price above it is set.
+    orRefund: `OR (w.bought_price IS NOT NULL AND e.new_price < w.bought_price AND w.bought_at > e.ts - interval '${PROTECT_DAYS} days')`,
+  };
+}
+
 export async function pushNotify(db: Db, opts: PushNotifyOpts = {}): Promise<number> {
   const now = opts.now ?? new Date();
   let sent = 0;
+  const bought = await boughtSql(db);
   const deadTokens = new Set<string>();
 
   // 1. Alerts held overnight whose device is awake now. First, so a device
   //    that just woke gets the older news before anything new.
   const held = await db.query<PushRow>(
-    `SELECT w.token, w.target, e.id AS event_id, e.product_id, e.old_price, e.new_price, e.pct, p.name, p.brand, p.currency, w.size, e.type, d.lang, d.tz, d.prefs, e.ts AS event_ts
+    `SELECT w.token, w.target, ${bought.cols} e.id AS event_id, e.product_id, e.old_price, e.new_price, e.pct, p.name, p.brand, p.currency, w.size, e.type, d.lang, d.tz, d.prefs, e.ts AS event_ts
      FROM push_held h
      JOIN events e ON e.id = h.event_id
      JOIN push_devices d ON d.token = h.token
@@ -419,10 +470,10 @@ export async function pushNotify(db: Db, opts: PushNotifyOpts = {}): Promise<num
     // whose chosen size is the one that returned (e.size is set by the differ).
     // A pair already held is skipped: if another device's transient failure
     // kept the event unmarked, the held row — not this — delivers it here.
-    `SELECT w.token, w.target, e.id AS event_id, e.product_id, e.old_price, e.new_price, e.pct, p.name, p.brand, p.currency, w.size, e.type, d.lang, d.tz, d.prefs, e.ts AS event_ts
+    `SELECT w.token, w.target, ${bought.cols} e.id AS event_id, e.product_id, e.old_price, e.new_price, e.pct, p.name, p.brand, p.currency, w.size, e.type, d.lang, d.tz, d.prefs, e.ts AS event_ts
      FROM events e
      JOIN push_watch w ON w.product_id = e.product_id
-       AND ( (e.type = 'price_drop' AND (w.target IS NULL OR e.new_price <= w.target))
+       AND ( (e.type = 'price_drop' AND (w.target IS NULL OR e.new_price <= w.target ${bought.orRefund}))
           OR (e.type = 'back_in_stock' AND e.size IS NOT NULL AND w.size = e.size)
           -- Product-level restock → the watchers who never picked a size
           -- (2026-10-03: 82% of tracked items). Only a real one: measured on

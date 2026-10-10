@@ -1,5 +1,6 @@
 import { liveBrands, lookupLive } from "../../../lib/live-lookup";
 import { diff } from "./differ";
+import { refreshFeedItems } from "../../../lib/feed-cache";
 import {
   applyReprice,
   dbNow,
@@ -105,5 +106,14 @@ export async function repriceTracked(db: Db, brands = liveBrands()): Promise<Rep
   await insertSnapshots(db, snapRows);
   await insertEvents(db, eventRows);
   out.events = eventRows.length;
+  // A repriced product's feed card must not wait for its brand's next sweep,
+  // and a drop found here lights its brand's "fresh drops" ring like a sweep's.
+  const byId = new Map(candidates.map((c) => [c.id, c]));
+  const dropped = eventRows
+    .filter((r) => r.e.type === "price_drop")
+    .map((r) => byId.get(r.productId))
+    .filter((c) => c !== undefined)
+    .map((c) => ({ country: c.country, brand: c.brand }));
+  await refreshFeedItems(db, [...new Set(snapRows.map((r) => r.productId))], dropped);
   return out;
 }

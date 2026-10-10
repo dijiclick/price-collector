@@ -1,5 +1,6 @@
 import { canResolveLive } from "../../../lib/live-lookup";
-import { DEFAULT_COUNTRY } from "../../../lib/countries";
+import { DEFAULT_COUNTRY, minPriceFor } from "../../../lib/countries";
+import { refreshFeedCache } from "../../../lib/feed-cache";
 import { hostGroup } from "./hosts";
 import type { BrandAdapter, SizeVariant } from "./types";
 import { diff, diffSizes } from "./differ";
@@ -263,6 +264,15 @@ async function collectBrand(
           db, adapter.brand, country, runStart, canResolveLive(adapter.brand),
         );
       }
+
+      // Copy this brand's feed rows and catalogue tallies into the feed cache
+      // (lib/feed-cache.ts) — last, so it sees the sweep's delistings too.
+      // Inside the write gate: it reads rows this brand just wrote, and keeps
+      // the database's concurrent writers at WRITE_CONCURRENCY. Never throws.
+      await refreshFeedCache(
+        db, country, adapter.brand, minPriceFor(country),
+        eventRows.some((r) => r.e.type === "price_drop"),
+      );
     });
     // Includes time queued behind another brand's write — that queueing is
     // exactly what we want visible, since the lock is serial by design.
