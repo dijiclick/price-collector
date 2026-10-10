@@ -503,3 +503,19 @@ CREATE TABLE IF NOT EXISTS app_pings (
 -- a no-op there. Never let a plain CREATE INDEX on events be the first to build
 -- it on a live database: it blocks the collector's writes for the whole build.
 CREATE INDEX IF NOT EXISTS idx_events_product_type_ts ON events (product_id, type, ts);
+
+-- Crawler watchdog (2026-10-10): one row per brand per run, so a failing,
+-- empty, shrinking or slow brand is visible at /api/health/collector and the
+-- scheduled fixer agent can act on it. Small: ~40 rows per run, pruned at 30 days.
+CREATE TABLE IF NOT EXISTS collector_runs (
+  run_at    TIMESTAMPTZ NOT NULL,
+  brand     TEXT NOT NULL,
+  country   TEXT NOT NULL,
+  products  INTEGER NOT NULL,
+  events    INTEGER NOT NULL DEFAULT 0,
+  fetch_ms  INTEGER,
+  write_ms  INTEGER,
+  error     TEXT,
+  PRIMARY KEY (run_at, brand, country)
+);
+CREATE INDEX IF NOT EXISTS idx_collector_runs_brand ON collector_runs (brand, country, run_at DESC);

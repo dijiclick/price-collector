@@ -311,6 +311,12 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
           (r.writeMs != null ? ` write ${(r.writeMs / 1000).toFixed(1)}s]` : r.fetchMs != null ? "]" : ""),
       );
   }
+  // Crawler watchdog: record every brand's outcome. Its own failure-tolerant
+  // block — the table arrives with db/schema.sql, and a watchdog must never be
+  // the reason a run fails.
+  await recordRun(db, results).catch((err: unknown) =>
+    console.warn("watchdog: run not recorded:", err instanceof Error ? err.message : err),
+  );
   // SWEEP_ONLY: collect and stop. The international matrix runs one job per
   // market, and twenty notifiers racing over the same unsent events would send
   // each alert more than once — nothing locks them. So those jobs only write
@@ -383,4 +389,18 @@ function failOnBlocked(results: BrandResult[], label: (r: BrandResult) => string
     );
     process.exitCode = 1;
   }
+}
+
+/** One row per brand result in collector_runs, then drop rows older than 30 days. */
+export async function recordRun(db: Db, results: BrandResult[], at: Date = new Date()): Promise<void> {
+  if (results.length === 0) return;
+  const runAt = at.toISOString();
+  for (const r of results) {
+    await db.query(
+      `INSERT INTO collector_runs (run_at, brand, country, products, events, fetch_ms, write_ms, error)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING`,
+      [runAt, r.brand, r.country, r.count, r.events, r.fetchMs ?? null, r.writeMs ?? null, r.error?.slice(0, 500) ?? null],
+    );
+  }
+  await db.query(`DELETE FROM collector_runs WHERE run_at < $1::timestamptz - interval '30 days'`, [runAt]);
 }
