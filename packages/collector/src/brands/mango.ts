@@ -18,7 +18,8 @@ const HEADERS = {
 // in-flight (32 requests) clears ~6k products well inside the collector's
 // 4-minute brand budget. MAX_PRODUCTS is a safety cap, not a working limit.
 const MAX_PRODUCTS = Number(process.env.MANGO_MAX_PRODUCTS ?? 8000);
-const MAX_SEED_CATEGORIES = Number(process.env.MANGO_MAX_SEED_CATEGORIES ?? 4);
+// Women, men, teen girls, boys, girls: the five known sale ids (see SALE_CATEGORIES).
+const MAX_SEED_CATEGORIES = Number(process.env.MANGO_MAX_SEED_CATEGORIES ?? 5);
 const CONCURRENCY = Number(process.env.MANGO_CONCURRENCY ?? 16);
 // If more than this share of seeded products fail their price fetch, the run
 // is broken (Akamai block, API change) — throw rather than ship a shard.
@@ -200,17 +201,21 @@ interface KnownCategory {
   en: string;
 }
 
-/** Sale sections, women first (primary audience), then men, teen girls, boys. */
+/**
+ * Sale sections, women first (primary audience), then men, teen girls, boys, girls.
+ * Sizes on TR, 2026-10-10: 1,900 / 643 / 622 / 113 / 457 products.
+ */
 const SALE_CATEGORIES: KnownCategory[] = [
   { hash: "7914393e", tr: "kadin/promosyon", en: "women/sale" },
   { hash: "106c5d6d", tr: "erkek/promosyon", en: "men/sale" },
   { hash: "f841db18", tr: "teen/teena/promosyon", en: "teen/teena/sale" },
   { hash: "8e52a668", tr: "cocuk/erkek-cocuk/promosyon", en: "kids/boys/sale" },
+  { hash: "69ea8b6f", tr: "cocuk/kiz-cocuk/promosyon", en: "kids/girls/sale" },
 ];
 const SALE_HASHES = new Set([
   ...SALE_CATEGORIES.map((c) => c.hash),
-  // kids/girls, teen boys, home, baby girls, baby boys, newborn
-  "69ea8b6f", "8f46eb8e", "644c3fdb", "21b82eda", "c60003dd", "d86d5ed0",
+  // teen boys, home, baby girls, baby boys, newborn
+  "8f46eb8e", "644c3fdb", "21b82eda", "c60003dd", "d86d5ed0",
 ]);
 
 /**
@@ -262,17 +267,48 @@ export function pickSalePaths(paths: Iterable<string>, max: number): string[] {
  * Sale sections by id, as served on 2026-09-19. The ids outlive the links:
  * on 2026-09-22 the homepage stopped linking /c/ categories at all and the
  * crawl threw on every run, while /c/f/kadin/promosyon/7914393e still listed
- * ~2k products. These are the floor when no page links a sale section.
+ * ~2k products. They are seeded on every run, linked or not (see seedPaths).
  */
 export const KNOWN_SALE_PATHS = knownPaths(SALE_CATEGORIES, siteFor("TR"));
 
 /** See-all sections for a market: the fallback when its sale pages list nothing. */
 export const seeAllPaths = (site: MangoSite): string[] => knownPaths(SEE_ALL_CATEGORIES, site);
 
-/** Sale paths found on the pages, or the known sale ids when none are linked. */
+/** Last path segment: the category id for every /c/ path that carries one. */
+const hashOf = (path: string): string => path.split("/").pop() ?? "";
+
+/**
+ * Sale paths to seed from: every sale section the pages link, PLUS the known
+ * sale ids whether linked or not, deduplicated by id and ranked women first.
+ *
+ * The known ids used to be only the fallback for when NOTHING was linked. On
+ * 2026-10-10 the TR nav linked just three small kids' sale sections (boys, baby
+ * boys, newborn: ~300 products) while women's 7914393e still listed 1,900 and
+ * men's 643 — so "something is linked" kept the fallback off and Mango TR
+ * collected 283 products in the middle of a big sale. A link is evidence that a
+ * section exists; its absence is not evidence that it does not.
+ */
 export function seedPaths(found: Iterable<string>, max: number, site: MangoSite = siteFor("TR")): string[] {
-  const sale = pickSalePaths(found, max);
-  return sale.length > 0 ? sale : knownPaths(SALE_CATEGORIES, site).slice(0, max);
+  const byHash = new Map<string, string>();
+  // Pages link both /c/<x> and the filtered /c/f/<x>; filteredUrl adds the f/.
+  const linked = pickSalePaths(
+    [...found].map((p) => p.replace(`/${site.path}/c/f/`, `/${site.path}/c/`)),
+    Infinity,
+  );
+  for (const p of [...linked, ...knownPaths(SALE_CATEGORIES, site)]) {
+    if (!byHash.has(hashOf(p))) byHash.set(hashOf(p), p);
+  }
+  return pickSalePaths(byHash.values(), max);
+}
+
+/**
+ * A known sale id the pages did not link may simply be retired in this market:
+ * the PLP then answers 404 (a bogus id does, probed 2026-10-10) or lists nothing.
+ * That is skipped, not counted as a failed page. Anything else (a challenge, a
+ * timeout, a 5xx) still is.
+ */
+export function isRetiredCategory(err: unknown): boolean {
+  return /HTTP 404 |no catalogItemsData entries/.test(String(err));
 }
 
 /** /{path}/c/<x> -> /{path}/c/f/<x>: the filtered PLP, which embeds every item. */
@@ -288,8 +324,18 @@ function linksOf(html: string, site: MangoSite, kind: "c" | "h"): string[] {
 
 type SeedMap = Map<string, Seed>;
 
-/** Load PLPs into `byId`. Returns how many pages failed (fetch or parse). */
-async function seedFrom(paths: string[], site: MangoSite, byId: SeedMap, max: number, strict: boolean) {
+/**
+ * Load PLPs into `byId`. Returns how many pages failed (fetch or parse).
+ * `optional` paths (known ids no page linked) may be retired: see isRetiredCategory.
+ */
+async function seedFrom(
+  paths: string[],
+  site: MangoSite,
+  byId: SeedMap,
+  max: number,
+  strict: boolean,
+  optional: ReadonlySet<string> = new Set(),
+) {
   let failed = 0;
   for (const path of paths) {
     if (byId.size >= max) break;
@@ -300,6 +346,7 @@ async function seedFrom(paths: string[], site: MangoSite, byId: SeedMap, max: nu
       const html = await browserText(filteredUrl(path, site));
       items = parseCatalogItems(html);
     } catch (err) {
+      if (optional.has(path) && isRetiredCategory(err)) continue;
       if (strict) throw err;
       failed++;
       continue;
@@ -335,9 +382,11 @@ async function seedProducts(site: MangoSite, max: number): Promise<Seed[]> {
     for (const p of linksOf(html, site, "c")) catPaths.add(p);
   }
   const salePaths = seedPaths(catPaths, MAX_SEED_CATEGORIES, site);
+  const linkedIds = new Set([...catPaths].map(hashOf));
+  const unlinked = new Set(salePaths.filter((p) => !linkedIds.has(hashOf(p))));
 
   const byId: SeedMap = new Map();
-  const failed = await seedFrom(salePaths, site, byId, max, false);
+  const failed = await seedFrom(salePaths, site, byId, max, false, unlinked);
   if (failed > 0 && byId.size > 0) {
     // Some sale pages loaded and some did not: that is a truncated catalogue.
     throw new Error(`mango ${site.country}: ${failed}/${salePaths.length} sale PLPs failed`);
