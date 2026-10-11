@@ -148,11 +148,27 @@ async function hit(url) {
       status: r.status, ms: Date.now() - t, bytes: body.length, final: r.url,
       edge: h.get("cf-ray") ? "cloudflare" : h.get("x-akamai-transformed") || /akamai/i.test(h.get("server") ?? "") ? "akamai" : h.get("x-datadome") ? "datadome" : h.get("server") ?? "",
       shopify: /cdn\.shopify\.com|Shopify\.theme/.test(body), wall, json: body.trimStart().startsWith("{"),
-      head: body.trimStart().startsWith("{") ? body.slice(0, 120) : undefined,
+      head: body.slice(0, 200),
     };
   } catch (e) {
     return { status: 0, ms: Date.now() - t, error: String(e?.cause?.code ?? e?.name ?? e).slice(0, 60) };
   }
+}
+
+// Ad-hoc mode: `gh workflow run probe.yml -f urls="https://a https://b"` — GET
+// each URL from the runner and print status, size and the first bytes, so a
+// data endpoint (not just a home page) can be judged from GitHub's egress.
+if (process.env.PROBE_URLS?.trim()) {
+  const fs0 = await import("node:fs");
+  const res = [];
+  for (const url of process.env.PROBE_URLS.trim().split(/\s+/)) {
+    const h = await hit(url);
+    res.push({ url, ...h });
+    console.log(`${String(h.status).padEnd(4)} ${(h.bytes ?? 0).toString().padStart(8)}B ${h.wall ? "WALL " : ""}${h.edge ?? ""} ${url}${h.error ? "  " + h.error : ""}`);
+    if (h.head) console.log("     " + h.head.replace(/\s+/g, " "));
+  }
+  fs0.writeFileSync("probe-results.json", JSON.stringify(res, null, 2));
+  process.exit(0);
 }
 
 const jobs = [];

@@ -3,7 +3,11 @@ name: probe
 # Manual only. Checks which candidate shops answer a GitHub runner with no
 # proxy. No secrets are in scope.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "Optional: space-separated URLs to GET instead of the built-in shop list"
+        required: false
 
 permissions:
   contents: read
@@ -20,6 +24,8 @@ jobs:
         with:
           node-version: 22
       - run: node tools/probe-sites.mjs
+        env:
+          PROBE_URLS: ${{ inputs.urls }}
       - uses: actions/upload-artifact@v4
         with:
           name: probe-results
