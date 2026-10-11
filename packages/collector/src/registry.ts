@@ -33,6 +33,7 @@ import * as twist from "./brands/twist";
 import * as lacoste from "./brands/lacoste";
 import * as pierrecardin from "./brands/pierrecardin";
 import * as derimod from "./brands/derimod";
+import { shopifyAdapters } from "./brands/shopify-stores";
 import * as marksandspencer from "./brands/marksandspencer";
 import * as victoriassecret from "./brands/victoriassecret";
 import * as lcw from "./brands/lcw";
@@ -96,6 +97,9 @@ export const adapters: BrandAdapter[] = [
   { brand: mavi.brand, country: "TR", listProducts: mavi.listProducts },
   { brand: colins.brand, country: "TR", listProducts: colins.listProducts },
   { brand: mudo.brand, country: "TR", listProducts: mudo.listProducts },
+  // Added 2026-10-11: Shopify storefronts in every market (docs/brand-plan-2026-10-11.md).
+  // Markets come from lib/brands.ts, so an AU-only store never runs for Turkey.
+  ...shopifyAdapters,
 ];
 
 /**
@@ -139,7 +143,7 @@ export function marketAdapters(countries: CountryCode[]): BrandAdapter[] {
   for (const country of countries) {
     for (const a of adapters) {
       if (!brandServes(a.brand, country)) continue;
-      out.push(country === DEFAULT_COUNTRY ? a : { ...a, country });
+      out.push(a.country === country ? a : { ...a, country });
     }
   }
   return out;

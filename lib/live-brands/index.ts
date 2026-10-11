@@ -26,6 +26,7 @@ import { defactoUrl } from "./defacto";
 import { maviUrl } from "./mavi";
 import { colinsUrl } from "./colins";
 import { mudoUrl } from "./mudo";
+import { SHOPIFY_RESOLVERS } from "./shopify";
 
 export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduct | null>> = {
   lefties: leftiesUrl,
@@ -49,4 +50,6 @@ export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduc
   mavi: maviUrl,
   colins: colinsUrl,
   mudo: mudoUrl,
+  // 2026-10-11: every Shopify storefront (shopify-sites.ts) through one resolver.
+  ...SHOPIFY_RESOLVERS,
 };
