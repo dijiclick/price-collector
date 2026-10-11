@@ -73,7 +73,7 @@ export const BRANDS: BrandInfo[] = [
   { slug: "lefties", label: "Lefties", category: "Giyim", logo: "/brands/lefties.svg", countries: TR_ONLY },
   { slug: "vakko", label: "VAKKO", category: "Giyim", logo: "/brands/vakko.svg", countries: TR_ONLY },
   { slug: "vakkorama", label: "Vakkorama", category: "Çok markalı", logo: "/brands/vakkorama.svg", countries: TR_ONLY },
-  { slug: "nike", label: "Nike", category: "Ayakkabı", logo: "/brands/nike.svg", countries: TR_ONLY },
+  { slug: "nike", label: "Nike", category: "Ayakkabı", logo: "/brands/nike.svg", countries: ["TR", "US", "GB", "CA", "AU", "CH", "NO"] },
   { slug: "newbalance", label: "New Balance", category: "Ayakkabı", logo: "/brands/newbalance.svg", countries: TR_ONLY },
   { slug: "puma", label: "PUMA", category: "Ayakkabı", logo: "/brands/puma.svg", countries: TR_ONLY },
   { slug: "superstep", label: "SuperStep", category: "Çok markalı", logo: "/brands/superstep.svg", countries: TR_ONLY },

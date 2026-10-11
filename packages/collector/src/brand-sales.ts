@@ -29,6 +29,11 @@ export const BRAND_SALES_SQL = `
     SELECT p.brand, p.country, count(DISTINCT p.id)::int AS drops
     FROM events e JOIN products p ON p.id = e.product_id
     WHERE e.type = 'price_drop' AND e.ts > $1::timestamptz - interval '${WINDOW}' AND e.ts <= $1::timestamptz
+      -- Only products we already knew. A store's FIRST sweep logs every
+      -- discounted row it finds as a drop, so a newly added brand looked like
+      -- a sale start (Koton 6,518 on 2026-10-10; Reitmans/Knix/Oh Polly on
+      -- 2026-10-11) and its trackers would have been told so.
+      AND p.first_seen <= $1::timestamptz - interval '${WINDOW}'
     GROUP BY 1, 2
     HAVING count(DISTINCT p.id) >= ${MIN_DROPS})
   SELECT d.brand, d.country, d.drops
