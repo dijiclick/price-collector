@@ -52,8 +52,8 @@ export const PRODUCT_TYPES: ProductType[] = [
   // 2026-09-24: "Brushed-inside joggers" (2,722 rows), "BBW BROWN" (741),
   // "Pudra" the powder-pink colour (220), "SpongeBob", "Contour bra", Finnish
   // "nailon" — all were filing clothing under Makeup.
-  { key: "makyaj",     label: "Makyaj",        re: /ruj|lipstick|fondoten|foundation|maskara|mascara|allik|(?:cream|liquid|stick|powder|baked) blush|\bblusher\b|blush (?:stick|palette)|\boje\b|\bnail (?:polish|lacquer|colou?r)|tirnak|manikur|eyeliner|kapatici|concealer|makyaj|makeup|parlatici|lip gloss|dudak parlat|\bfar\b|eyeshadow|goz far|pudrasi|(?:toz|kompakt|sabitleyici|mineral) pudra|(?:face|setting|loose|pressed|compact|translucent) powder|dudak kalem|lip liner|kas kalem|\beyebrow|\bbrows?\b|likit ruj|highlighter|bronzer|aydinlatici|rimel|kirpik|\blash|kontur|duzeltici|corrector|sunger|makeup sponge|firca|\bbrush(?:es)?\b|aplikator/i },
-  { key: "parfum",     label: "Parfüm",        re: /parfum|perfume|\bedt\b|\bedp\b|\bkoku\b|deodorant|eau de/i },
+  { key: "makyaj",     label: "Makyaj",        re: /ruj|lipstick|fondoten|foundation|maskara|mascara|\ballik|(?:cream|liquid|stick|powder|baked) blush|\bblusher\b|blush (?:stick|palette)|\boje\b|\bnail (?:polish|lacquer|colou?r)|tirnak|manikur|eyeliner|kapatici(?!lik)|concealer|makyaj|makeup|parlatici|lip gloss|dudak parlat|\bfar\b|eyeshadow|goz far|pudrasi|(?:toz|kompakt|sabitleyici|mineral) pudra|(?:face|setting|loose|pressed|compact|translucent) powder|dudak kalem|lip liner|kas kalem|\beyebrow|\bbrows?\b|likit ruj|highlighter|bronzer|aydinlatici|\brimel|kirpik|\blash|kontur|duzeltici|corrector|sunger|makeup sponge|firca(?!lanmis)|\bbrush(?:es)?\b|aplikator/i },
+  { key: "parfum",     label: "Parfüm",        re: /parfum|perfume|\bedt\b|\bedp\b|\bkoku\b|deodorant|\beau de|(?<!spf ?\d\d )body mist|(?<!koruyucu )vucut spreyi/i },
   // `durulanmayan` (leave-in) and a BOUNDED `sac … krem` — "Saç İçin
   // Durulanmayan Bakım Kremi" says saç and krem four words apart, which
   // `sac krem` could never see. Two candidates were measured and rejected:
@@ -72,7 +72,12 @@ export const PRODUCT_TYPES: ProductType[] = [
   // a cream, and the moment the rule below learned to read the Turkish suffix
   // it took the entire shaving aisle: 40 products, measured, including every
   // Arko and Nivea Men foam and gel.
-  { key: "kisisel-bakim", label: "Kişisel Bakım", re: /tiras|shave|jilet|razor|\bagda\b|epilas/i },
+  { key: "kisisel-bakim", label: "Kişisel Bakım", re: /tiras|shave|jilet|razor|\bagda\b|epilas|tuy dokucu|hair remov|depilat/i },
+  // Sunglasses ahead of skincare: "güneş" (sun) is a skincare word for SPF
+  // creams, and every "Güneş Gözlüğü" — 3,073 live rows, Beymen's whole eyewear
+  // shelf — was filed under Cilt Bakımı/Güneş Ürünleri, so a search for
+  // sunglasses found 31 glasses CASES and the sun-cream shelf led with frames.
+  { key: "aksesuar",   label: "Aksesuar",      re: /gunes gozlu|sunglass|eyewear/i },
   { key: "cilt-bakim", label: "Cilt Bakımı",   re: /\bkrem(?:i|ler|leri|lerinde|inde)?\b(?!\s+(?:kadin|erkek|cocuk|unisex|rengi|renk|beyaz|siyah))|\bcream\b|serum|nemlendir|moistur|temizle|cleanser|\bmaske|face mask|tonik|\btoner\b|peeling|gunes|sunscreen|\bspf\b|cilt bak|el kremi|goz krem|micellar|misel/i },
   // Drugstores are a third of the catalogue and sell far more than cosmetics.
   // Before this, 43% of Gratis, 24% of Watsons and 22% of Rossmann products
@@ -82,7 +87,7 @@ export const PRODUCT_TYPES: ProductType[] = [
   //
   // Placed after cilt-bakim deliberately: "vücut kremi" is skincare's to claim
   // first, and this only picks up what nothing else wanted.
-  { key: "kisisel-bakim", label: "Kişisel Bakım", re: /hijyenik ped|\bped\b|tampon|molped|orkid|kotex|panty ?liner|islak mendil|\bmendil\b|dis macunu|dis fircasi|gargara|agiz bakim|mouthwash|toothpaste|toothbrush|dis ipi|vucut losyon|dus jeli|shower gel|\bbanyo\b|\bsabun|\bsoap\b|body lotion|body wash|tiras|shave|jilet|razor|epilas|\bagda\b|yara band|band-?aid|disk pamuk|pamuk ped|makyaj pamu|\bpamuk\b(?=\s*(?:\d|$|top|cubu))|kulak cubu/i },
+  { key: "kisisel-bakim", label: "Kişisel Bakım", re: /hijyenik ped|\bped\b|tampon|molped|orkid(?!e)|kotex|panty ?liner|islak mendil|\bmendil\b|dis macunu|dis fircasi|gargara|agiz bakim|mouthwash|toothpaste|toothbrush|dis ipi|vucut losyon|dus jeli|shower gel|\bbanyo\b|\bsabun|\bsoap\b|body lotion|body wash|tiras|shave|jilet|razor|epilas|\bagda\b|yara band|band-?aid|disk pamuk|pamuk ped|makyaj pamu|\bpamuk\b(?=\s*(?:\d|$|top|cubu))|kulak cubu/i },
   // A sock is a sock whatever shoe it is FOR: "Sneaker Çorap", "Babet Çorap",
   // "Bot Çorabı", "Kayak Çorabı" all landed in Ayakkabı (or nowhere) because the
   // shoe word came first in this table. Turkish softens çorap to çorab- before a
@@ -90,7 +95,13 @@ export const PRODUCT_TYPES: ProductType[] = [
   // adjective is excluded. Owner report 2026-10-02; 138 rows on the live feed.
   { key: "ic-giyim",   label: "İç Giyim",      re: /\bcora[pb](?!li)|\bsocks?\b/i },
   // `\bboot` must not take "bootcut": Bershka's bootcut JEANS were all shoes.
-  { key: "ayakkabi",   label: "Ayakkabı",      re: /ayakkabi|\bshoe|sneaker|\bbot\b|\bboot(?![- ]?cut)|topuklu|\bheel|sandalet|sandal|terlik|slipper|espadril|babet|\bflat\b|cizme|loafer|makosen/i },
+  // `bot` takes its Turkish suffixes: "Süet Botlar", "Bilek Botu", "Yağmur Botu"
+  // matched nothing before 2026-10-11 and 80+ real boots carried no type.
+  // Same family of false friends, measured 2026-10-11: "Çizme Paça Pantolon"
+  // (H&M's boot-leg TROUSERS), "Çizmeci" (a wafer brand at Rossmann), "Sandal
+  // Ağacı" (sandalwood incense and perfume) and a "Flat Tip Tweezer" all sat
+  // on the Shoes shelf — the first two as boots.
+  { key: "ayakkabi",   label: "Ayakkabı",      re: /ayakkabi|\bshoe|sneaker|\bbot(?:u|lar|lari)?\b|\bboot(?![- ]?cut)|topuklu|\bheel|sandalet|sandal(?!\s*agac)|terli[kg]|slipper|espadril|babet|\bflat\b(?! tip)|\bcizme(?!ci|\s*paca)|loafer|makosen/i },
   // `\bbag\b` used to be here on its own, and it quietly claimed garments:
   // folding turns the Turkish "bağ" (tie, strap) into "bag", so every "Bağ
   // detaylı gömlek" — a tie-detail SHIRT — was filed as a handbag. Mango names
@@ -101,11 +112,14 @@ export const PRODUCT_TYPES: ProductType[] = [
   // `\bklt\b` is Penti's own abbreviation for külot ("PRETTY LOLIPOP KLT., 1,
   // MERCAN"); without it a chunk of their catalogue carried no type at all.
   { key: "ic-giyim",   label: "İç Giyim",      re: /ic giyim|ic camasir|underwear|lingerie|sutyen|\bbra\b|bralet|bralette|kulot|\bklt\b|panty|panties|brief|thong|slip\b|cora[pb]|\bsock|hosiery|tights|pijama|pajama|pyjama|gecelik|nightgown|homewear|loungewear|sabahlik|jartiyer|garter|legging|soket|\bskt\b|\bsne\b|\bsn\b|\blace\b|\bmesh\b|\b\dl[iu]?\b|\bsut\b|push ?up|highwaist|high waist|\b\d{2}[a-f]\b|\b\d\d-\d\d\b/i },
-  { key: "elbise",     label: "Elbise",        re: /elbise|dress|tulum|jumpsuit|salopet|romper/i },
+  // "Takım elbise" is a men's SUIT, not a dress: 221 suits sat on the Dresses
+  // shelf (Network, Beymen, Massimo Dutti's "TAKIM ELBİSELERİ" category). They
+  // go to Dış Giyim/Blazer, the nearest shelf a shopper would look on.
+  { key: "elbise",     label: "Elbise",        re: /(?<!takim\s)elbise|dress|tulum|jumpsuit|salopet|romper/i },
   // `manto` and `pardosu` are Boyner's words for a coat — both were missing, so
   // "Kruvaze Manto" and "Oversize Pardösü" fell through to no type.
-  { key: "dis-giyim",  label: "Dış Giyim",     re: /ceket|jacket|kaban|\bcoat|\bmont\b|manto|pardosu|trenckot|trench|palto|blazer|yelek|\bvest\b|parka|anorak|bomber|pelerin|\bcape\b/i },
-  { key: "triko",      label: "Triko & Sweat", re: /kazak|sweater|pullover|jumper|hirka|cardigan|triko|\bknit|sweat|hood/i },
+  { key: "dis-giyim",  label: "Dış Giyim",     re: /ceket|jacket|kaban|\bcoat|\bmont\b|manto|pardosu|trenckot|trench|palto|blazer|yelek|\bvest\b|parka|anorak|bomber|pelerin|\bcape\b|takim elbise/i },
+  { key: "triko",      label: "Triko & Sweat", re: /kaza[kg]|sweater|pullover|jumper|hirka|cardigan|triko|\bknit|sweat|hood/i },
   // Üst before Alt: a garment word must beat a MATERIAL word. "Denim gömlek"
   // is a shirt, but `denim` sits in Alt and was winning. Measured over 480
   // products: one row moves, and it is the denim shirt. (The same trick does
@@ -113,7 +127,7 @@ export const PRODUCT_TYPES: ProductType[] = [
   // Jeans" is a brand name that hits the Alt regex.)
   { key: "ust",        label: "Üst Giyim",     re: /tisort|t-?shirt|tshirt|\btee\b|gomlek|\bshirt|bluz|blouse|\btop\b|\bust\b|atlet|\btank|\bbody\b|bodysuit|\bcrop|halter|bustier|bustiyer|korse|corset/i },
   { key: "alt",        label: "Alt Giyim",     re: /pantolon|trouser|\bpants\b|\bpant\b|\bjean|denim|\bkot\b|etek|\bskirt|\bsort|\bshort(?!\s*-?\s*sleeve)|bermuda|\btayt\b|jogger|palazzo|chino|esofman|kapri|capri|biker|\bpnt\b/i },
-  { key: "aksesuar",   label: "Aksesuar",      re: /atki|scarf|sapka|\bhat\b|\bcap\b|\bbere\b|beanie|kemer|\bbelt|taki|jewel|kolye|necklace|kupe|earring|yuzuk|\bring\b|bileklik|bilezik|bracelet|charm|gozluk|sunglass|glasses|eldiven|glove|\bsaat\b|watch|sac band|headband|\btoka\b|fular|\bsal\b|shawl|bros|brooch|piercing|anahtarlik|keychain/i },
+  { key: "aksesuar",   label: "Aksesuar",      re: /atki|scarf|sapka|\bhat\b|\bcap\b|\bbere\b|beanie|kemer|\bbelt|taki|jewel|kolye|necklace|kupe|earring|yuzuk|\bring\b|bileklik|bilezi[kg]|bracelet|charm|gozluk|sunglass|glasses|eldiven|glove|\bsaat\b|watch|sac band|headband|\btoka\b|fular|\bsal\b|shawl|bros|brooch|piercing|anahtarlik|keychain/i },
   // Weak makeup words, LAST on purpose — see the strong makyaj rule above.
   { key: "makyaj",     label: "Makyaj",        re: /blush|pudra|powder|highlight|primer|contour|sponge|\bnails?\b/i },
 ];
@@ -136,8 +150,88 @@ function dialect(brand: string | null | undefined, name: string): string {
   return name;
 }
 
-function firstType(text: string): string | null {
+function firstRule(text: string): string | null {
   for (const t of PRODUCT_TYPES) if (t.re.test(text)) return t.key;
+  return null;
+}
+
+/**
+ * Clothing, shoe and bag nouns — evidence that a cosmetics word in the same
+ * name means something else. The cosmetics rules outrank every garment rule, so
+ * before 2026-10-11 "Krem Payetli Maksi Abiye Elbise" (krem = cream COLOUR),
+ * "Güneş Korumalı … T-Shirt" (UV), "Fırçalanmış … Kazak" (BRUSHED), "Mendil
+ * Kesimli Elbise" (handkerchief hem) and "Bej … Gömlek [GÖMLEK / PAMUK]" were
+ * all cosmetics: 401 rows on the skincare shelf alone, 290 of them Beymen.
+ */
+const FASHION_NOUN =
+  /gomle[kg]|kaza[kg]|canta|elbise|pantolon|ceket|\bete[kg]|bluz|tisort|t-shirt|hirka|ayakkabi|\bbot\b|sneaker|kaban|\bmont\b|\bsal\b|atki|sapka|kemer|cuzdan|terli[kg]|sandalet|yele[kg]|sweat|cora[pb]|tayt|\bjean|\bsort\b|tulum|abiye|bikini|parka|trenc|blazer|sutyen|pijama|loafer|babet|cizme|\bvest\b|jacket|\bcoat\b|dress|\bshirt|trouser|skirt|\bbag\b|\bbere\b|eldiven|hoodie/;
+/**
+ * Cosmetics words that have an everyday fashion reading. Only THESE are set
+ * aside — "Mont Blanc … Parfüm" and "Hoodie Lash … Takma Kirpik" keep their
+ * strong word and stay cosmetics.
+ */
+const SOFT_COSMETIC = /\b(?:krem|cream|gunes|firca|mendil|pamuk|banyo|maske)\w*/g;
+const COSMETIC_KEYS = new Set(["makyaj", "cilt-bakim", "kisisel-bakim", "parfum", "sac"]);
+
+function firstType(text: string): string | null {
+  const t = firstRule(text);
+  if (t && COSMETIC_KEYS.has(t) && FASHION_NOUN.test(text)) {
+    // Read the name again without the soft words; if it is then a garment, they
+    // described the garment. Real cosmetics ("Nemlendirici Krem", "GETAWAY SET
+    // … cilt bakım … çanta") still say cosmetics without them.
+    const again = firstRule(text.replace(SOFT_COSMETIC, " "));
+    if (again && !COSMETIC_KEYS.has(again)) return again;
+  }
+  return t;
+}
+
+/**
+ * Whether a category is a SHARED section: its parts, split at the separators
+ * stores use ("Çanta - aksesuar", "Ayakkabı | Aksesuar", "ELBİSE VE ETEK"),
+ * name different shelves. Part by part, so a word inside a word ("taki" in
+ * "Eşofman takımı", "tshirt" in "Sweatshirt") is never read as a second shelf.
+ */
+/**
+ * Only fashion shelves count: drugstore categories ("Saç Bakım Yağları &
+ * Serumları") pair a shelf with a FORMAT, and the format word would win on
+ * the name — a hair serum is hair care, not a face serum.
+ */
+function sharedSection(cat: string): Set<string> | null {
+  const parts = cat.split(/\s*[|,/&]\s*|\s+-\s+|\s+ve\s+|\s+and\s+/);
+  // A suit section holds jackets, trousers and waistcoats alike.
+  if (/takim elbise/.test(cat)) return new Set(["dis-giyim", "alt"]);
+  if (parts.length < 2) return null;
+  // "Aksesuar" names a shelf only here: as a type word it would take every bag
+  // a store files under a plain "Aksesuar" category.
+  const types = new Set(
+    parts.map((p) => (p.trim() ? firstType(p) ?? (/\baksesuar|\baccessor/.test(p) ? "aksesuar" : null) : null)).filter((t): t is string => !!t),
+  );
+  if (types.size < 2 || [...types].some((t) => COSMETIC_KEYS.has(t))) return null;
+  return types;
+}
+
+/**
+ * A garment noun beats the knitwear shelf. "Triko" is a FABRIC as often as a
+ * garment, and stores shelve knit skirts and trousers with the jumpers: Lefties
+ * files them under "Plain Knit Trousers"/"Plain Knit Skirt", Koton and Mango
+ * under "Kazak & Süveter", and names say "Triko Etek", "Triko Pantolon". 617+
+ * skirts, shorts, trousers and dresses were unreachable from their own shelves.
+ *
+ * Only when nothing in the name is itself a knitwear garment — "Sweatshirt ve
+ * pantolon seti" is a set and stays, "Polo Yaka Triko Tişört" is the triko/polo
+ * shelf's. A dress noun always wins ("Kazak Elbise" is a sweater dress).
+ * "Etek ucu" is a hem, not a skirt.
+ */
+const KNIT_GARMENT = /kaza[kg]|suveter|sweater|pullover|jumper|hirka|cardigan|sweat|hoodie|kapuson|\bpolo\b|yele[kg]|\bvest\b|panco|poncho|\bknit (?:top|jacket)/;
+const DRESS_NOUN = /(?<!takim\s)elbise|\bdress\b|\btulum\b|jumpsuit/;
+const BOTTOM_NOUN = /\bete[kg](?!\s*ucu)|\bskirt|pantolon|trouser|\bpants\b|\bsort\b|\bshorts?\b|bermuda|\btayt\b|legging|jogger|sweatpant/;
+const TOP_NOUN = /tisort|t-?shirt|\btee\b|\bbluz|blouse|\btop\b|\batlet|bustiyer|bustier|gomle[kg]|\bshirt\b|\bcrop\b/;
+
+function knitOverride(name: string): string | null {
+  if (DRESS_NOUN.test(name)) return "elbise";
+  if (KNIT_GARMENT.test(name)) return null;
+  if (BOTTOM_NOUN.test(name)) return "alt";
+  if (TOP_NOUN.test(name)) return "ust";
   return null;
 }
 
@@ -157,9 +251,20 @@ export function classifyType(
   brand?: string | null,
 ): string | null {
   const cat = brand && LABEL_NOT_CATEGORY.has(brand) ? "" : fold(category ?? "");
-  const byCategory = cat.trim() ? firstType(cat) : null;
-  if (byCategory) return byCategory;
-  return firstType(fold(`${category ?? ""} ${dialect(brand, name ?? "")}`));
+  const n = fold(dialect(brand, name ?? ""));
+  let type: string | null;
+  const shared = cat.trim() ? sharedSection(cat) : null;
+  if (shared) {
+    // A shared section ("Çanta - aksesuar", "Ayakkabı | Aksesuar", "ELBİSE VE
+    // ETEK") names two shelves, so it cannot decide between them; the name can.
+    // Bershka filed 113 necklaces and earrings as bags this way.
+    const byName = firstType(n);
+    type = byName && !COSMETIC_KEYS.has(byName) ? byName : firstType(cat);
+  } else {
+    type = (cat.trim() ? firstType(cat) : null) ?? firstType(fold(`${category ?? ""} ${dialect(brand, name ?? "")}`));
+  }
+  if (type === "triko") return knitOverride(n) ?? type;
+  return type;
 }
 
 /**
@@ -292,7 +397,9 @@ export const TYPE_VOCABULARY: string[] = Array.from(
     PRODUCT_TYPES.flatMap((t) =>
       t.re.source
         .split("|")
-        .map((alt) => alt.replace(/\\b|\\y/g, "").trim())
+        // Lookarounds are guards ("elbise" but not "takım elbise"), not part of
+        // the word: strip them so the guarded word stays correctable.
+        .map((alt) => alt.replace(/\(\?<?[!=][^()]*\)/g, "").replace(/\\b|\\y/g, "").trim())
         .filter((alt) => /^[a-z]{4,}$/.test(alt)),
     ).concat(Object.keys(SEARCH_ALIASES)),
   ),
@@ -355,16 +462,18 @@ export const PRODUCT_SUBTYPES: Record<string, ProductSubtype[]> = {
   ],
   "dis-giyim": [
     { key: "trenckot", label: "Trençkot", re: /trenckot|trench|pardosu/ },
-    { key: "blazer", label: "Blazer", re: /blazer/ },
+    { key: "blazer", label: "Blazer", re: /blazer|takim elbise/ },
     { key: "yelek", label: "Yelek", re: /yele[kg]|\bvest\b/ },
     { key: "mont", label: "Mont & Kaban", re: /\bmont\b|kaban|palto|manto|parka|anorak|puffer|sisme/ },
     { key: "ceket", label: "Ceket", re: /ceket|jacket|bomber/ },
   ],
   ayakkabi: [
-    { key: "bot", label: "Bot & Çizme", re: /\bbot(u|lar|lari)?\b|\bboot|cizme/ },
+    { key: "bot", label: "Bot & Çizme", re: /\bbot(u|lar|lari)?\b|\bboot|\bcizme(?!\s*paca)|\bpostal\b/ },
     { key: "topuklu", label: "Topuklu", re: /topuklu|\bheel|stiletto/ },
-    { key: "sneaker", label: "Sneaker", re: /sneaker|spor ayakkabi|\btrainer/ },
-    { key: "sandalet", label: "Sandalet & Terlik", re: /sandalet|sandal|terlik|slipper|\bmule\b/ },
+    // Running/tennis/walking shoes are the sneaker shelf too; Puma and Nike name
+    // them by sport ("Koşu Ayakkabısı") and 40% of Puma had no subtype.
+    { key: "sneaker", label: "Sneaker", re: /sneaker|spor ayakkabi|\btrainer|\bkosu|running|tenis ayakkabi|basketbol ayakkabi|yuruyus ayakkabi/ },
+    { key: "sandalet", label: "Sandalet & Terlik", re: /sandalet|sandal|terli[kg]|slipper|\bmule\b/ },
     { key: "babet", label: "Babet & Loafer", re: /babet|loafer|makosen|\bflat\b|espadril/ },
   ],
   "cilt-bakim": [
@@ -389,10 +498,10 @@ export const PRODUCT_SUBTYPES: Record<string, ProductSubtype[]> = {
     { key: "mini", label: "Mini", re: /\bmini|kisa elbise/ },
   ],
   "kisisel-bakim": [
-    { key: "hijyen", label: "Hijyenik Ped", re: /hijyenik ped|\bped\b|tampon|molped|orkid|kotex|panty ?liner/ },
+    { key: "hijyen", label: "Hijyenik Ped", re: /hijyenik ped|\bped\b|tampon|molped|orkid(?!e)|kotex|panty ?liner/ },
     { key: "agiz", label: "Ağız Bakımı", re: /dis macunu|dis fircasi|gargara|agiz bakim|mouthwash|toothpaste|toothbrush|dis ipi/ },
     { key: "banyo", label: "Duş & Banyo", re: /dus jeli|shower gel|\bbanyo\b|\bsabun|\bsoap\b|body wash|vucut losyon|body lotion/ },
-    { key: "tiras", label: "Tıraş & Ağda", re: /tiras|shave|jilet|razor|epilas|\bagda\b/ },
+    { key: "tiras", label: "Tıraş & Ağda", re: /tiras|shave|jilet|razor|epilas|\bagda\b|tuy dokucu|hair remov|depilat/ },
     { key: "mendil", label: "Islak Mendil", re: /islak mendil|wet wipe|\bmendil\b/ },
     { key: "yara", label: "Yara Bandı", re: /yara band|band-?aid|plaster/ },
   ],
@@ -400,7 +509,7 @@ export const PRODUCT_SUBTYPES: Record<string, ProductSubtype[]> = {
     { key: "hirka", label: "Hırka", re: /hirka|cardigan/ },
     { key: "sweatshirt", label: "Sweatshirt & Hoodie", re: /sweatshirt|\bsweat\b|hoodie|kapuson/ },
     { key: "polo", label: "Polo", re: /\bpolo/ },
-    { key: "kazak", label: "Kazak & Süveter", re: /kazak|suveter|sweater|pullover|balikci|jumper/ },
+    { key: "kazak", label: "Kazak & Süveter", re: /kaza[kg]|suveter|sweater|pullover|balikci|jumper/ },
   ],
   "ic-giyim": [
     { key: "pijama", label: "Pijama & Gecelik", re: /pijama|gecelik|sabahlik|uyku|pyjama|nightwear|bornoz/ },
@@ -429,7 +538,7 @@ export const PRODUCT_SUBTYPES: Record<string, ProductSubtype[]> = {
     { key: "sapka", label: "Şapka & Bere", re: /sapka|\bbere\b|kasket|beanie|\bcap\b|fedora|bucket hat/ },
     { key: "kemer", label: "Kemer", re: /kemer|\bbelt/ },
     { key: "sal", label: "Şal & Atkı", re: /\bsal\b|sali\b|fular|atki|esarp|bandana|scarf|eldiven/ },
-    { key: "taki", label: "Takı", re: /kupe|kolye|bileklik|bilezik|yuzu[kg]|\bring\b|charm|zincir|earring|necklace|bracelet|anahtarlik|brosc?|piercing|halhal/ },
+    { key: "taki", label: "Takı", re: /kupe|kolye|bileklik|bilezi[kg]|yuzu[kg]|\bring\b|charm|zincir|earring|necklace|bracelet|anahtarlik|brosc?|piercing|halhal/ },
     { key: "saat", label: "Saat", re: /\bsaat|\bwatch\b/ },
     { key: "toka", label: "Toka & Saç Aksesuarı", re: /\btoka|sac bandi|bandana|hair (clip|tie|pin)|\bbone\b/ },
   ],
@@ -437,10 +546,12 @@ export const PRODUCT_SUBTYPES: Record<string, ProductSubtype[]> = {
     // The earlier 40% reading came from testing only a handful of words. Split
     // by the part of the face the product is for — which is how the shelf is
     // shopped — and the names do carry it.
+    // Oje first: nail-polish names advertise shine ("Flormar Higloss … Oje")
+    // and `gloss` below was filing them as lip products.
+    { key: "oje", label: "Oje & Tırnak", re: /\boje|nail|tirnak/ },
     { key: "dudak", label: "Dudak", re: /\bruj|lipstick|\blip\b|lipgloss|dudak|gloss|\bbalm/ },
     { key: "goz", label: "Göz", re: /maskara|mascara|eyeliner|dipliner|\bfar[i]?\b|\bkas\b|eyeshadow|kirpik|\bgoz\b|goz far|\beye/ },
-    { key: "yuz", label: "Yüz", re: /fondoten|foundation|pudra|powder|kapatici|concealer|allik|blush|aydinlatici|highlight|bronzer|kontur|contour|\bbb krem|\bcc krem|primer|makyaj baz|sabitleyici|setting (spray|mist)|\bbaz\b/ },
-    { key: "oje", label: "Oje & Tırnak", re: /\boje|nail|tirnak/ },
+    { key: "yuz", label: "Yüz", re: /fondoten|foundation|pudra|powder|kapatici(?!lik)|concealer|allik|blush|aydinlatici|highlight|bronzer|kontur|contour|\bbb krem|\bcc krem|primer|makyaj baz|sabitleyici|setting (spray|mist)|\bbaz\b/ },
     { key: "firca", label: "Fırça & Aksesuar", re: /firca|brush|sunger|aplikator|makyaj cantasi|paleti|palette/ },
     { key: "temizleme", label: "Makyaj Temizleme", re: /makyaj temizle|makeup remover|temizleme suyu/ },
   ],
@@ -471,14 +582,21 @@ export const PRODUCT_SUBTYPES: Record<string, ProductSubtype[]> = {
  * Repair" shampoo — that product is cilt-bakim or sac, and never tested against
  * footwear words.
  */
-export function subtypeForName(type: string | null | undefined, name: string): string | null {
+export function subtypeForName(type: string | null | undefined, name: string, brand?: string | null): string | null {
   if (!type) return null;
   const subs = PRODUCT_SUBTYPES[type];
   if (!subs) return null;
   const n = fold(name);
   for (const s of subs) if (s.re.test(n)) return s.key;
+  // Brand dialect: a sportswear brand's plain "Ayakkabı" is a trainer. Puma,
+  // Nike and New Balance name shoes by model ("PUMA Catch SOLEIL Kadın
+  // Ayakkabı", "Nike Air Force 1 '07") — 576 had no subtype, so "nike air"
+  // searched the sneaker shelf and found none of the Airs.
+  if (type === "ayakkabi" && brand && SNEAKER_BRANDS.has(brand)) return "sneaker";
   return null;
 }
+
+const SNEAKER_BRANDS = new Set(["puma", "nike", "newbalance"]);
 
 export const subtypeLabel = (type: string, key: string): string =>
   // `type:key`, because subtype keys repeat: makyaj/goz is eye makeup and

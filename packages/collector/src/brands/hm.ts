@@ -175,6 +175,9 @@ export function mapProduct(
     currency: currencyFor(country),
     inStock: p.availability?.stockState === "Available",
     category,
+    // One listing row is one colour ("Koyu kırmızı/Kalpler"). Without it 95% of
+    // H&M had no colour family and vanished from every colour filter.
+    colorName: typeof p.colorName === "string" && p.colorName.trim() ? p.colorName.trim() : null,
     gender: (category && ROOT_GENDER[category]) || null,
   };
 }

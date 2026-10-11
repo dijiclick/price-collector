@@ -28,9 +28,13 @@ const gross = (net: unknown, vat: unknown) => Number(net) + (Number(vat) || 0);
 
 /** Map one GetProductList card. Pure. */
 export function mapVsCard(p: any): LiveProduct | null {
-  const price = gross(p?.productSellPrice, p?.productSellPriceKDV);
+  // Cart price is the reduced price, sell price the strikethrough (see the
+  // collector's victoriassecret.ts, 2026-10-11).
+  const shelf = gross(p?.productSellPrice, p?.productSellPriceKDV);
+  const cart = gross(p?.productCartPrice, p?.productCartPriceKDV);
+  const price = Number.isFinite(cart) && cart > 0 && Number.isFinite(shelf) ? Math.min(cart, shelf) : shelf;
   if (!p?.productId || !p?.name || !Number.isFinite(price) || price <= 0) return null;
-  const original = gross(p.productPriceOriginal, p.productPriceOriginalKDV);
+  const original = Math.max(shelf, gross(p.productPriceOriginal, p.productPriceOriginalKDV) || 0);
   const img = typeof p.imageThumbPath === "string" ? p.imageThumbPath.replace("/UrunResimleri/thumb/", "/UrunResimleri/buyuk/") : null;
   return {
     brand: "victoriassecret",

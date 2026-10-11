@@ -6,6 +6,7 @@ import type { ProductRecord, PriceEvent, Snap, ProductVariants } from "./types";
 import { classifyType } from "./productType";
 import { cleanListPrice } from "./normalize";
 import { subtypeForName } from "../../../lib/productTypes";
+import { resolveGender } from "../../../lib/gender";
 import { colorFamilies } from "../../../lib/colors";
 import { DEFAULT_COUNTRY } from "../../../lib/countries";
 
@@ -173,7 +174,7 @@ export function contentHash(r: ProductRecord): string {
   const parts: unknown[] = [
     r.name, r.url, r.imageUrl ?? null, r.category ?? null,
     classifyType(r.category, r.name, r.brand),
-    subtypeForName(classifyType(r.category, r.name, r.brand), r.name),
+    subtypeForName(classifyType(r.category, r.name, r.brand), r.name, r.brand),
     r.groupKey ?? null, r.colorName ?? null,
     r.price, r.listPrice ?? null, r.inStock,
     r.variants ?? undefined,
@@ -273,9 +274,11 @@ async function upsertChanged(
       // Pass the object as-is: postgres.js serialises it to JSONB. Stringifying
       // here would double-encode it (stored as a JSON *string*, not an object).
       params.push(r.brand, countryOf(r), r.externalId, r.name, r.url, r.imageUrl, r.category ?? null,
-        classifyType(r.category, r.name, r.brand), subtypeForName(classifyType(r.category, r.name, r.brand), r.name),
+        classifyType(r.category, r.name, r.brand), subtypeForName(classifyType(r.category, r.name, r.brand), r.name, r.brand),
         r.variants ?? null, r.groupKey ?? null, r.colorName ?? null,
-        r.gender ?? null, r.barcodes?.length ? r.barcodes : null,
+        // The name's own "Erkek"/"Kadın"/"Kız Çocuk" beats the section the
+        // adapter crawled (lib/gender.ts); a silent name keeps the adapter's.
+        resolveGender(r.gender, r.name), r.barcodes?.length ? r.barcodes : null,
         r.price, r.listPrice, r.currency, r.inStock, hash,
         // null when nothing names a colour, so the COALESCE below keeps what an
         // earlier run with variants found (Zara refetches sizes in rotation).

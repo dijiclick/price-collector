@@ -102,9 +102,16 @@ export function treeSizes(tree: any[] | null | undefined): SizeVariant[] {
 
 /** Map one listing card. Pure. Sizes are left null for two-axis items (filled by the detail pass). */
 export function mapVs(p: any): ProductRecord | null {
-  const price = gross(p?.productSellPrice, p?.productSellPriceKDV);
-  if (!p?.productId || !p?.name || !Number.isFinite(price) || price <= 0) return null;
-  const original = gross(p.productPriceOriginal, p.productPriceOriginalKDV);
+  // Ticimax's reduced price is `productCartPrice` and the strikethrough is
+  // `productSellPrice`; `productPriceOriginal` EQUALS the cart price, despite
+  // its name (measured on four Ticimax shops, 2026-10-11 — see _ticimax.ts).
+  // Reading sell as the price and "original" as the strikethrough made every
+  // markdown look like a price rise, so a VS sale would never have been seen.
+  const shelf = gross(p?.productSellPrice, p?.productSellPriceKDV);
+  if (!p?.productId || !p?.name || !Number.isFinite(shelf) || shelf <= 0) return null;
+  const cart = gross(p.productCartPrice, p.productCartPriceKDV);
+  const price = Number.isFinite(cart) && cart > 0 ? Math.min(cart, shelf) : shelf;
+  const original = Math.max(shelf, gross(p.productPriceOriginal, p.productPriceOriginalKDV) || 0);
   const big = (u: unknown) => (typeof u === "string" ? u.replace("/UrunResimleri/thumb/", "/UrunResimleri/buyuk/") : null);
   const first = big(p.imageThumbPath) ?? big(p.imageLoadingPath);
   const extra = (p.imageList ?? []).map((im: any) => big(im?.imagePath ?? im?.bigImagePath ?? im));
