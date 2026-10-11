@@ -43,7 +43,7 @@ const GUESS: CountryCode[] = ALL_COUNTRIES.filter(
 export const BRANDS: BrandInfo[] = [
   { slug: "zara", label: "ZARA", category: "Giyim", logo: "/brands/zara.svg", countries: EVERYWHERE },
   { slug: "mango", label: "MANGO", category: "Giyim", logo: "/brands/mango.svg", countries: EVERYWHERE },
-  { slug: "hm", label: "H&M", category: "Giyim", logo: "/brands/hm.svg", countries: ["TR", "AE", "SA", "GB", "US", "CA", "AU", "CH", "NO"] },
+  { slug: "hm", label: "H&M", category: "Giyim", logo: "/brands/hm.svg", countries: EVERYWHERE },
   { slug: "bershka", label: "BERSHKA", category: "Giyim", logo: "/brands/bershka.svg", countries: except("AU") },
   { slug: "stradivarius", label: "Stradivarius", category: "Giyim", logo: "/brands/stradivarius.svg", countries: except("AU") },
   { slug: "pullandbear", label: "PULL&BEAR", category: "Giyim", logo: "/brands/pullandbear.svg", countries: except("NO") },

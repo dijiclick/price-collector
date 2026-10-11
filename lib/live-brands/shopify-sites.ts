@@ -46,7 +46,6 @@ export const SHOPIFY_STORES: ShopifySite[] = [
   { brand: "pe-nation", sites: { AU: "https://www.pe-nation.com" }, defaultGender: "kadin" },
   { brand: "forevernew", sites: { AU: "https://www.forevernew.com.au" }, defaultGender: "kadin" },
   { brand: "countryroad", sites: { AU: "https://www.countryroad.com.au" } },
-  { brand: "lornajane", sites: { AU: "https://www.lornajane.com.au" }, defaultGender: "kadin" },
   // Turkey
   { brand: "dagi", sites: { TR: "https://www.dagi.com.tr" } },
 ];

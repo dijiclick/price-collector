@@ -84,8 +84,22 @@ export function mapJdGb(h: any, country: CountryCode): ProductRecord | null {
 
 export async function listJdSportsGb(country: CountryCode): Promise<ProductRecord[]> {
   if (country !== "GB") return [];
-  const cfg = algoliaConfigOf(await getText(`${SITE}/`, { country, headers: { Accept: "text/html" } }));
-  if (!cfg) throw new Error("jdsports/GB: no algoliaConfig on the home page");
+  // The search-only key, pinned (public, shipped in every JD page). Reading it
+  // from the home page broke on 2026-10-11 when www.jdsports.co.uk started
+  // answering 403 to runners AND to the Mac, while Algolia itself still
+  // answers. The home page is only a fallback for when the pinned key is
+  // retired. docs/collector-unblock-playbook.md.
+  let cfg: { appId: string; key: string } | null = {
+    appId: process.env.JDSPORTS_GB_ALGOLIA_APP ?? "YPTJLWZE3Q",
+    key: process.env.JDSPORTS_GB_ALGOLIA_KEY ?? "406e0fd2fca1bb457ec819dbcd962294",
+  };
+  const probe = await getJson<any>(`https://${cfg.appId}-dsn.algolia.net/1/indexes/${INDEX}/query`, {
+    method: "POST", country, retries: 0,
+    headers: { "X-Algolia-Application-Id": cfg.appId, "X-Algolia-API-Key": cfg.key, "Content-Type": "application/json" },
+    body: JSON.stringify({ params: "hitsPerPage=0" }),
+  }).catch(() => null);
+  if (!probe) cfg = algoliaConfigOf(await getText(`${SITE}/`, { country, headers: { Accept: "text/html" } }));
+  if (!cfg) throw new Error("jdsports/GB: pinned Algolia key refused and no algoliaConfig on the home page");
   const byId = new Map<string, ProductRecord>();
   for (let page = 0; page < 3 && byId.size < CAP; page++) {
     await sleep(PAUSE_MS);

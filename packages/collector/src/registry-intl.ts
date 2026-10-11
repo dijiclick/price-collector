@@ -62,6 +62,7 @@ import { listSweatyBetty } from "./brands/sweatybetty";
 import { listSpaceNk } from "./brands/spacenk";
 import { listAritzia } from "./brands/aritzia";
 import { listLululemon } from "./brands/lululemon";
+import { listLornaJane } from "./brands/lornajane";
 import { listFaces } from "./brands/faces";
 import { listBoots } from "./brands/boots";
 import { listBootsGb } from "./brands/boots-gb";
@@ -190,6 +191,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   // ── Round 2 (2026-10-11): big brands behind bot walls, reached through the
   // sites' own search services / app APIs. Proxy only for Lululemon (fallback),
   // Victoria's Secret US/CA and Ounass, each measured < ~1 MB a run.
+  { brand: "lornajane", listProducts: listLornaJane },
   { brand: "faces", listProducts: listFaces },
   { brand: "boots", listProducts: (c) => (c === "GB" ? listBootsGb(c) : listBoots(c)) },
   { brand: "uniqlo", listProducts: listUniqlo },
