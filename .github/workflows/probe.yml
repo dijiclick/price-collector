@@ -8,6 +8,9 @@ on:
       urls:
         description: "Optional: space-separated URLs to GET instead of the built-in shop list"
         required: false
+      requests:
+        description: 'Optional: JSON array of {url, method, headers, body} — for POST/GraphQL/app-API checks'
+        required: false
 
 permissions:
   contents: read
@@ -26,6 +29,7 @@ jobs:
       - run: node tools/probe-sites.mjs
         env:
           PROBE_URLS: ${{ inputs.urls }}
+          PROBE_REQUESTS: ${{ inputs.requests }}
       - uses: actions/upload-artifact@v4
         with:
           name: probe-results

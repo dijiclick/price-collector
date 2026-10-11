@@ -155,6 +155,30 @@ async function hit(url) {
   }
 }
 
+// Request mode: `-f requests='[{"url":"…","method":"POST","headers":{…},"body":"…"}]'`
+// for endpoints that need a method, headers or a body (GraphQL, app APIs).
+if (process.env.PROBE_REQUESTS?.trim()) {
+  const fs1 = await import("node:fs");
+  const list = JSON.parse(process.env.PROBE_REQUESTS);
+  const res = [];
+  for (const q of list) {
+    const t = Date.now();
+    try {
+      const r = await fetch(q.url, { method: q.method ?? "GET", headers: { "user-agent": UA, ...(q.headers ?? {}) }, body: q.body, signal: AbortSignal.timeout(20000) });
+      const body = await r.text();
+      const line = { url: q.url, method: q.method ?? "GET", status: r.status, bytes: body.length, ms: Date.now() - t, edge: r.headers.get("cf-ray") ? "cloudflare" : r.headers.get("server") ?? "", head: body.slice(0, 200) };
+      res.push(line);
+      console.log(`${String(r.status).padEnd(4)} ${String(body.length).padStart(8)}B ${line.method} ${line.edge} ${q.url}`);
+      console.log("     " + line.head.replace(/\s+/g, " "));
+    } catch (e) {
+      res.push({ url: q.url, error: String(e?.cause?.code ?? e?.name ?? e) });
+      console.log(`ERR  ${q.url} ${String(e?.cause?.code ?? e?.name ?? e)}`);
+    }
+  }
+  fs1.writeFileSync("probe-results.json", JSON.stringify(res, null, 2));
+  process.exit(0);
+}
+
 // Ad-hoc mode: `gh workflow run probe.yml -f urls="https://a https://b"` — GET
 // each URL from the runner and print status, size and the first bytes, so a
 // data endpoint (not just a home page) can be judged from GitHub's egress.
