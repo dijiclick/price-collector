@@ -1,0 +1,26 @@
+name: probe
+
+# Manual only. Checks which candidate shops answer a GitHub runner with no
+# proxy. No secrets are in scope.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/probe-sites.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: probe-results
+          path: probe-results.json
