@@ -94,4 +94,7 @@ jobs:
           SWEEP_ONLY: "1"
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATAIMPULSE_PROXY: ${{ secrets.DATAIMPULSE_PROXY }}
+          # Sephora CH's Salesforce shop API takes the same public client id as
+          # Turkey's (2026-10-11).
+          SEPHORA_CLIENT_ID: ${{ secrets.SEPHORA_CLIENT_ID }}
         run: npm run collect
