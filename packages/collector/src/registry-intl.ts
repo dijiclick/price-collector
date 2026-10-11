@@ -50,6 +50,16 @@ import * as bloomingdales from "./brands/bloomingdales";
 import * as damas from "./brands/damas";
 import * as ajmal from "./brands/ajmal";
 import * as nahdi from "./brands/nahdi";
+import { listCalzedoniaGroup } from "./brands/_calzedoniagroup";
+import { listTicimaxBrand } from "./brands/_ticimax";
+import { listPhantomBrand } from "./brands/_phantom";
+import * as suwen from "./brands/suwen";
+import * as haydigiy from "./brands/haydigiy";
+import { listBoohooGroup } from "./brands/boohoogroup";
+import { listTfgLondon } from "./brands/tfglondon";
+import { listGymshark } from "./brands/gymshark";
+import { listSweatyBetty } from "./brands/sweatybetty";
+import { listSpaceNk } from "./brands/spacenk";
 
 type List = (country: CountryCode) => Promise<ProductRecord[]>;
 
@@ -69,6 +79,17 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "flormar", listProducts: tr(flormar.listProducts) },
   { brand: "fashfed", listProducts: tr(fashfed.listProducts) },
   { brand: "sportive", listProducts: tr(sportive.listProducts) },
+  // Turkey — Calzedonia group (also CH), Ticimax, Inveon Phantom, own stacks.
+  { brand: "calzedonia", listProducts: (c) => listCalzedoniaGroup("calzedonia", c) },
+  { brand: "intimissimi", listProducts: (c) => listCalzedoniaGroup("intimissimi", c) },
+  { brand: "falconeri", listProducts: (c) => listCalzedoniaGroup("falconeri", c) },
+  { brand: "desa", listProducts: (c) => listTicimaxBrand("desa", c) },
+  { brand: "elifstil", listProducts: (c) => listTicimaxBrand("elifstil", c) },
+  { brand: "noteshop", listProducts: (c) => listTicimaxBrand("noteshop", c) },
+  { brand: "yargici", listProducts: (c) => listPhantomBrand("yargici", c) },
+  { brand: "hotic", listProducts: (c) => listPhantomBrand("hotic", c) },
+  { brand: "suwen", listProducts: tr(() => suwen.listProducts("TR")) },
+  { brand: "haydigiy", listProducts: tr(() => haydigiy.listProducts("TR")) },
   // United States / Canada
   { brand: "oldnavy", listProducts: (c) => listGapInc("oldnavy", c) },
   { brand: "bananarepublic", listProducts: (c) => listGapInc("bananarepublic", c) },
@@ -87,6 +108,15 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "reiss", listProducts: listReiss },
   { brand: "riverisland", listProducts: listRiverIsland },
   { brand: "jdsports", listProducts: listJdSportsGb },
+  { brand: "boohoo", listProducts: (c) => listBoohooGroup("boohoo", c) },
+  { brand: "prettylittlething", listProducts: (c) => listBoohooGroup("prettylittlething", c) },
+  { brand: "karenmillen", listProducts: (c) => listBoohooGroup("karenmillen", c) },
+  { brand: "whistles", listProducts: (c) => listTfgLondon("whistles", c) },
+  { brand: "hobbs", listProducts: (c) => listTfgLondon("hobbs", c) },
+  { brand: "phase-eight", listProducts: (c) => listTfgLondon("phase-eight", c) },
+  { brand: "sweatybetty", listProducts: listSweatyBetty },
+  { brand: "gymshark", listProducts: listGymshark },
+  { brand: "spacenk", listProducts: listSpaceNk },
   // Australia
   { brand: "cottonon", listProducts: listCottonOn },
   { brand: "showpo", listProducts: listShowpo },
@@ -115,7 +145,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "fredrikoglouisa", listProducts: listFredrikOgLouisa },
   { brand: "gullfunn", listProducts: listGullfunn },
   // UAE / Saudi Arabia
-  { brand: "bathandbodyworks", listProducts: (c) => listAlshaya("bathandbodyworks", c) },
+  { brand: "bathandbodyworks", listProducts: (c) => (c === "TR" ? listTicimaxBrand("bathandbodyworks", c) : listAlshaya("bathandbodyworks", c)) },
   { brand: "americaneagle", listProducts: (c) => listAlshaya("americaneagle", c) },
   { brand: "goldenscent", listProducts: goldenscent.listProducts },
   { brand: "vperfumes", listProducts: vperfumes.listProducts },

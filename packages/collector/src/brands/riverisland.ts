@@ -72,7 +72,7 @@ export function sizeQuery(ids: string[]): string {
 const sizeLabel = (v: any): string => {
   const raw = String(v?.displayName ?? "").replace(/\s*\(UK\)\s*$/i, "").trim() ||
     (v?.dimensions ?? []).map((d: any) => d?.value).filter(Boolean).join(" ");
-  return raw.replace(/\b([a-z])/g, (c) => c.toUpperCase());
+  return raw.replace(/\b([a-z])/g, (c: string) => c.toUpperCase());
 };
 
 /** Per-size availability from one `product` answer. Pure. */
