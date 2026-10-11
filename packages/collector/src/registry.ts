@@ -34,6 +34,11 @@ import * as lacoste from "./brands/lacoste";
 import * as pierrecardin from "./brands/pierrecardin";
 import * as derimod from "./brands/derimod";
 import { shopifyAdapters } from "./brands/shopify-stores";
+import { byMarket, intlAdapters } from "./registry-intl";
+import { listSephoraIntl } from "./brands/sephora-intl";
+import { listMarksIntl } from "./brands/marksandspencer-intl";
+import * as victoriassecretIntl from "./brands/victoriassecret-intl";
+import * as modanisaIntl from "./brands/modanisa-intl";
 import * as marksandspencer from "./brands/marksandspencer";
 import * as victoriassecret from "./brands/victoriassecret";
 import * as lcw from "./brands/lcw";
@@ -60,7 +65,7 @@ export const adapters: BrandAdapter[] = [
   { brand: zara.brand, country: "TR", listProducts: zara.listProducts },
   { brand: guess.brand, country: "TR", listProducts: guess.listProducts },
   { brand: penti.brand, country: "TR", listProducts: penti.listProducts },
-  { brand: sephora.brand, country: "TR", listProducts: sephora.listProducts },
+  { brand: sephora.brand, country: "TR", listProducts: byMarket(sephora.listProducts, listSephoraIntl) },
   { brand: hm.brand, country: "TR", listProducts: hm.listProducts },
   { brand: gratis.brand, country: "TR", listProducts: gratis.listProducts },
   { brand: mango.brand, country: "TR", listProducts: mango.listProducts },
@@ -83,15 +88,15 @@ export const adapters: BrandAdapter[] = [
   { brand: newbalance.brand, country: "TR", listProducts: newbalance.listProducts },
   { brand: puma.brand, country: "TR", listProducts: puma.listProducts },
   { brand: superstep.brand, country: "TR", listProducts: superstep.listProducts },
-  { brand: modanisa.brand, country: "TR", listProducts: modanisa.listProducts },
+  { brand: modanisa.brand, country: "TR", listProducts: byMarket(modanisa.listProducts, modanisaIntl.listProducts) },
   { brand: network.brand, country: "TR", listProducts: network.listProducts },
   { brand: ipekyol.brand, country: "TR", listProducts: ipekyol.listProducts },
   { brand: twist.brand, country: "TR", listProducts: twist.listProducts },
   { brand: lacoste.brand, country: "TR", listProducts: lacoste.listProducts },
   { brand: pierrecardin.brand, country: "TR", listProducts: pierrecardin.listProducts },
   { brand: derimod.brand, country: "TR", listProducts: derimod.listProducts },
-  { brand: marksandspencer.brand, country: "TR", listProducts: marksandspencer.listProducts },
-  { brand: victoriassecret.brand, country: "TR", listProducts: victoriassecret.listProducts },
+  { brand: marksandspencer.brand, country: "TR", listProducts: byMarket(marksandspencer.listProducts, listMarksIntl) },
+  { brand: victoriassecret.brand, country: "TR", listProducts: byMarket(victoriassecret.listProducts, victoriassecretIntl.listProducts) },
   { brand: lcw.brand, country: "TR", listProducts: lcw.listProducts },
   { brand: defacto.brand, country: "TR", listProducts: defacto.listProducts },
   { brand: mavi.brand, country: "TR", listProducts: mavi.listProducts },
@@ -100,6 +105,7 @@ export const adapters: BrandAdapter[] = [
   // Added 2026-10-11: Shopify storefronts in every market (docs/brand-plan-2026-10-11.md).
   // Markets come from lib/brands.ts, so an AU-only store never runs for Turkey.
   ...shopifyAdapters,
+  ...intlAdapters,
 ];
 
 /**

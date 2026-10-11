@@ -1,0 +1,116 @@
+/**
+ * JD Sports UK (jdsports.co.uk), women's sale, GBP — through the Algolia index
+ * the site's own Next.js frontend searches. App id and the search-only key are
+ * published in every page's `algoliaConfig`, so each run reads them off the
+ * home page (which answers a GitHub runner) rather than pinning a key here.
+ * Every other www.jdsports.co.uk page — even the static JS — answers a plain
+ * request with a Fastly 403, but Algolia's DSN hosts don't. 2026-10-11.
+ *
+ * `onSale:true` is the site's own sale flag (each hit carries `price` and
+ * `wasPrice` in pounds). `size` lists the sizes still sellable (a third of the
+ * sale hits list one size), so those are stored as in stock.
+ *
+ * JD Sports Australia is a separate Shopify shop (`jdsports.ts`, slug
+ * "jd-sports"); this file is the British store only.
+ */
+import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
+import { getJson, getText } from "../http";
+import { toMinor } from "../normalize";
+import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
+
+const SITE = "https://www.jdsports.co.uk";
+const INDEX = "jd_prod_products_en";
+const HITS = 1000;
+const CAP = 1500;
+const PAUSE_MS = 800;
+export const JD_GB_FILTER = "onSale:true AND (gender:Womens OR gender:Women)";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** `{applicationId, searchApiKey}` out of the home page's `algoliaConfig`. Pure. */
+export function algoliaConfigOf(html: string): { appId: string; key: string } | null {
+  const m = /"algoliaConfig":\{"applicationId":"([A-Z0-9]+)","searchApiKey":"([a-f0-9]+)"/.exec(html);
+  return m ? { appId: m[1], key: m[2] } : null;
+}
+
+export function genderOf(g: unknown): ProductRecord["gender"] {
+  const v = (Array.isArray(g) ? g : [g]).map((x) => String(x ?? "").toLowerCase());
+  if (v.some((x) => /^wom[ae]n/.test(x))) return "kadin";
+  if (v.some((x) => /^(boys|girls|kids|infant|junior)/.test(x))) return "cocuk";
+  if (v.some((x) => /^m[ae]n/.test(x))) return "erkek";
+  return null;
+}
+
+/** Map one Algolia hit. Pure. */
+export function mapJdGb(h: any, country: CountryCode): ProductRecord | null {
+  const price = Number(h?.price);
+  const was = Number(h?.wasPrice);
+  if (!h?.objectID || !h?.name || !h?.slug || !Number.isFinite(price) || price <= 0 || h.isGiftCard) return null;
+  if (h.isMultiPrice) return null;
+  const imgs = [h.image, h.imageSquare].filter((u: unknown): u is string => typeof u === "string");
+  const sizes: SizeVariant[] = [];
+  const seen = new Set<string>();
+  for (const s of Array.isArray(h.size) ? h.size : []) {
+    const label = String(s ?? "").trim();
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    sizes.push({ label, availability: "in_stock" });
+  }
+  // The index lists half sizes after whole ones ("4","5",…,"3.5"); show them in order.
+  if (sizes.length && sizes.every((x) => /^\d+(\.\d+)?$/.test(x.label))) {
+    sizes.sort((a, b) => parseFloat(a.label) - parseFloat(b.label));
+  }
+  const colour = typeof h.colour === "string" && h.colour ? h.colour : null;
+  const type = Array.isArray(h.productType) ? h.productType[0] : null;
+  return {
+    brand: "jdsports",
+    country,
+    externalId: String(h.objectID),
+    name: String(h.name).trim(),
+    url: `${SITE}/product/${h.slug}/${h.objectID}/`,
+    imageUrl: imgs[0] ?? null,
+    images: cleanGallery(imgs, imgs[0] ?? null),
+    price: toMinor(price),
+    listPrice: Number.isFinite(was) && was > price ? toMinor(was) : null,
+    currency: COUNTRIES[country].currency,
+    inStock: h.inStock !== false,
+    category: typeof type === "string" ? type : Array.isArray(h.category) ? (h.category[0] ?? null) : null,
+    gender: genderOf(h.gender),
+    variants: sizes.length ? { colors: colour ? [colour] : [], sizes } : null,
+    groupKey: h.styleId ? `jdsports:${h.styleId}` : null,
+    colorName: colour,
+  };
+}
+
+export async function listJdSportsGb(country: CountryCode): Promise<ProductRecord[]> {
+  if (country !== "GB") return [];
+  const cfg = algoliaConfigOf(await getText(`${SITE}/`, { country, headers: { Accept: "text/html" } }));
+  if (!cfg) throw new Error("jdsports/GB: no algoliaConfig on the home page");
+  const byId = new Map<string, ProductRecord>();
+  for (let page = 0; page < 3 && byId.size < CAP; page++) {
+    await sleep(PAUSE_MS);
+    const params = new URLSearchParams({
+      query: "", hitsPerPage: String(HITS), page: String(page), filters: JD_GB_FILTER,
+      attributesToHighlight: "[]", attributesToSnippet: "[]",
+    });
+    const data = await getJson<any>(`https://${cfg.appId}-dsn.algolia.net/1/indexes/${INDEX}/query`, {
+      method: "POST",
+      country,
+      headers: {
+        "X-Algolia-Application-Id": cfg.appId,
+        "X-Algolia-API-Key": cfg.key,
+        "Content-Type": "application/json",
+        Referer: `${SITE}/`,
+      },
+      body: JSON.stringify({ params: params.toString() }),
+    });
+    const hits: any[] = data?.hits ?? [];
+    for (const h of hits) {
+      const r = mapJdGb(h, country);
+      if (r && r.listPrice != null && !byId.has(r.externalId)) byId.set(r.externalId, r);
+    }
+    if (page + 1 >= Number(data?.nbPages ?? 0) || hits.length < HITS) break;
+  }
+  const all = [...byId.values()];
+  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
+}

@@ -1049,8 +1049,11 @@ export function brandFromUrl(raw: string): string | undefined {
   let host = "";
   try { host = new URL(raw).hostname.toLowerCase(); } catch { return undefined; }
   // Longest slug first: "massimodutti" must win over any shorter substring.
+  // Slugs of three letters or fewer ("on", "hm", "gap", "xxl") must be a whole
+  // host label — as substrings they would claim amazon.com, shmoo.com, …
+  const labels = host.split(".");
   return [...BRANDS].sort((a, b) => b.slug.length - a.slug.length)
-    .find((b) => host.includes(b.slug))?.slug;
+    .find((b) => (b.slug.length <= 3 ? labels.includes(b.slug) : host.includes(b.slug)))?.slug;
 }
 
 /* ------------------------------------------------------------- share links */
