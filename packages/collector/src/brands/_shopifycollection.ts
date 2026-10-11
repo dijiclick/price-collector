@@ -62,7 +62,7 @@ export async function listShopifyCollection(shop: CollectionShop, country: Count
     const d = await getJson<any>(collectionPageUrl(shop, n), {
       country,
       retries: 2,
-      headers: { "Accept-Language": "" },
+      headers: { "Accept-Language": "", cookie: `localization=${country}` },
     });
     const rows: any[] = Array.isArray(d?.products) ? d.products : [];
     if (!rows.length) break;

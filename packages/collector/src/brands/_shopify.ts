@@ -86,10 +86,20 @@ export function mapShopify(store: ShopifyStore, country: CountryCode, site: stri
   };
 }
 
-async function page(site: string, n: number): Promise<any[] | null> {
+/**
+ * Shopify Markets judges stock by the shopper's country, and GitHub's runners
+ * are in the US: a store that ships only inside its own market answers
+ * `available: false` for every variant (Universal Store AU, 1,501 of 1,501 sold
+ * out on 2026-10-11). The `localization` cookie picks the market explicitly.
+ */
+export const marketHeaders = (country: CountryCode) => ({
+  cookie: `localization=${country}; cart_currency=${COUNTRIES[country].currency}`,
+});
+
+async function page(site: string, n: number, country: CountryCode): Promise<any[] | null> {
   const url = `${site}/products.json?limit=250&page=${n}`;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const data = await getJson<any>(url, { retries: 0 }).catch(() => null);
+    const data = await getJson<any>(url, { retries: 0, country, headers: marketHeaders(country) }).catch(() => null);
     if (Array.isArray(data?.products)) return data.products;
     await sleep(4000 * (attempt + 1));
   }
@@ -103,7 +113,7 @@ export async function listShopify(store: ShopifyStore, country: CountryCode): Pr
   const byId = new Map<string, ProductRecord>();
   for (let n = 1; n <= MAX_PAGES; n++) {
     if (n > 1) await sleep(PAUSE_MS);
-    const rows = await page(site, n);
+    const rows = await page(site, n, country);
     if (rows === null) {
       if (byId.size === 0 && n === 1) throw new Error(`${store.brand}/${country}: products.json refused`);
       break;

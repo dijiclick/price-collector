@@ -69,7 +69,9 @@ export async function shopifyUrl(url: string): Promise<LiveProduct | null> {
   // nothing else works.
   try {
     const r = await fetch(`${t.site}/products/${encodeURIComponent(t.handle)}.js`, {
-      headers: { Accept: "application/json", "User-Agent": UA },
+      // Shopify Markets judges stock by the caller's country and Vercel runs in
+      // the US — without this a store that ships only at home reads sold out.
+      headers: { Accept: "application/json", "User-Agent": UA, cookie: `localization=${t.country}` },
       signal: AbortSignal.timeout(8000),
       cache: "no-store",
     });

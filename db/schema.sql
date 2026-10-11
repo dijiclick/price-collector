@@ -528,6 +528,10 @@ CREATE TABLE IF NOT EXISTS collector_runs (
   error     TEXT,
   PRIMARY KEY (run_at, brand, country)
 );
+-- Watchdog data checks (2026-10-11): of `products`, how many were in stock and
+-- how many reduced. NULL on rows older than this.
+ALTER TABLE collector_runs ADD COLUMN IF NOT EXISTS in_stock INTEGER;
+ALTER TABLE collector_runs ADD COLUMN IF NOT EXISTS discounted INTEGER;
 CREATE INDEX IF NOT EXISTS idx_collector_runs_brand ON collector_runs (brand, country, run_at DESC);
 
 -- Stilist alarms (2026-10-11, Premium: free 1, Premium unlimited). A saved

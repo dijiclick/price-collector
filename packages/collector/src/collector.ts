@@ -27,6 +27,13 @@ export interface BrandResult {
   country: string;
   count: number;
   events: number;
+  /**
+   * Of `count`: in stock, and reduced (listPrice above price). Recorded so the
+   * watchdog sees a crawler that still collects but reads everything as sold
+   * out (Universal Store, Mango 10-02) or loses every strike price.
+   */
+  inStock?: number;
+  discounted?: number;
   /** Products no longer listed, marked out of stock this run. */
   gone?: number;
   /** Wall-clock split, so a slow run can be attributed without guesswork. */
@@ -190,6 +197,8 @@ async function collectBrand(
     // their own country (once tasks 4–9 land) are left alone; the rest are
     // Turkish, which is what they are collecting.
     const products = raw.map((r) => (r.country ? r : { ...r, country }));
+    res.inStock = products.filter((p) => p.inStock).length;
+    res.discounted = products.filter((p) => p.listPrice != null && p.listPrice > p.price).length;
     if (products.length === 0) {
       // Genuinely empty is possible (a brand with nothing listed), but a brand
       // that had stock last run and returns nothing now is a broken adapter or
@@ -405,9 +414,12 @@ export async function recordRun(db: Db, results: BrandResult[], at: Date = new D
   const runAt = at.toISOString();
   for (const r of results) {
     await db.query(
-      `INSERT INTO collector_runs (run_at, brand, country, products, events, fetch_ms, write_ms, error)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING`,
-      [runAt, r.brand, r.country, r.count, r.events, r.fetchMs ?? null, r.writeMs ?? null, r.error?.slice(0, 500) ?? null],
+      `INSERT INTO collector_runs (run_at, brand, country, products, events, fetch_ms, write_ms, error, in_stock, discounted)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT DO NOTHING`,
+      [
+        runAt, r.brand, r.country, r.count, r.events, r.fetchMs ?? null, r.writeMs ?? null,
+        r.error?.slice(0, 500) ?? null, r.inStock ?? null, r.discounted ?? null,
+      ],
     );
   }
   await db.query(`DELETE FROM collector_runs WHERE run_at < $1::timestamptz - interval '30 days'`, [runAt]);
