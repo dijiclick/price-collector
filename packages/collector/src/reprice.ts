@@ -50,7 +50,11 @@ const STALE_MINUTES = Number(process.env.REPRICE_STALE_MINUTES ?? 45);
  */
 const CONCURRENCY = Number(process.env.REPRICE_CONCURRENCY ?? 4);
 
-export async function repriceTracked(db: Db, brands = liveBrands()): Promise<RepriceResult> {
+export async function repriceTracked(
+  db: Db,
+  brands = liveBrands(),
+  opts: { premiumOnly?: boolean; staleMinutes?: number; limit?: number } = {},
+): Promise<RepriceResult> {
   const out: RepriceResult = { considered: 0, repriced: 0, changed: 0, events: 0, failed: 0 };
   if (brands.length === 0) return out;
 
@@ -61,8 +65,8 @@ export async function repriceTracked(db: Db, brands = liveBrands()): Promise<Rep
   // whether `now()` comes back as an ISO string or a Date, and `Date.parse` of
   // a Date is NaN, which would silently make the cutoff invalid and match
   // nothing.
-  const cutoff = new Date(new Date(await dbNow(db)).getTime() - STALE_MINUTES * 60_000).toISOString();
-  const candidates = await listRepriceCandidates(db, brands, cutoff, LIMIT);
+  const cutoff = new Date(new Date(await dbNow(db)).getTime() - (opts.staleMinutes ?? STALE_MINUTES) * 60_000).toISOString();
+  const candidates = await listRepriceCandidates(db, brands, cutoff, opts.limit ?? LIMIT, { premiumOnly: opts.premiumOnly });
   out.considered = candidates.length;
   if (candidates.length === 0) return out;
 

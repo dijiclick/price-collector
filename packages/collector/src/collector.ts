@@ -354,6 +354,14 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
   } catch (err) {
     console.error("push notifier failed:", err instanceof Error ? err.message : err);
   }
+  // Stilist alarms (saved searches): after reprice and pushNotify, so every
+  // product and event this run wrote is in catalogue_items/events.
+  try {
+    const { pushStilistAlarms } = await import("./stilist-alarms");
+    await pushStilistAlarms(db);
+  } catch (err) {
+    console.error("stilist alarms failed:", err instanceof Error ? err.message : err);
+  }
   try {
     const { pushReminders } = await import("./push-reminder");
     await pushReminders(db);

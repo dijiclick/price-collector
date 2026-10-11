@@ -9,6 +9,7 @@
   },
   "scripts": {
     "collect": "tsx packages/collector/src/collect.ts",
+    "priority": "tsx packages/collector/src/priority.ts",
     "export-snapshot": "tsx packages/collector/src/export-snapshot.ts",
     "typecheck": "tsc --noEmit"
   },

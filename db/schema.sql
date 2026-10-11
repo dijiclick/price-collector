@@ -529,3 +529,20 @@ CREATE TABLE IF NOT EXISTS collector_runs (
   PRIMARY KEY (run_at, brand, country)
 );
 CREATE INDEX IF NOT EXISTS idx_collector_runs_brand ON collector_runs (brand, country, run_at DESC);
+
+-- Stilist alarms (2026-10-11, Premium: free 1, Premium unlimited). A saved
+-- Stilist search tied to a push token; after each run the collector pushes
+-- when a NEW product, a price drop or a restock matches it (stilist-alarms.ts).
+-- `filters` is the assistant's validated filter object (lib/assistant.ts).
+CREATE TABLE IF NOT EXISTS stilist_alarms (
+  id                SERIAL PRIMARY KEY,
+  token             TEXT NOT NULL,
+  country           TEXT NOT NULL,
+  lang              TEXT,
+  filters           JSONB NOT NULL,
+  summary           TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  checked_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_notified_at  TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_stilist_alarms_token ON stilist_alarms (token);

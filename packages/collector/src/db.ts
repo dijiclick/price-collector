@@ -444,9 +444,19 @@ export async function listRepriceCandidates(
   brands: string[],
   cutoff: string,
   limit: number,
+  opts: { premiumOnly?: boolean } = {},
 ): Promise<RepriceCandidate[]> {
   if (brands.length === 0 || limit <= 0) return [];
   const brandSlots = brands.map((_, i) => "$" + (i + 1)).join(",");
+  // Premium instant alerts (priority.ts): only products a Premium device
+  // tracks. push_devices.premium_until is written by the sync from a verified
+  // purchase link, so a free device can never opt itself in.
+  const tracked = opts.premiumOnly
+    ? `SELECT 1 FROM push_watch w JOIN push_devices d ON d.token = w.token
+        WHERE w.product_id = p.id AND d.premium_until > now()`
+    : `SELECT 1 FROM push_watch w WHERE w.product_id = p.id
+          UNION ALL SELECT 1 FROM watchlist w2 WHERE w2.product_id = p.id
+          UNION ALL SELECT 1 FROM user_watch w3 WHERE w3.product_id = p.id`;
   // Deliberately NOT filtered by country: a tracked product is tracked whatever
   // market it came from, and this pass runs once per sweep. The country comes
   // back on the row instead, so the resolver can ask the right storefront.
@@ -454,11 +464,7 @@ export async function listRepriceCandidates(
     `SELECT id, brand, country, url FROM products p
       WHERE brand IN (${brandSlots})
         AND last_seen < $${brands.length + 1}
-        AND EXISTS (
-          SELECT 1 FROM push_watch w WHERE w.product_id = p.id
-          UNION ALL SELECT 1 FROM watchlist w2 WHERE w2.product_id = p.id
-          UNION ALL SELECT 1 FROM user_watch w3 WHERE w3.product_id = p.id
-        )
+        AND EXISTS (${tracked})
       ORDER BY last_seen ASC
       LIMIT $${brands.length + 2}`,
     [...brands, cutoff, limit],

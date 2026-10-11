@@ -1,0 +1,54 @@
+name: priority
+
+# Premium instant alerts (packages/collector/src/priority.ts): every 15 minutes,
+# re-check only the products Premium devices track and send what that finds.
+#
+# THE COLLECTOR REPOSITORY IS PUBLIC — same trigger rules as collect.yml:
+# schedule and workflow_dispatch only. Never pull_request_target or workflow_run.
+on:
+  schedule:
+    # Off the :00/:15/:30/:45 marks, where GitHub's scheduler queue is busiest.
+    - cron: "4,19,34,49 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# The SAME group as collect.yml: two notifiers must never run at once (nothing
+# else stops one event being sent twice). A priority run simply waits for a
+# sweep in progress, and GitHub keeps at most one pending run.
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  priority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --omit=dev --ignore-scripts
+      # Public logs: mask the proxy's username and password (see collect.yml).
+      - name: Mask proxy credentials
+        env:
+          DATAIMPULSE_PROXY: ${{ secrets.DATAIMPULSE_PROXY }}
+        run: >-
+          node -e 'const v=process.env.DATAIMPULSE_PROXY; if(!v) process.exit(0);
+          let u; try { u=new URL(v) } catch { console.log("::add-mask::"+v); process.exit(0) }
+          for (const x of new Set([u.username, decodeURIComponent(u.username), u.password, decodeURIComponent(u.password)]))
+          if (x && x.length>=4) console.log("::add-mask::"+x)'
+      - name: Re-check Premium products
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SEPHORA_CLIENT_ID: ${{ secrets.SEPHORA_CLIENT_ID }}
+          DATAIMPULSE_PROXY: ${{ secrets.DATAIMPULSE_PROXY }}
+          APNS_KEY: ${{ secrets.APNS_KEY }}
+          APNS_KEY_ID: ${{ secrets.APNS_KEY_ID }}
+          FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
+        run: npm run priority
