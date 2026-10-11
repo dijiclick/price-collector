@@ -62,6 +62,36 @@ import { listSweatyBetty } from "./brands/sweatybetty";
 import { listSpaceNk } from "./brands/spacenk";
 import { listAritzia } from "./brands/aritzia";
 import { listLululemon } from "./brands/lululemon";
+import { listFaces } from "./brands/faces";
+import { listBoots } from "./brands/boots";
+import { listBootsGb } from "./brands/boots-gb";
+import { listUniqlo } from "./brands/uniqlo";
+import { listAmericanEagleNA } from "./brands/americaneagle-na";
+import * as garage from "./brands/garage";
+import * as dynamite from "./brands/dynamite";
+import { listTheIconic } from "./brands/theiconic";
+import { listGlassons } from "./brands/glassons";
+import { listHelloMolly } from "./brands/hellomolly";
+import { listMeshki } from "./brands/meshki";
+import { listAdoreBeauty } from "./brands/adorebeauty";
+import { listZalando } from "./brands/zalando";
+import { listDouglas } from "./brands/douglas";
+import { listVarner } from "./brands/_varner";
+import { listLindex } from "./brands/lindex";
+import { listNelly } from "./brands/nelly";
+import { listLyko } from "./brands/lyko";
+import { listAivi } from "./brands/aivi";
+import { listStyli } from "./brands/styli";
+import { listLandmark } from "./brands/_landmark";
+import { listOunass } from "./brands/ounass";
+import { listFtech } from "./brands/_ftech";
+import * as kiko from "./brands/kiko";
+import * as skechers from "./brands/skechers";
+import * as sneaksup from "./brands/sneaksup";
+import { listHmGroup } from "./brands/hmgroup";
+import * as topshop from "./brands/topshop";
+import * as newlook from "./brands/newlook";
+import * as asos from "./brands/asos";
 
 type List = (country: CountryCode) => Promise<ProductRecord[]>;
 
@@ -69,6 +99,8 @@ type List = (country: CountryCode) => Promise<ProductRecord[]>;
 export const byMarket = (tr: () => Promise<ProductRecord[]>, intl: List): List => (c) => (c === "TR" ? tr() : intl(c));
 
 const tr = (list: () => Promise<ProductRecord[]>): List => (c) => (c === "TR" ? list() : Promise.resolve([]));
+/** A single-market adapter: runs only for that market. */
+const tr2 = (only: CountryCode, list: () => Promise<ProductRecord[]>): List => (c) => (c === only ? list() : Promise.resolve([]));
 
 export const intlAdapters: { brand: string; listProducts: List }[] = [
   // Turkey — Akinon storefronts and multi-brand stores (no proxy).
@@ -116,13 +148,9 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "jdsports", listProducts: listJdSportsGb },
   { brand: "boohoo", listProducts: (c) => listBoohooGroup("boohoo", c) },
   { brand: "prettylittlething", listProducts: (c) => listBoohooGroup("prettylittlething", c) },
-  { brand: "karenmillen", listProducts: (c) => listBoohooGroup("karenmillen", c) },
   { brand: "whistles", listProducts: (c) => listTfgLondon("whistles", c) },
   { brand: "hobbs", listProducts: (c) => listTfgLondon("hobbs", c) },
-  { brand: "phase-eight", listProducts: (c) => listTfgLondon("phase-eight", c) },
-  { brand: "sweatybetty", listProducts: listSweatyBetty },
   { brand: "gymshark", listProducts: listGymshark },
-  { brand: "spacenk", listProducts: listSpaceNk },
   // Australia
   { brand: "cottonon", listProducts: listCottonOn },
   { brand: "showpo", listProducts: listShowpo },
@@ -152,11 +180,51 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "gullfunn", listProducts: listGullfunn },
   // UAE / Saudi Arabia
   { brand: "bathandbodyworks", listProducts: (c) => (c === "TR" ? listTicimaxBrand("bathandbodyworks", c) : listAlshaya("bathandbodyworks", c)) },
-  { brand: "americaneagle", listProducts: (c) => listAlshaya("americaneagle", c) },
+  { brand: "americaneagle", listProducts: (c) => (c === "US" || c === "CA" ? listAmericanEagleNA(c) : listAlshaya("americaneagle", c)) },
   { brand: "goldenscent", listProducts: goldenscent.listProducts },
   { brand: "vperfumes", listProducts: vperfumes.listProducts },
   { brand: "bloomingdales", listProducts: bloomingdales.listProducts },
   { brand: "damas", listProducts: damas.listProducts },
   { brand: "ajmal", listProducts: ajmal.listProducts },
   { brand: "nahdi", listProducts: nahdi.listProducts },
+  // ── Round 2 (2026-10-11): big brands behind bot walls, reached through the
+  // sites' own search services / app APIs. Proxy only for Lululemon (fallback),
+  // Victoria's Secret US/CA and Ounass, each measured < ~1 MB a run.
+  { brand: "faces", listProducts: listFaces },
+  { brand: "boots", listProducts: (c) => (c === "GB" ? listBootsGb(c) : listBoots(c)) },
+  { brand: "uniqlo", listProducts: listUniqlo },
+  { brand: "garage", listProducts: (c) => garage.listProducts(c) },
+  { brand: "dynamite", listProducts: (c) => dynamite.listProducts(c) },
+  { brand: "theiconic", listProducts: listTheIconic },
+  { brand: "glassons", listProducts: listGlassons },
+  { brand: "hellomolly", listProducts: listHelloMolly },
+  { brand: "meshki", listProducts: listMeshki },
+  { brand: "adorebeauty", listProducts: listAdoreBeauty },
+  { brand: "zalando", listProducts: listZalando },
+  { brand: "douglas", listProducts: listDouglas },
+  { brand: "cubus", listProducts: (c) => listVarner("cubus", c) },
+  { brand: "bikbok", listProducts: (c) => listVarner("bikbok", c) },
+  { brand: "lindex", listProducts: listLindex },
+  { brand: "nelly", listProducts: listNelly },
+  { brand: "lyko", listProducts: listLyko },
+  { brand: "aivi", listProducts: listAivi },
+  { brand: "styli", listProducts: listStyli },
+  { brand: "centrepoint", listProducts: (c) => listLandmark("centrepoint", c) },
+  { brand: "maxfashion", listProducts: (c) => listLandmark("maxfashion", c) },
+  { brand: "splash", listProducts: (c) => listLandmark("splash", c) },
+  { brand: "ounass", listProducts: listOunass },
+  { brand: "flo", listProducts: (c) => listFtech("flo", c) },
+  { brand: "instreet", listProducts: (c) => listFtech("instreet", c) },
+  { brand: "lumberjack", listProducts: (c) => listFtech("lumberjack", c) },
+  { brand: "kinetix", listProducts: (c) => listFtech("kinetix", c) },
+  { brand: "reebok", listProducts: (c) => listFtech("reebok", c) },
+  { brand: "kiko", listProducts: tr(() => kiko.listProducts("TR")) },
+  { brand: "skechers", listProducts: tr(() => skechers.listProducts("TR")) },
+  { brand: "sneaksup", listProducts: tr(() => sneaksup.listProducts("TR")) },
+  { brand: "arket", listProducts: (c) => listHmGroup("arket", c) },
+  { brand: "stories", listProducts: (c) => listHmGroup("stories", c) },
+  { brand: "weekday", listProducts: (c) => listHmGroup("weekday", c) },
+  { brand: "topshop", listProducts: tr2("GB", () => topshop.listProducts("GB")) },
+  { brand: "newlook", listProducts: tr2("GB", () => newlook.listProducts("GB")) },
+  { brand: "asos", listProducts: tr2("GB", () => asos.listProducts("GB")) },
 ];

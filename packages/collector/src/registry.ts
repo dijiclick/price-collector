@@ -29,13 +29,17 @@ import * as superstep from "./brands/superstep";
 import * as modanisa from "./brands/modanisa";
 import * as network from "./brands/network";
 import * as ipekyol from "./brands/ipekyol";
-import * as twist from "./brands/twist";
+import * as twistV2 from "./brands/twist-v2";
 import * as lacoste from "./brands/lacoste";
 import * as pierrecardin from "./brands/pierrecardin";
 import * as derimod from "./brands/derimod";
 import { shopifyAdapters } from "./brands/shopify-stores";
 import { byMarket, intlAdapters } from "./registry-intl";
 import { listSephoraIntl } from "./brands/sephora-intl";
+import { listSephoraAsia } from "./brands/sephora-au";
+import { listSephoraCh } from "./brands/sephora-ch";
+import { listHmGulf } from "./brands/hm-gulf";
+import { listVictoriasSecretNA } from "./brands/victoriassecret-na";
 import { listMarksIntl } from "./brands/marksandspencer-intl";
 import * as victoriassecretIntl from "./brands/victoriassecret-intl";
 import * as modanisaIntl from "./brands/modanisa-intl";
@@ -43,7 +47,7 @@ import * as marksandspencer from "./brands/marksandspencer";
 import * as victoriassecret from "./brands/victoriassecret";
 import * as lcw from "./brands/lcw";
 import * as defacto from "./brands/defacto";
-import * as mavi from "./brands/mavi";
+import * as maviV2 from "./brands/mavi-v2";
 import * as colins from "./brands/colins";
 import * as mudo from "./brands/mudo";
 
@@ -65,8 +69,11 @@ export const adapters: BrandAdapter[] = [
   { brand: zara.brand, country: "TR", listProducts: zara.listProducts },
   { brand: guess.brand, country: "TR", listProducts: guess.listProducts },
   { brand: penti.brand, country: "TR", listProducts: penti.listProducts },
-  { brand: sephora.brand, country: "TR", listProducts: byMarket(sephora.listProducts, listSephoraIntl) },
-  { brand: hm.brand, country: "TR", listProducts: hm.listProducts },
+  // Sephora is a different platform in every region: TR OCAPI, US/CA site API,
+  // AU through Sephora Asia's API, CH its own SFCC (2026-10-11).
+  { brand: sephora.brand, country: "TR", listProducts: byMarket(sephora.listProducts, (c) => (c === "AU" ? listSephoraAsia(c) : c === "CH" ? listSephoraCh(c) : listSephoraIntl(c))) },
+  // Gulf H&M is Alshaya's shop, read through Alshaya's Algolia (hm-gulf.ts).
+  { brand: hm.brand, country: "TR", listProducts: (c) => (c === "AE" || c === "SA" ? listHmGulf(c) : hm.listProducts(c)) },
   { brand: gratis.brand, country: "TR", listProducts: gratis.listProducts },
   { brand: mango.brand, country: "TR", listProducts: mango.listProducts },
   { brand: watsons.brand, country: "TR", listProducts: watsons.listProducts },
@@ -91,15 +98,16 @@ export const adapters: BrandAdapter[] = [
   { brand: modanisa.brand, country: "TR", listProducts: byMarket(modanisa.listProducts, modanisaIntl.listProducts) },
   { brand: network.brand, country: "TR", listProducts: network.listProducts },
   { brand: ipekyol.brand, country: "TR", listProducts: ipekyol.listProducts },
-  { brand: twist.brand, country: "TR", listProducts: twist.listProducts },
+  // Twist and Mavi refuse GitHub runners; their Insider recommendation feeds do not (2026-10-11).
+  { brand: "twist", country: "TR", listProducts: () => twistV2.listProducts("TR") },
   { brand: lacoste.brand, country: "TR", listProducts: lacoste.listProducts },
   { brand: pierrecardin.brand, country: "TR", listProducts: pierrecardin.listProducts },
   { brand: derimod.brand, country: "TR", listProducts: derimod.listProducts },
   { brand: marksandspencer.brand, country: "TR", listProducts: byMarket(marksandspencer.listProducts, listMarksIntl) },
-  { brand: victoriassecret.brand, country: "TR", listProducts: byMarket(victoriassecret.listProducts, victoriassecretIntl.listProducts) },
+  { brand: victoriassecret.brand, country: "TR", listProducts: byMarket(victoriassecret.listProducts, (c) => (c === "US" || c === "CA" ? listVictoriasSecretNA(c) : victoriassecretIntl.listProducts(c))) },
   { brand: lcw.brand, country: "TR", listProducts: lcw.listProducts },
   { brand: defacto.brand, country: "TR", listProducts: defacto.listProducts },
-  { brand: mavi.brand, country: "TR", listProducts: mavi.listProducts },
+  { brand: "mavi", country: "TR", listProducts: () => maviV2.listProducts("TR") },
   { brand: colins.brand, country: "TR", listProducts: colins.listProducts },
   { brand: mudo.brand, country: "TR", listProducts: mudo.listProducts },
   // Added 2026-10-11: Shopify storefronts in every market (docs/brand-plan-2026-10-11.md).
