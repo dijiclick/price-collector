@@ -150,6 +150,8 @@ export const BRANDS: BrandInfo[] = [
   { slug: "on", label: "On", category: "Spor", logo: "/brands/on.svg", countries: ["US", "CH"] },
   { slug: "roots", label: "Roots", category: "Giyim", logo: "/brands/roots.svg", countries: ["CA"] },
   { slug: "lavieenrose", label: "La Vie en Rose", category: "İç giyim", logo: "/brands/lavieenrose.svg", countries: ["CA"] },
+  { slug: "aritzia", label: "Aritzia", category: "Giyim", logo: "/brands/aritzia.svg", countries: ["US", "CA"] },
+  { slug: "lululemon", label: "lululemon", category: "Spor", logo: "/brands/lululemon.svg", countries: ["US", "CA"] },
   { slug: "next", label: "Next", category: "Giyim", logo: "/brands/next.svg", countries: ["GB"] },
   { slug: "reiss", label: "Reiss", category: "Giyim", logo: "/brands/reiss.svg", countries: ["GB"] },
   { slug: "riverisland", label: "River Island", category: "Giyim", logo: "/brands/riverisland.svg", countries: ["GB"] },

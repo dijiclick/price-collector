@@ -60,6 +60,8 @@ import { listTfgLondon } from "./brands/tfglondon";
 import { listGymshark } from "./brands/gymshark";
 import { listSweatyBetty } from "./brands/sweatybetty";
 import { listSpaceNk } from "./brands/spacenk";
+import { listAritzia } from "./brands/aritzia";
+import { listLululemon } from "./brands/lululemon";
 
 type List = (country: CountryCode) => Promise<ProductRecord[]>;
 
@@ -103,6 +105,10 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "on", listProducts: listOn },
   { brand: "roots", listProducts: listRoots },
   { brand: "lavieenrose", listProducts: listLaVieEnRose },
+  // Owner's two most-wanted (2026-10-11). Aritzia: public Algolia, no proxy.
+  // Lululemon: direct first; the US/CA proxy only after a refusal (~0.5 MB a run).
+  { brand: "aritzia", listProducts: listAritzia },
+  { brand: "lululemon", listProducts: listLululemon },
   // United Kingdom
   { brand: "next", listProducts: listNext },
   { brand: "reiss", listProducts: listReiss },

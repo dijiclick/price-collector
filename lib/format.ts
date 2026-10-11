@@ -264,6 +264,8 @@ export const BRAND_LABELS: Record<string, string> = {
   on: "On",
   roots: "Roots",
   lavieenrose: "La Vie en Rose",
+  aritzia: "Aritzia",
+  lululemon: "lululemon",
   next: "Next",
   reiss: "Reiss",
   riverisland: "River Island",
