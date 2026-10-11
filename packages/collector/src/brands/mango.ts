@@ -92,6 +92,7 @@ export function parseCatalogItems(html: string): CatalogItem[] {
   // keep the largest array whose entries carry a productId.
   const marker = '\\"catalogItemsData\\":[';
   let best: any[] = [];
+  let parseError: string | null = null;
   let from = 0;
   for (;;) {
     const start = html.indexOf(marker, from);
@@ -113,12 +114,19 @@ export function parseCatalogItems(html: string): CatalogItem[] {
       }
     }
     if (end < 0) throw new Error("mango: unterminated catalogItemsData array");
-    const raw = html.slice(start + marker.length - 1, end).replace(/\\"/g, '"');
+    // The array sits inside a JS string literal, so undo ONE level of string
+    // escaping with JSON.parse rather than a bare \" -> " swap. Since
+    // 2026-10-11 the rendered tiles carry image alt text with quoted words
+    // (`... \\\"VIBRA FUTBOLERA\\\" print`); the swap left `\\"` behind, which
+    // ends the string early, and Mango SE failed every run on kids/girls.
     let parsed: any[];
     try {
-      parsed = JSON.parse(raw);
+      parsed = JSON.parse(JSON.parse(`"${html.slice(start + marker.length - 1, end)}"`));
     } catch (err) {
-      throw new Error(`mango: catalogItemsData did not parse as JSON: ${err}`);
+      // Only the compact array matters; a rendered-tiles array that does not
+      // parse must not fail the page. Fail only if nothing usable is found.
+      parseError = `mango: catalogItemsData did not parse as JSON: ${err}`;
+      continue;
     }
     const withIds = parsed.filter(
       (e) => e && typeof e.productId === "string" && /^\d{6,}$/.test(e.productId),
@@ -126,6 +134,7 @@ export function parseCatalogItems(html: string): CatalogItem[] {
     if (withIds.length > best.length) best = withIds;
   }
   if (best.length === 0) {
+    if (parseError) throw new Error(parseError);
     throw new Error("mango: no catalogItemsData entries with productId in PLP flight data");
   }
   return best.map((e) => ({
