@@ -70,6 +70,20 @@ jobs:
         run: |
           pip install "scrapling[fetchers]==0.4.15"
           scrapling install
+      # The run logs of a PUBLIC repo are public. GitHub masks a secret's exact
+      # value, but the collector derives per-country proxy URLs from it
+      # (user__cr.us:pass@…) — a different string, so a stray error line with
+      # one in it would print the password. Masking the username and password
+      # themselves covers every string built from them, for every later step.
+      - if: steps.pick.outputs.run == '1'
+        name: Mask proxy credentials
+        env:
+          DATAIMPULSE_PROXY: ${{ secrets.DATAIMPULSE_PROXY }}
+        run: >-
+          node -e 'const v=process.env.DATAIMPULSE_PROXY; if(!v) process.exit(0);
+          let u; try { u=new URL(v) } catch { console.log("::add-mask::"+v); process.exit(0) }
+          for (const x of new Set([u.username, decodeURIComponent(u.username), u.password, decodeURIComponent(u.password)]))
+          if (x && x.length>=4) console.log("::add-mask::"+x)'
       - if: steps.pick.outputs.run == '1'
         name: Collect ${{ matrix.country }}
         env:
