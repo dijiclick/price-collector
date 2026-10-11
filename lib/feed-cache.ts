@@ -70,7 +70,7 @@ const FEED_COLS = [
  * query even with every page in memory; gk/color_key are COLLATE "C" in the
  * table because they are only ever grouped and compared, never shown.
  */
-const feedSelect = (scope: string) => `
+const feedSelect = (scope: string, onSale = true) => `
   SELECT p.id, p.country, p.brand, p.currency, p.name, p.url, p.image_url, p.category,
          p.product_type, p.product_subtype, p.gender, p.group_key, p.color_name, p.color_families,
          p.current_price, p.current_list_price, p.in_stock, p.last_seen,
@@ -86,8 +86,20 @@ const feedSelect = (scope: string) => `
          COALESCE(NULLIF(lower(btrim(p.color_name)), ''), 'id:' || p.id::text) AS color_key
     FROM products p
    WHERE ${scope}
-     AND p.current_list_price IS NOT NULL AND ${DISCOUNTED.replace(/current_/g, "p.current_")}
+     ${onSale ? `AND p.current_list_price IS NOT NULL AND ${DISCOUNTED.replace(/current_/g, "p.current_")}` : ""}
      AND p.image_url IS NOT NULL AND p.in_stock AND p.${FRESH}`;
+
+/**
+ * The search catalogue (2026-10-11): the same compact rows as the feed cache,
+ * but for EVERY live product of a market — discounted or not — because Stilist
+ * and "show full price too" search the whole catalogue. On `products` that was
+ * a heap walk of a 2.9 GB table on a 4 GB box: 4–12 s per query cold, and a
+ * Stilist answer runs two or three of them. The Turkish catalogue is ~200k rows,
+ * ~100 MB here, small enough to stay in memory. Other markets keep reading
+ * `products` until they are added to this list (memory is the limit).
+ */
+export const CATALOGUE_MARKETS: readonly string[] = ["TR"];
+export const catalogueMarket = (country: string): boolean => CATALOGUE_MARKETS.includes(country);
 
 const upsertSet = FEED_COLS.filter((c) => c !== "id")
   .map((c) => `${c} = EXCLUDED.${c}`)
@@ -145,6 +157,39 @@ export const REFRESH_FEED_IDS_SQL = `
   )
   SELECT (SELECT count(*) FROM up)::int AS kept, (SELECT count(*) FROM gone)::int AS removed`;
 
+/** Re-copy one market's rows of one brand into the search catalogue. $1 country, $2 brand. */
+export const REFRESH_CATALOGUE_ITEMS_BRAND_SQL = `
+  WITH src AS (${feedSelect("p.country = $1 AND p.brand = $2", false)}),
+  up AS (
+    INSERT INTO catalogue_items AS f (${FEED_COLS.join(", ")})
+    SELECT ${FEED_COLS.join(", ")} FROM src
+    ON CONFLICT (id) DO UPDATE SET ${upsertSet}
+    RETURNING 1
+  ),
+  gone AS (
+    DELETE FROM catalogue_items f
+     WHERE f.country = $1 AND f.brand = $2
+       AND NOT EXISTS (SELECT 1 FROM src WHERE src.id = f.id)
+    RETURNING 1
+  )
+  SELECT (SELECT count(*) FROM up)::int AS kept, (SELECT count(*) FROM gone)::int AS removed`;
+
+/** Re-copy individual products into the search catalogue (reprice pass). $1 int[]. */
+export const REFRESH_CATALOGUE_ITEMS_IDS_SQL = `
+  WITH src AS (${feedSelect(`p.id = ANY($1::int[]) AND p.country = ANY(ARRAY[${CATALOGUE_MARKETS.map((c) => `'${c}'`).join(",")}]::text[])`, false)}),
+  up AS (
+    INSERT INTO catalogue_items AS f (${FEED_COLS.join(", ")})
+    SELECT ${FEED_COLS.join(", ")} FROM src
+    ON CONFLICT (id) DO UPDATE SET ${upsertSet}
+    RETURNING 1
+  ),
+  gone AS (
+    DELETE FROM catalogue_items f
+     WHERE f.id = ANY($1::int[]) AND NOT EXISTS (SELECT 1 FROM src WHERE src.id = f.id)
+    RETURNING 1
+  )
+  SELECT (SELECT count(*) FROM up)::int AS kept, (SELECT count(*) FROM gone)::int AS removed`;
+
 /**
  * Stamp brands whose products dropped in price outside a brand sweep (the
  * reprice pass). $1 text[] countries, $2 text[] brands, pairwise.
@@ -188,6 +233,7 @@ export async function refreshFeedCache(
   try {
     const [r] = await db.query<{ kept: number; removed: number }>(REFRESH_FEED_BRAND_SQL, [country, brand, dropped]);
     await db.query(REFRESH_CATALOGUE_SQL, [country, brand, minPrice]);
+    if (catalogueMarket(country)) await db.query(REFRESH_CATALOGUE_ITEMS_BRAND_SQL, [country, brand]);
     return { kept: Number(r?.kept ?? 0), removed: Number(r?.removed ?? 0) };
   } catch (err) {
     console.error(`feed cache refresh failed (${brand}/${country}):`, err instanceof Error ? err.message : err);
@@ -206,7 +252,10 @@ export async function refreshFeedItems(
   dropped: { country: string; brand: string }[] = [],
 ): Promise<void> {
   try {
-    if (ids.length > 0) await db.query(REFRESH_FEED_IDS_SQL, [ids]);
+    if (ids.length > 0) {
+      await db.query(REFRESH_FEED_IDS_SQL, [ids]);
+      await db.query(REFRESH_CATALOGUE_ITEMS_IDS_SQL, [ids]);
+    }
     if (dropped.length > 0) {
       await db.query(STAMP_DROPS_SQL, [dropped.map((d) => d.country), dropped.map((d) => d.brand)]);
     }

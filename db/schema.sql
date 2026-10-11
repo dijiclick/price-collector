@@ -386,6 +386,16 @@ CREATE TABLE IF NOT EXISTS feed_items (
 );
 CREATE INDEX IF NOT EXISTS idx_feed_items_country_brand ON feed_items (country, brand);
 
+-- The search catalogue (2026-10-11, lib/feed-cache.ts CATALOGUE_MARKETS): the
+-- feed_items row shape for EVERY live product of a market, on sale or not —
+-- Stilist and full-price search read it instead of walking `products`.
+-- INCLUDING INDEXES copies feed_items' primary key (and its country/brand
+-- index), so the upsert's ON CONFLICT (id) works. No DO block: the migration
+-- runner splits on semicolons.
+CREATE TABLE IF NOT EXISTS catalogue_items (LIKE feed_items INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES);
+CREATE INDEX IF NOT EXISTS idx_catalogue_items_country_brand ON catalogue_items (country, brand);
+CREATE INDEX IF NOT EXISTS idx_catalogue_items_shelf ON catalogue_items (country, product_type, product_subtype);
+
 -- Full-catalogue tallies (browse-all counts), per brand, rewritten by the same
 -- refresh. /api/meta sums these instead of counting every in-stock product.
 CREATE TABLE IF NOT EXISTS catalogue_counts (
