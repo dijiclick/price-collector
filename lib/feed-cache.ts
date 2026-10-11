@@ -25,6 +25,8 @@
  * which re-exports this. Defined here so the refresh and the readers can never
  * disagree about it.
  */
+import { ACTIVE_COUNTRIES } from "./countries";
+
 export const FRESH = "last_seen > now() - interval '48 hours'";
 
 /** What counts as on sale, in SQL — re-exported by lib/db.ts, see the note there. */
@@ -98,8 +100,28 @@ const feedSelect = (scope: string, onSale = true) => `
  * ~100 MB here, small enough to stay in memory. Other markets keep reading
  * `products` until they are added to this list (memory is the limit).
  */
-export const CATALOGUE_MARKETS: readonly string[] = ["TR"];
+// Every LAUNCHED market since 2026-10-11 (owner: "what about Canada and the
+// others?") — TR, AE, SA, GB, US, CA, AU, CH, NO: ~820k rows, ~400 MB. Dense
+// pages are fast even when a market's rows are not in memory, unlike the
+// products heap, where one shelf is tens of thousands of scattered pages.
+// Collected-but-unlaunched markets stay out: nobody can search them.
+export const CATALOGUE_MARKETS: readonly string[] = ACTIVE_COUNTRIES;
 export const catalogueMarket = (country: string): boolean => CATALOGUE_MARKETS.includes(country);
+
+/**
+ * The catalogue upsert writes a row only when something a reader sees changed,
+ * or its `last_seen` is 12 h behind. Every sweep re-stamps last_seen on every
+ * product, so an unconditional upsert would rewrite all ~1.7M rows on each run
+ * on a disk already busy while the collector writes. 12 h keeps last_seen well
+ * inside the 48 h freshness gate.
+ */
+const CATALOGUE_CHANGED = `WHERE f.last_seen < EXCLUDED.last_seen - interval '12 hours'
+  OR (f.name, f.url, f.image_url, f.current_price, f.current_list_price, f.in_stock, f.product_type,
+      f.product_subtype, f.gender, f.color_families, f.color_name, f.group_key, f.avail_sizes, f.sizeless, f.category)
+     IS DISTINCT FROM
+     (EXCLUDED.name, EXCLUDED.url, EXCLUDED.image_url, EXCLUDED.current_price, EXCLUDED.current_list_price,
+      EXCLUDED.in_stock, EXCLUDED.product_type, EXCLUDED.product_subtype, EXCLUDED.gender, EXCLUDED.color_families,
+      EXCLUDED.color_name, EXCLUDED.group_key, EXCLUDED.avail_sizes, EXCLUDED.sizeless, EXCLUDED.category)`;
 
 const upsertSet = FEED_COLS.filter((c) => c !== "id")
   .map((c) => `${c} = EXCLUDED.${c}`)
@@ -164,6 +186,7 @@ export const REFRESH_CATALOGUE_ITEMS_BRAND_SQL = `
     INSERT INTO catalogue_items AS f (${FEED_COLS.join(", ")})
     SELECT ${FEED_COLS.join(", ")} FROM src
     ON CONFLICT (id) DO UPDATE SET ${upsertSet}
+    ${CATALOGUE_CHANGED}
     RETURNING 1
   ),
   gone AS (
@@ -181,6 +204,7 @@ export const REFRESH_CATALOGUE_ITEMS_IDS_SQL = `
     INSERT INTO catalogue_items AS f (${FEED_COLS.join(", ")})
     SELECT ${FEED_COLS.join(", ")} FROM src
     ON CONFLICT (id) DO UPDATE SET ${upsertSet}
+    ${CATALOGUE_CHANGED}
     RETURNING 1
   ),
   gone AS (
