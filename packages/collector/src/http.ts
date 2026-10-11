@@ -24,6 +24,13 @@ function getProxyAgent(country: CountryCode): ProxyAgent | undefined {
   const exit = COUNTRIES[country].proxyExit;
   if (!proxyAgents.has(exit)) {
     const url = proxyUrlFor(process.env.DATAIMPULSE_PROXY, exit);
+    // Diagnostic, never the credential: a username that already carries
+    // `__cr.xx` pins EVERY market to that exit (proxyUrlFor leaves it alone),
+    // which made Victoria's Secret US/CA leave from the wrong country.
+    if (url) {
+      const pinned = (() => { try { return /__cr\./.test(new URL(process.env.DATAIMPULSE_PROXY ?? "").username); } catch { return false; } })();
+      console.log(`proxy: ${exit} exit ${pinned ? "IGNORED — the secret's username pins a country" : "via username suffix"}`);
+    }
     proxyAgents.set(exit, url ? new ProxyAgent(url) : undefined);
   }
   return proxyAgents.get(exit);
