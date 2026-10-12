@@ -28,6 +28,8 @@ jobs:
           node-version: 22
       - run: node tools/probe-sites.mjs
         env:
+          # ugg.com and other Deckers sites send a ~17.5 KB CSP header (Node's default limit is 16 KB).
+          NODE_OPTIONS: --max-http-header-size=65536
           PROBE_URLS: ${{ inputs.urls }}
           PROBE_REQUESTS: ${{ inputs.requests }}
       - uses: actions/upload-artifact@v4
