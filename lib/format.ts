@@ -211,6 +211,16 @@ export const BRAND_LABELS: Record<string, string> = {
   aloyoga: "Alo Yoga",
   princesspolly: "Princess Polly",
   stevemadden: "Steve Madden",
+  gymshark: "Gymshark",
+  whitefox: "White Fox",
+  dolcevita: "Dolce Vita",
+  psychobunny: "Psycho Bunny",
+  herschel: "Herschel",
+  forever21: "Forever 21",
+  vincecamuto: "Vince Camuto",
+  windsor: "Windsor",
+  kyliecosmetics: "Kylie Cosmetics",
+  brownsshoes: "Browns Shoes",
   glossier: "Glossier",
   ardene: "Ardene",
   lasenza: "La Senza",
@@ -220,7 +230,6 @@ export const BRAND_LABELS: Record<string, string> = {
   laura: "Laura",
   ohpolly: "Oh Polly",
   kookai: "KOOKAÏ",
-  whitefox: "White Fox",
   dissh: "DISSH",
   mimco: "MIMCO",
   peppermayo: "Peppermayo",
@@ -343,7 +352,6 @@ export const BRAND_LABELS: Record<string, string> = {
   prettylittlething: "PrettyLittleThing",
   whistles: "Whistles",
   hobbs: "Hobbs",
-  gymshark: "Gymshark",
 };
 
 export const brandLabel = (b: string) => BRAND_LABELS[b] ?? b;

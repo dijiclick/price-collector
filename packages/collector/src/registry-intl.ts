@@ -58,6 +58,8 @@ import * as haydigiy from "./brands/haydigiy";
 import { listBoohooGroup } from "./brands/boohoogroup";
 import { listTfgLondon } from "./brands/tfglondon";
 import { listGymshark } from "./brands/gymshark";
+import { listShopify } from "./brands/_shopify";
+import { shopifyStore } from "./brands/shopify-stores";
 import { listSweatyBetty } from "./brands/sweatybetty";
 import { listSpaceNk } from "./brands/spacenk";
 import { listAritzia } from "./brands/aritzia";
@@ -151,7 +153,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "prettylittlething", listProducts: (c) => listBoohooGroup("prettylittlething", c) },
   { brand: "whistles", listProducts: (c) => listTfgLondon("whistles", c) },
   { brand: "hobbs", listProducts: (c) => listTfgLondon("hobbs", c) },
-  { brand: "gymshark", listProducts: listGymshark },
+  { brand: "gymshark", listProducts: (c) => (c === "GB" ? listGymshark(c) : listShopify(shopifyStore("gymshark"), c)) },
   // Australia
   { brand: "cottonon", listProducts: listCottonOn },
   { brand: "showpo", listProducts: listShowpo },

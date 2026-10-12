@@ -22,7 +22,18 @@ export const SHOPIFY_STORES: ShopifySite[] = [
   { brand: "rarebeauty", sites: { US: "https://www.rarebeauty.com" } },
   { brand: "aloyoga", sites: { US: "https://www.aloyoga.com" } },
   { brand: "princesspolly", sites: { US: "https://us.princesspolly.com", AU: "https://www.princesspolly.com.au" }, defaultGender: "kadin" },
-  { brand: "stevemadden", sites: { US: "https://www.stevemadden.com" } },
+  { brand: "stevemadden", sites: { US: "https://www.stevemadden.com", CA: "https://www.stevemadden.ca", GB: "https://www.stevemadden.co.uk", AU: "https://www.stevemadden.com.au" } },
+  // Added 2026-10-12 (US/CA push): every site priced in its market's currency, sales live.
+  { brand: "gymshark", sites: { US: "https://us.shop.gymshark.com", CA: "https://ca.shop.gymshark.com", AU: "https://au.shop.gymshark.com", CH: "https://ch.shop.gymshark.com" } },
+  { brand: "whitefox", sites: { US: "https://www.whitefoxboutique.com", GB: "https://www.whitefoxboutique.co.uk", AU: "https://www.whitefoxboutique.com.au" }, defaultGender: "kadin" },
+  { brand: "dolcevita", sites: { US: "https://www.dolcevita.com", CA: "https://www.dolcevita.ca" }, defaultGender: "kadin" },
+  { brand: "psychobunny", sites: { US: "https://www.psychobunny.com", CA: "https://www.psychobunny.ca" }, defaultGender: "erkek" },
+  { brand: "herschel", sites: { US: "https://www.herschel.com", CA: "https://www.herschel.ca" } },
+  { brand: "forever21", sites: { US: "https://www.forever21.com" } },
+  { brand: "vincecamuto", sites: { US: "https://www.vincecamuto.com" }, defaultGender: "kadin" },
+  { brand: "windsor", sites: { US: "https://www.windsorstore.com" }, defaultGender: "kadin" },
+  { brand: "kyliecosmetics", sites: { US: "https://www.kyliecosmetics.com" } },
+  { brand: "brownsshoes", sites: { CA: "https://www.brownsshoes.com" } },
   { brand: "glossier", sites: { US: "https://www.glossier.com" } },
   // Canada
   { brand: "ardene", sites: { CA: "https://www.ardene.com" }, defaultGender: "kadin" },
@@ -35,7 +46,6 @@ export const SHOPIFY_STORES: ShopifySite[] = [
   { brand: "ohpolly", sites: { GB: "https://www.ohpolly.com" }, defaultGender: "kadin" },
   // Australia
   { brand: "kookai", sites: { AU: "https://www.kookai.com.au" }, defaultGender: "kadin" },
-  { brand: "whitefox", sites: { AU: "https://whitefoxboutique.com.au" }, defaultGender: "kadin" },
   { brand: "dissh", sites: { AU: "https://www.dissh.com.au" }, defaultGender: "kadin" },
   { brand: "mimco", sites: { AU: "https://www.mimco.com.au" }, defaultGender: "kadin" },
   { brand: "peppermayo", sites: { AU: "https://www.peppermayo.com" }, defaultGender: "kadin" },
