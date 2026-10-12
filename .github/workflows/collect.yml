@@ -78,10 +78,9 @@ jobs:
           # Azure ranges, and the GCP e2-micro box that used to collect it
           # stopped writing on 2026-09-06 — the day the database moved from
           # Neon to Hetzner, so its DATABASE_URL almost certainly still points
-          # at Neon. rossmann.ts already sends `proxy: true`: after the direct
-          # attempt is refused, getJson retries through DATAIMPULSE_PROXY with a
-          # Turkish exit (`__cr.tr`), which answers 200 (verified 2026-09-25,
-          # exit 88.245.x, Türk Telekom). ~80 GraphQL pages a sweep.
+          # at Neon. Since 2026-10-12 rossmann.ts reads the site's search
+          # provider (rossmann.wawlabs.com), which answers runners directly —
+          # no proxy (Turkey never uses it); /graphql stays Cloudflare-blocked.
           # If that GCP box is ever revived, stop it or put rossmann back here —
           # two collectors on one brand double-send its pushes.
           #

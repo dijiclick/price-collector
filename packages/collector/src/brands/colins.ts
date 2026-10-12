@@ -33,7 +33,29 @@ const PAGE_SIZE = 200;
 const MAX_PAGES = Number(process.env.COLINS_MAX_PAGES ?? 15);
 const MAX_PRODUCTS = Number(process.env.COLINS_MAX_PRODUCTS ?? 2000);
 const DETAIL_LIMIT = Number(process.env.COLINS_DETAIL_LIMIT ?? 100);
-const CONCURRENCY = 3;
+
+/**
+ * SPEED (2026-10-12). Colin's renders a 200-card page in 4–20s server-side
+ * (2 MB each) and the sweep ran 135–245s against a 300s per-brand ceiling,
+ * timing out 3 runs in 17. Three things made it slow and fragile:
+ *   - no request timeout: a stalled socket waits on undici's own 300s, i.e.
+ *     one stuck page or product page lost the whole brand;
+ *   - pages went in lock-step batches of 3, so every batch waited for its
+ *     slowest page (5s pages held behind a 21s one);
+ *   - the women's and men's sections ran one after the other.
+ * Now each section keeps PAGE_WIDTH pages in flight (consumed strictly in page
+ * order, so the capped record set is exactly what it was), both sections run
+ * at once (6 in flight; measured: median page latency 6.6s at 3 and 6.7s at 6
+ * concurrent, so the site does not slow down for it), every request has a
+ * timeout, and the sold-out-size pass stops starting product pages at a
+ * deadline instead of risking the run for an enrichment.
+ */
+const PAGE_WIDTH = Number(process.env.COLINS_PAGE_WIDTH ?? 3);
+const PAGE_TIMEOUT_MS = 45_000;
+const DETAIL_CONCURRENCY = 6;
+const DETAIL_TIMEOUT_MS = 20_000;
+/** No product page is STARTED after this (ms since the run began). */
+const DETAIL_DEADLINE_MS = Number(process.env.COLINS_DETAIL_DEADLINE_MS ?? 150_000);
 
 const genderOf = (s: string, fallback: ProductRecord["gender"]): ProductRecord["gender"] => {
   const t = s.toLocaleLowerCase("tr");
@@ -147,53 +169,104 @@ async function pool<T>(items: T[], n: number, fn: (x: T) => Promise<void>) {
   }));
 }
 
+/** A listing page, or "" after one retry — never throws, never hangs. */
+async function fetchPage(url: string): Promise<string> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await getText(url, { timeoutMs: PAGE_TIMEOUT_MS });
+    } catch {
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+  return "";
+}
+
+/**
+ * Walk one listing's pages with `width` requests in flight, handing each page
+ * to `take` strictly in page order and stopping once `full()`. Order matters:
+ * the section is capped, and which records make the cut must not depend on
+ * which response happened to land first. Pages still in flight at the stop
+ * are abandoned (`fetch` never rejects).
+ */
+export async function walkPages(
+  pageUrl: (n: number) => string,
+  fetch: (url: string) => Promise<string>,
+  take: (html: string) => void,
+  full: () => boolean,
+  width = PAGE_WIDTH,
+  maxPages = MAX_PAGES,
+): Promise<number> {
+  const first = await fetch(pageUrl(1));
+  if (!first) return 0;
+  take(first);
+  let read = 1;
+  const last = Math.min(maxPages, Number(first.match(/id="totalpagesNumber">\s*(\d+)/)?.[1] ?? 1));
+  const inflight = new Map<number, Promise<string>>();
+  let next = 2;
+  for (let n = 2; n <= last && !full(); n++) {
+    while (next <= last && inflight.size < width) inflight.set(next, fetch(pageUrl(next++)));
+    const html = await inflight.get(n)!;
+    inflight.delete(n);
+    take(html);
+    read++;
+  }
+  return read;
+}
+
 export const brand = "colins";
 
 export async function listProducts(): Promise<ProductRecord[]> {
-  const byId = new Map<string, ProductRecord>();
+  const t0 = Date.now();
   // Women's sale alone exceeds the cap, so each section gets half of it.
   const perGender = Math.ceil(MAX_PRODUCTS / 2);
-  const count = new Map<ProductRecord["gender"], number>();
-  const full = (g: ProductRecord["gender"]) => (count.get(g) ?? 0) >= perGender;
-  const take = (html: string, gender: ProductRecord["gender"]) => {
-    const tax = parseTaxonomy(html);
-    for (const card of parseCards(html)) {
-      for (const v of card.variants) {
-        if (full(gender)) return;
-        const rec = mapVariant(v, card, tax, gender);
-        if (!rec || rec.listPrice == null || byId.has(rec.externalId)) continue;
-        byId.set(rec.externalId, rec);
-        count.set(gender, (count.get(gender) ?? 0) + 1);
+  const genders = [...new Set(SOURCES.map((s) => s.gender))];
+  let pages = 0;
+  // One pipeline per section, run side by side; each keeps its own map so its
+  // capped set is the same as walking it alone.
+  const sections = await Promise.all(genders.map(async (gender) => {
+    const byId = new Map<string, ProductRecord>();
+    const full = () => byId.size >= perGender;
+    const take = (html: string) => {
+      const tax = parseTaxonomy(html);
+      for (const card of parseCards(html)) {
+        for (const v of card.variants) {
+          if (full()) return;
+          const rec = mapVariant(v, card, tax, gender);
+          if (!rec || rec.listPrice == null || byId.has(rec.externalId)) continue;
+          byId.set(rec.externalId, rec);
+        }
       }
+    };
+    for (const src of SOURCES) {
+      if (src.gender !== gender || full()) continue;
+      const read = await walkPages((n) => `${SITE}${src.path}?pagesize=${PAGE_SIZE}&pagenumber=${n}`, fetchPage, take, full);
+      pages += read; // not `pages += await …`: that reads `pages` before the other section adds to it
     }
-  };
-  for (const src of SOURCES) {
-    if (full(src.gender)) continue;
-    const url = (n: number) => `${SITE}${src.path}?pagesize=${PAGE_SIZE}&pagenumber=${n}`;
-    const first = await getText(url(1)).catch(() => "");
-    if (!first) continue;
-    take(first, src.gender);
-    const last = Math.min(MAX_PAGES, Number(first.match(/id="totalpagesNumber">\s*(\d+)/)?.[1] ?? 1));
-    // A batch at a time, so a section that fills up stops costing requests.
-    for (let n = 2; n <= last && !full(src.gender); n += CONCURRENCY) {
-      const batch = Array.from({ length: Math.min(CONCURRENCY, last - n + 1) }, (_, k) => n + k);
-      const pages = await Promise.all(batch.map((k) => getText(url(k)).catch(() => "")));
-      for (const html of pages) take(html, src.gender);
-    }
-  }
+    return byId;
+  }));
+  const byId = new Map<string, ProductRecord>();
+  for (const m of sections) for (const [id, r] of m) if (!byId.has(id)) byId.set(id, r);
   const records = [...byId.values()];
+  const listedAt = Date.now();
 
   const pick = [...records];
   for (let j = pick.length - 1; j > 0; j--) {
     const k = Math.floor(Math.random() * (j + 1));
     [pick[j], pick[k]] = [pick[k], pick[j]];
   }
-  await pool(pick.slice(0, DETAIL_LIMIT), CONCURRENCY, async (r) => {
-    const html = await getText(r.url).catch(() => "");
+  let details = 0;
+  await pool(pick.slice(0, DETAIL_LIMIT), DETAIL_CONCURRENCY, async (r) => {
+    if (Date.now() - t0 > DETAIL_DEADLINE_MS) return;
+    const html = await getText(r.url, { timeoutMs: DETAIL_TIMEOUT_MS }).catch(() => "");
     const sizes = html ? parsePdpSizes(html) : [];
     if (!sizes.length) return;
+    details++;
     r.variants = { colors: [], sizes };
     r.inStock = sizes.some((s) => s.availability !== "out_of_stock");
   });
+  console.log(
+    `colins: ${pages} listing pages in ${((listedAt - t0) / 1000).toFixed(0)}s, ` +
+      `${details}/${Math.min(DETAIL_LIMIT, records.length)} product pages in ${((Date.now() - listedAt) / 1000).toFixed(0)}s`,
+  );
   return records;
 }

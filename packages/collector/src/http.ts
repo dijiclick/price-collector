@@ -48,6 +48,11 @@ export interface FetchOpts {
    * asking for until its own task parameterises it.
    */
   country?: CountryCode;
+  /**
+   * Abort the request (headers AND body) after this long. Without it a stalled
+   * socket waits on undici's own 300s timeouts — the whole per-brand budget.
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -111,6 +116,7 @@ export async function getText(url: string, opts: FetchOpts = {}): Promise<string
   const country = opts.country ?? DEFAULT_COUNTRY;
   const res = await fetch(url, {
     headers: { "User-Agent": UA, "Accept-Language": acceptLanguage(country), ...opts.headers },
+    signal: opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined,
     // @ts-expect-error undici dispatcher
     dispatcher: opts.proxy ? getProxyAgent(country) : undefined,
   });

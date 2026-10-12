@@ -1,167 +1,136 @@
-import { cleanGallery, type ProductRecord } from "../types";
+import type { ProductRecord } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
 
-// Magento 2 storefront: public GraphQL endpoint, no auth or proxy needed.
-const GRAPHQL = "https://www.rossmann.com.tr/graphql";
+/**
+ * Rossmann (rossmann.com.tr) is collected from its SEARCH PROVIDER, wawlabs —
+ * not from the store's Magento GraphQL.
+ *
+ * Why (2026-10-12): `/graphql` sits behind a Cloudflare rule that refuses
+ * GitHub's runners outright — 9 of 9 POST/GET requests from a probe runner got
+ * Cloudflare's 4.5 KB block page in 12–300 ms, while the site's HTML pages
+ * answer the same runner 200. So the collector's direct attempt never once
+ * succeeded there: every page went out through the residential proxy, which
+ * Turkey must never use (owner rule), and the brand-wide 403s (2 runs in 17)
+ * were the proxy's Turkish exits being refused too. No header or rate change
+ * can fix a block that is per-network.
+ *
+ * `rossmann.wawlabs.com/search_v2` is the site's own search box backend. It is
+ * a different host on a different Cloudflare zone, answers GitHub runners 200
+ * (probe 2026-10-12), and carries everything the GraphQL route gave us except
+ * the photo gallery. Checked against a full GraphQL sweep the same hour, over
+ * the 8,262 SKUs both returned:
+ *   - shelf price `price` = Magento final price, and `sale_price` = the direct
+ *     markdown (`ross_60_price`), NOT the Rossmann Card price — 8,231 equal;
+ *     the other 31 are sold-out items whose markdown GraphQL had dropped;
+ *   - `availability` matched `stock_status` on 8,261;
+ *   - `link` is the same product URL, `gtin` the EAN, `id` the same SKU.
+ * It also found 806 SKUs the GraphQL pager had missed (Magento paging with no
+ * sort is not stable), and lacks 63 (mostly BND… bundle SKUs).
+ *
+ * The one thing it caps: a query returns at most 1,000 hits (`*` included). So
+ * the catalogue is reached by querying every category name the facets reveal,
+ * breadth-first from `*` — ~250 queries, ~9,000 SKUs, ~20 s from here, gzip
+ * makes the ~50 MB of JSON ~12 MB on the wire.
+ *
+ * No `images`: the index has one photo per SKU. Leaving `images` unset keeps
+ * every gallery already stored (db.ts only touches product_images for records
+ * that carry one), and no `category` either: `classifyType` reads it, and
+ * product types were set from the name alone until now.
+ */
 const SITE = "https://www.rossmann.com.tr";
-const PAGE_SIZE = 100;
+const SEARCH = "https://rossmann.wawlabs.com/search_v2";
+/** The index's own ceiling per query. */
+const ROWS = 1000;
+/** Queries in flight at once. A third party's search box — no need to push it. */
+const CONCURRENCY = 4;
+/** ~250 today. A runaway guard, not a target. */
+const MAX_QUERIES = Number(process.env.ROSSMANN_MAX_QUERIES ?? 500);
 
-/**
- * Page the catalogue directly instead of walking the category tree.
- *
- * The tree has 1,007 leaves and we were visiting 10 of them — 1,213 products,
- * which is why searches for brands Rossmann genuinely stocks (Beauty of Joseon
- * among them) came back empty and Rossmann sat last in the catalogue by an
- * order of magnitude. Lifting the cap was not the fix: crawling all 1,007
- * categories ran past 13 minutes against a 240s per-brand timeout, because
- * categories overlap heavily and each one costs a round trip.
- *
- * `products(filter: { price: { from: "0" } })` returns the whole sellable
- * catalogue — 8,971 items over 90 pages — so the same coverage costs 90
- * requests rather than thousands, with no double-counting to dedupe.
- *
- * The retailer's own category label is the one casualty; it is now null, as it
- * already is for zara, penti, watsons, guess, sephora and pandora. Nothing
- * reads it — `product_type` is classified from the product NAME.
- *
- * Concurrency stays at 3, the value proven for Gratis. Rossmann is the brand
- * that IP-blocks, which is why it runs on its own box at all; there is no prize
- * for finding its limit.
- */
-const PAGE_CONCURRENCY = Number(process.env.ROSSMANN_CONCURRENCY ?? 3);
-/** A ceiling, not a target: 90 pages today, with room before it ever binds. */
-const MAX_PAGES = Number(process.env.ROSSMANN_MAX_PAGES ?? 200);
+export const searchUrl = (query: string): string =>
+  `${SEARCH}?${new URLSearchParams({
+    search_params: JSON.stringify({ query, row_per_page: ROWS, page_number: 1 }),
+  })}`;
 
-function gql<T = any>(query: string): Promise<T> {
-  return getJson<T>(GRAPHQL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
-    // Rossmann 403s GitHub's Azure ranges specifically — it answers 200 to a
-    // residential IP, to GCP, and to a bare curl, so no header shaping helps.
-    // `proxy: true` is a fallback (see getJson): the direct attempt still runs
-    // first and costs nothing when it is not blocked.
-    proxy: true,
-    // From GitHub every page goes through rotating residential exits, and ~90
-    // pages x 2 proxy tries lost the whole brand to one flaky exit on the first
-    // run (2026-09-25, "fetch failed"). Five proxy tries per page makes a
-    // brand-wide failure vanishingly rare; a direct 403 still costs ~nothing.
-    retries: 6,
-  });
+/** "1,150.00" → 1150. The index formats money en-US style, as a string. */
+export function money(v: unknown): number {
+  const n = Number(String(v ?? "").replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : 0;
 }
 
-/** Collect leaf categories (no children) that actually contain products. */
-const num = (v: unknown): number => {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-};
-
-/**
- * Rossmann never puts its discounts in Magento's regular/final price — those are
- * always equal. Its deals live in custom attributes (priority order matches the
- * site's displayType()):
- *   1. crm_price      — "ROSSMANN Card ile": the LOYALTY-CARD price
- *   2. ross_60_price / special_price — a direct markdown, paid by everyone
- *   3. cmp_100/50/20_price — "N TL üzeri alışverişe": only with a basket over N TL
- *
- * Only (2) is a price a normal shopper pays at the shelf, so only (2) may become
- * `price`. This used to take crm_price first — sampled live 2026-09-25, 64 of
- * 100 products had a card price under the shelf price and not one had a direct
- * markdown, so ~85% of the brand's "deals" were card-only prices. Same rule as
- * Gratis's `promotionPrice` (the Gratis Kart price) and Watsons's MEMBER price.
- */
-export function campaignPrice(p: any, base: number): number {
-  const special = num(p?.ross_60_price) || num(p?.special_price);
-  return special > 0 && special < base ? special : 0;
-}
-
-/**
- * Magento's `media_gallery`: every enabled ProductImage, by `position` (the
- * order the PDP shows). ProductVideo entries and disabled images are dropped.
- * Rossmann SKUs are single shades, so every photo is the same variant.
- */
-export function galleryOf(media: any[] | null | undefined, first: string | null): string[] | null {
-  const shots = (Array.isArray(media) ? media : [])
-    .filter((m) => m && m.disabled !== true && m.__typename !== "ProductVideo" && !m.video_content)
-    .filter((m) => typeof m.url === "string" && !/placeholder/i.test(m.url))
-    .map((m, i) => ({ url: m.url as string, pos: Number.isFinite(Number(m.position)) ? Number(m.position) : 1e6 + i }))
-    .sort((a, b) => a.pos - b.pos)
-    .map((m) => m.url);
-  return cleanGallery(shots, first);
-}
-
-export function mapProduct(p: any, category: string | null): ProductRecord | null {
-  const sku = String(p.sku ?? "");
-  const min = p.price_range?.minimum_price ?? {};
-  // GraphQL prices are major units (589 = ₺589,00), confirmed against the site.
-  const regular: number | undefined = min.regular_price?.value;
-  const final: number | undefined = min.final_price?.value ?? regular;
-  if (!sku || !p.url_key || typeof final !== "number" || final <= 0) return null;
-  const campaign = campaignPrice(p, final);
-  const price = campaign > 0 ? campaign : final;
-  const listPrice =
-    campaign > 0 ? final : typeof regular === "number" && regular > final ? regular : null;
-  // Single EAN per SKU here: Rossmann sells units, not sized garments, so
-  // there is no per-size tag to worry about.
-  const bc = String(p.barcode ?? "").replace(/\D/g, "");
+export function mapHit(h: any): ProductRecord | null {
+  const sku = String(h?.id ?? "").trim();
+  const link = String(h?.link ?? "");
+  const base = money(h?.price);
+  const sale = money(h?.sale_price);
+  if (!sku || !link.startsWith(`${SITE}/`) || !(base > 0)) return null;
+  // `sale_price` is the shelf markdown everyone pays (ross_60_price); a Card-
+  // only price never appears in it. Equal or zero means no markdown.
+  const price = sale > 0 && sale < base ? sale : base;
+  const bc = String(h.gtin ?? "").replace(/\D/g, "");
   return {
     brand: "rossmann",
     externalId: sku,
     barcodes: bc.length >= 8 && bc.length <= 14 ? [bc] : null,
-    name: p.name ?? "",
-    url: `${SITE}/${p.url_key}`,
-    imageUrl: p.small_image?.url ?? null,
-    images: galleryOf(p.media_gallery, p.small_image?.url ?? null),
+    name: String(h.title ?? "").trim(),
+    url: link,
+    imageUrl: typeof h.image_link === "string" && h.image_link ? h.image_link : null,
     price: toMinor(price),
-    listPrice: listPrice != null && listPrice > price ? toMinor(listPrice) : null,
+    listPrice: price < base ? toMinor(base) : null,
     currency: "TRY",
-    inStock: p.stock_status === "IN_STOCK",
-    category,
+    inStock: h.availability === "in stock",
+    category: null,
   };
+}
+
+/**
+ * Breadth-first over category names: query `*`, then every category the
+ * results' facets name, then any new ones those reveal. Hits are unioned by
+ * SKU. The seed failing throws (so a block reads as an error, not as "Rossmann
+ * sells nothing"); any later query failing costs only its own slice.
+ */
+export async function crawl(
+  search: (query: string) => Promise<any>,
+  maxQueries = MAX_QUERIES,
+  width = CONCURRENCY,
+): Promise<{ hits: Map<string, any>; queries: number }> {
+  const hits = new Map<string, any>();
+  const asked = new Set<string>();
+  const queue: string[] = [];
+  const absorb = (j: any) => {
+    for (const h of j?.res ?? []) if (h?.id != null && !hits.has(String(h.id))) hits.set(String(h.id), h);
+    for (const f of j?.facet_fields?.category ?? []) {
+      const name = String(f?.name ?? "").trim();
+      const key = name.toLocaleLowerCase("tr");
+      if (name && !asked.has(key)) {
+        asked.add(key);
+        queue.push(name);
+      }
+    }
+  };
+  absorb(await search("*"));
+  let queries = 1;
+  while (queue.length && queries < maxQueries) {
+    const wave = queue.splice(0, Math.min(width, maxQueries - queries));
+    queries += wave.length;
+    // In wave order, so the queue (and the result) does not depend on timing.
+    for (const j of await Promise.all(wave.map((q) => search(q).catch(() => null)))) absorb(j);
+  }
+  return { hits, queries };
 }
 
 export const brand = "rossmann";
 
 export async function listProducts(): Promise<ProductRecord[]> {
-  const FIELDS = `sku barcode name url_key stock_status small_image { url }
-    media_gallery { url position disabled __typename }
-    special_price ross_60_price
-    price_range { minimum_price { regular_price { value } final_price { value } } }`;
-  // `price from 0` matches everything sellable and is the only broad filter this
-  // schema accepts — `sku like` is rejected outright.
-  const ALL = `{ price: { from: "0" } }`;
-
-  const first = await gql<any>(
-    `{ products(filter: ${ALL}, pageSize: ${PAGE_SIZE}, currentPage: 1) {
-        total_count page_info { total_pages } items { ${FIELDS} } } }`,
-  );
-  const info = first.data?.products;
-  if (!info) return [];
-
-  const byId = new Map<string, ProductRecord>();
-  const take = (items: any[]) => {
-    for (const p of items) {
-      const rec = mapProduct(p, null);
-      if (rec) byId.set(rec.externalId, rec);
-    }
-  };
-  take(info.items ?? []);
-
-  const totalPages = Math.min(info.page_info?.total_pages ?? 1, MAX_PAGES);
-  let next = 2;
-  await Promise.all(
-    Array.from({ length: Math.min(PAGE_CONCURRENCY, Math.max(totalPages - 1, 1)) }, async () => {
-      while (next <= totalPages) {
-        const page = next++;
-        const res = await gql<any>(
-          `{ products(filter: ${ALL}, pageSize: ${PAGE_SIZE}, currentPage: ${page}) {
-              items { ${FIELDS} } } }`,
-        ).catch(() => null);
-        // One bad page costs 100 products, not the run.
-        if (res) take(res.data?.products?.items ?? []);
-      }
-    }),
-  );
-  return [...byId.values()];
+  const t0 = Date.now();
+  // Direct only (no `proxy`): Turkey never goes through the proxy. getJson
+  // retries a failed query twice with backoff.
+  const { hits, queries } = await crawl((q) => getJson(searchUrl(q), { retries: 2 }));
+  const out: ProductRecord[] = [];
+  for (const h of hits.values()) {
+    const rec = mapHit(h);
+    if (rec) out.push(rec);
+  }
+  console.log(`rossmann: ${queries} search queries, ${out.length} products in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+  return out;
 }
