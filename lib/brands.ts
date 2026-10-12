@@ -147,6 +147,7 @@ export const BRANDS: BrandInfo[] = [
   { slug: "katespadeoutlet", label: "Kate Spade Outlet", category: "Çanta", logo: "/brands/katespadeoutlet.svg", countries: ["US"] },
   { slug: "nordstromrack", label: "Nordstrom Rack", category: "Çok markalı", logo: "/brands/nordstromrack.svg", countries: ["US"] },
   { slug: "adidas", label: "adidas", category: "Ayakkabı", logo: "/brands/adidas.svg", countries: ["TR", "US", "CA", "GB", "AU", "CH", "NO"] },
+  { slug: "swarovski", label: "Swarovski", category: "Takı", logo: "/brands/swarovski.svg", countries: ["US", "CA", "AU", "AE"] },
   { slug: "athleta", label: "Athleta", category: "Spor", logo: "/brands/athleta.svg", countries: ["US"] },
   { slug: "abercrombie", label: "Abercrombie & Fitch", category: "Giyim", logo: "/brands/abercrombie.svg", countries: ["US", "CA", "GB"] },
   { slug: "hollister", label: "Hollister", category: "Giyim", logo: "/brands/hollister.svg", countries: ["US", "CA", "GB"] },

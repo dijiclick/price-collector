@@ -102,6 +102,7 @@ import { listColumbia } from "./brands/columbia";
 import { listTapestry } from "./brands/tapestry";
 import { listNordstromRack } from "./brands/nordstromrack";
 import { listAdidas } from "./brands/adidas";
+import { listSwarovski } from "./brands/swarovski";
 import * as sneaksup from "./brands/sneaksup";
 import { listHmGroup } from "./brands/hmgroup";
 import * as topshop from "./brands/topshop";
@@ -150,6 +151,8 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   // adidas (owner OK 2026-10-12): the app gateway; Akamai lets some runners
   // through, others 403 — a refused run throws and keeps the stored rows.
   { brand: "adidas", listProducts: listAdidas },
+  // Swarovski (owner OK 2026-10-12): outlet pages via the site's own Baqend cache; AE store direct.
+  { brand: "swarovski", listProducts: listSwarovski },
   { brand: "uspoloassn", listProducts: tr(uspoloassn.listProducts) },
   { brand: "cacharel", listProducts: tr(cacharel.listProducts) },
   { brand: "converse", listProducts: tr(converse.listProducts) },

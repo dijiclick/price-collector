@@ -224,6 +224,7 @@ export const BRAND_LABELS: Record<string, string> = {
   katespadeoutlet: "Kate Spade Outlet",
   nordstromrack: "Nordstrom Rack",
   adidas: "adidas",
+  swarovski: "Swarovski",
   gapfactory: "Gap Factory",
   brfactory: "Banana Republic Factory",
   gymshark: "Gymshark",
