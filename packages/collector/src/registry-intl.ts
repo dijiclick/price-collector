@@ -59,6 +59,8 @@ import { listBoohooGroup } from "./brands/boohoogroup";
 import { listTfgLondon } from "./brands/tfglondon";
 import { listGymshark } from "./brands/gymshark";
 import { listMacys } from "./brands/macys";
+import { listZappos } from "./brands/zappos";
+import { listAltitudeSports } from "./brands/altitudesports";
 import { listJcrew } from "./brands/jcrew";
 import { listLululemonTr } from "./brands/lululemon-tr";
 import { listShopify } from "./brands/_shopify";
@@ -130,6 +132,11 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "brfactory", listProducts: (c) => listGapInc("brfactory", c) },
   // Macy's (US): the site's own /xapi/discover browse feed — Akamai walls the HTML, not this.
   { brand: "macys", listProducts: listMacys },
+  // Zappos (US): the storefront's own olympus search API — carries the walled
+  // brands (The North Face, UGG, Vans, ...).
+  { brand: "zappos", listProducts: listZappos },
+  // Altitude Sports (CA): the storefront's public Algolia index.
+  { brand: "altitudesports", listProducts: listAltitudeSports },
   // J.Crew group: Constructor.io search feed (outside the Akamai wall). J.Crew
   // Factory is NOT listed: 99% of its catalogue strikes an invented
   // "comparable value", not a price it ever charged (2026-10-12).
