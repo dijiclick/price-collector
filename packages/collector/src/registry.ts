@@ -10,6 +10,7 @@ import * as gratis from "./brands/gratis";
 import * as mango from "./brands/mango";
 import * as watsons from "./brands/watsons";
 import * as pandora from "./brands/pandora";
+import { listPandoraIntl } from "./brands/pandora-intl";
 import * as massimodutti from "./brands/massimodutti";
 import * as pullandbear from "./brands/pullandbear";
 import * as stradivarius from "./brands/stradivarius";
@@ -78,7 +79,7 @@ export const adapters: BrandAdapter[] = [
   { brand: gratis.brand, country: "TR", listProducts: gratis.listProducts },
   { brand: mango.brand, country: "TR", listProducts: mango.listProducts },
   { brand: watsons.brand, country: "TR", listProducts: watsons.listProducts },
-  { brand: pandora.brand, country: "TR", listProducts: pandora.listProducts },
+  { brand: pandora.brand, country: "TR", listProducts: byMarket(pandora.listProducts, listPandoraIntl) },
   { brand: massimodutti.brand, country: "TR", listProducts: massimodutti.listProducts },
   { brand: pullandbear.brand, country: "TR", listProducts: pullandbear.listProducts },
   { brand: stradivarius.brand, country: "TR", listProducts: stradivarius.listProducts },

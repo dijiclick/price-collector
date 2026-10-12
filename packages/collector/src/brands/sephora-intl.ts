@@ -15,6 +15,13 @@
  * spans several sizes/shades and there is no single was-price to quote — the
  * same artifact as the TR −%81 bug — so such cards are dropped rather than
  * guessed. Cosmetics carry no sizes here; shades would need a per-product call.
+ *
+ * Since 2026-10-12 the API intermittently answers a request with a DIFFERENT
+ * request's result — every category, both markets and even a cache-busting
+ * param got the US "Skincare Sale" grid back, sticky for minutes at a time.
+ * Taking those at face value filed one category's cards under every other and
+ * put US-dollar prices on CA. A response is only used when its `categoryId`
+ * and `currentPage` are the ones asked for.
  */
 import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
@@ -98,16 +105,28 @@ export function mapSephoraCard(p: any, country: CountryCode, category: string | 
   };
 }
 
+/** True when a grid response is the one that was requested (see the header). */
+export function answersRequest(data: any, cat: string, page: number): boolean {
+  if (data?.categoryId !== cat) return false;
+  return data.currentPage == null || Number(data.currentPage) === page;
+}
+
 export async function listSephoraIntl(country: CountryCode): Promise<ProductRecord[]> {
   if (!SEPHORA_INTL_MARKETS[country]) return [];
   const byId = new Map<string, ProductRecord>();
   let requests = 0;
   let failures = 0;
+  let mismatched = 0;
   for (const cat of CATEGORIES) {
     for (let page = 1; page <= MAX_PAGES_PER_CATEGORY && byId.size < CAP; page++) {
       if (requests++ > 0) await sleep(PAUSE_MS);
       const data = await getJson<any>(categoryUrl(cat, country, page), { country }).catch(() => null);
       if (!data) {
+        failures++;
+        break;
+      }
+      if (!answersRequest(data, cat, page)) {
+        mismatched++;
         failures++;
         break;
       }
@@ -120,7 +139,10 @@ export async function listSephoraIntl(country: CountryCode): Promise<ProductReco
       if (products.length < PAGE || page * PAGE >= total) break;
     }
   }
-  if (byId.size === 0 && failures > 0) throw new Error(`sephora/${country}: catalog API refused (${failures} failed calls)`);
+  if (mismatched) console.warn(`sephora/${country}: ${mismatched} catalog responses answered another request — skipped`);
+  if (byId.size === 0 && failures > 0) {
+    throw new Error(`sephora/${country}: catalog API refused (${failures} failed calls, ${mismatched} answered another request)`);
+  }
   return [...byId.values()].slice(0, CAP);
 }
 

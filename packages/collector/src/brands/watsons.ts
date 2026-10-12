@@ -5,10 +5,13 @@ import { toMinor } from "../normalize";
 const BASE = "https://api.watsons.com.tr/api/v2/wtctr-spa";
 const SITE = "https://www.watsons.com.tr";
 const LOCALE = "lang=tr_TR&curr=TRY";
-// SAP Hybris OCC behind Akamai: browser Origin/Referer are required, and the API
-// 403s from datacenter/VPN egress. proxy:true routes via DATAIMPULSE_PROXY
-// (residential); without that env the request goes direct and will likely 403.
-const HEADERS = {
+// SAP Hybris OCC behind Akamai. Akamai 403s browser User-Agents from datacenter
+// egress (GitHub's runners included) but lets the iOS app's CFNetwork UA
+// through — verified 2026-10-12 from a datacenter IP: Chrome UA 403, okhttp
+// 403, this UA 200 on all 43 pages. So no proxy: Turkey never uses it, and the
+// proxied retry is what turned the 403s into a 300s run timeout (2026-10-12).
+export const HEADERS: Record<string, string> = {
+  "User-Agent": "Watsons/4.2.0 CFNetwork/1568.100.1 Darwin/24.0.0",
   Accept: "application/json",
   Origin: SITE,
   Referer: `${SITE}/`,
@@ -20,7 +23,7 @@ const PAGE_DELAY_MS = Number(process.env.WATSONS_PAGE_DELAY_MS ?? 300);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function occ(url: string) {
-  return getJson<any>(url, { headers: HEADERS, proxy: true, retries: 1 });
+  return getJson<any>(url, { headers: HEADERS, retries: 1 });
 }
 
 const abs = (url: string) => (url.startsWith("http") ? url : `${SITE}${url}`);

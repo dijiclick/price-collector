@@ -73,6 +73,20 @@ export function mapIconic(p: any, country: CountryCode = "AU"): ProductRecord | 
   };
 }
 
+/**
+ * Stop paging once the API says we are past its last page, or a page comes back
+ * empty. A short page is NOT the end: eve drops a row now and then (page 3 of
+ * the women's sale came back with 199 of 200 on 2026-10-12 while page_count was
+ * 167), and stopping on it capped two runs at 599 products instead of 1500.
+ * Only when page_count is missing does a short page mean the end.
+ */
+export function isLastPage(rows: number, page: number, pageCount: unknown): boolean {
+  if (rows === 0) return true;
+  const total = Number(pageCount);
+  if (Number.isFinite(total) && total > 0) return page >= total;
+  return rows < PAGE_SIZE;
+}
+
 export async function listTheIconic(country: CountryCode): Promise<ProductRecord[]> {
   if (country !== "AU") return [];
   const byId = new Map<string, ProductRecord>();
@@ -84,7 +98,7 @@ export async function listTheIconic(country: CountryCode): Promise<ProductRecord
       const r = mapIconic(p, country);
       if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
     }
-    if (rows.length < PAGE_SIZE || n >= Number(d?.page_count ?? 0)) break;
+    if (isLastPage(rows.length, n, d?.page_count)) break;
   }
   return [...byId.values()].slice(0, CAP);
 }

@@ -56,11 +56,10 @@ export const BRANDS: BrandInfo[] = [
   { slug: "gratis", label: "gratis", category: "Kozmetik", logo: "/brands/gratis.svg", countries: TR_ONLY },
   { slug: "rossmann", label: "ROSSMANN", category: "Kozmetik", logo: "/brands/rossmann.svg", countries: TR_ONLY },
   { slug: "watsons", label: "Watsons", category: "Kişisel bakım", logo: "/brands/watsons.svg", countries: TR_ONLY },
-  // Non-TR Pandora storefronts are a DIFFERENT Salesforce org behind Cloudflare
-  // (uk/us/de… .pandora.net answered 403 from this Mac for both the token
-  // endpoint and the homepage), so it stays Turkish until someone reads a
-  // non-TR storefront's commerceAPI block from a browser session.
-  { slug: "pandora", label: "PANDORA", category: "Takı", logo: "/brands/pandora.svg", countries: TR_ONLY },
+  // Pandora US/CA (2026-10-12): the storefront's SLAS guest token still answers
+  // through Cloudflare and Salesforce's own API host has no wall — see
+  // pandora-intl.ts. GB/AU/CH/NO have no real markdowns today.
+  { slug: "pandora", label: "PANDORA", category: "Takı", logo: "/brands/pandora.svg", countries: ["TR", "US", "CA"] },
   { slug: "boyner", label: "Boyner", category: "Çok markalı", logo: "/brands/boyner.svg", countries: TR_ONLY },
   { slug: "beymen", label: "Beymen", category: "Çok markalı", logo: "/brands/beymen.svg", countries: TR_ONLY },
   // Added 2026-10-10 — brands competitors cover that we did not.
