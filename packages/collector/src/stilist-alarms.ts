@@ -6,7 +6,7 @@
  * happened since its last check — products that are NEW, that DROPPED in price
  * or came BACK in stock — and pushes when something matches:
  *
- *   "Stilist alarmı: 3 yeni eşleşme" / "Siyah deri bot, 2.000 TL altı — Zara Deri bot ₺1.890"
+ *   "Asistan alarmı: 3 yeni eşleşme" / "Siyah deri bot, 2.000 TL altı — Zara Deri bot ₺1.890"
  *
  * Tapping it opens Stilist on that alarm (href /asistan?alarm=<id>). At most
  * one push per alarm per 6 hours, never in the device's quiet hours, and the
@@ -90,9 +90,9 @@ export function alarmWhere(f: AlarmFilters, country: string, since: string): { s
 export function alarmMessage(lang: string | null, summary: string | null, n: number, top: { brand: string; name: string; price: number; currency: string | null }): { title: string; body: string } {
   const item = `${BRAND_LABELS[top.brand] ?? top.brand} ${top.name} ${money(top.price, top.currency)}`;
   if (lang === "en") {
-    return { title: `Stylist alarm: ${n} new ${n === 1 ? "match" : "matches"}`, body: summary ? `${summary} — ${item}` : item };
+    return { title: `Assistant alarm: ${n} new ${n === 1 ? "match" : "matches"}`, body: summary ? `${summary} — ${item}` : item };
   }
-  return { title: `Stilist alarmı: ${n} yeni eşleşme`, body: summary ? `${summary} — ${item}` : item };
+  return { title: `Asistan alarmı: ${n} yeni eşleşme`, body: summary ? `${summary} — ${item}` : item };
 }
 
 async function realSend(token: string, c: PushContent): Promise<Outcome> {
