@@ -149,7 +149,7 @@ export const BRANDS: BrandInfo[] = [
   { slug: "roots", label: "Roots", category: "Giyim", logo: "/brands/roots.svg", countries: ["CA"] },
   { slug: "lavieenrose", label: "La Vie en Rose", category: "İç giyim", logo: "/brands/lavieenrose.svg", countries: ["CA"] },
   { slug: "aritzia", label: "Aritzia", category: "Giyim", logo: "/brands/aritzia.svg", countries: ["US", "CA"] },
-  { slug: "lululemon", label: "lululemon", category: "Spor", logo: "/brands/lululemon.svg", countries: ["US", "CA"] },
+  { slug: "lululemon", label: "lululemon", category: "Spor", logo: "/brands/lululemon.svg", countries: ["US", "CA", "TR"] },
   // 2026-10-11 round 2: big brands behind bot walls (registry-intl.ts).
   { slug: "boots", label: "Boots", category: "Kozmetik", logo: "/brands/boots.svg", countries: ["GB", "AE", "SA"] },
   { slug: "uniqlo", label: "UNIQLO", category: "Giyim", logo: "/brands/uniqlo.svg", countries: ["GB", "AU"] },
