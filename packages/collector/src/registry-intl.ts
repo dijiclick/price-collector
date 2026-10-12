@@ -93,6 +93,10 @@ import { listOunass } from "./brands/ounass";
 import { listFtech } from "./brands/_ftech";
 import * as kiko from "./brands/kiko";
 import * as skechers from "./brands/skechers";
+import { listSkechersNa } from "./brands/skechers-na";
+import { listCrocs } from "./brands/crocs";
+import { listLevis } from "./brands/levis";
+import { listPvh } from "./brands/pvh";
 import * as sneaksup from "./brands/sneaksup";
 import { listHmGroup } from "./brands/hmgroup";
 import * as topshop from "./brands/topshop";
@@ -121,6 +125,13 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   // "comparable value", not a price it ever charged (2026-10-12).
   { brand: "jcrew", listProducts: (c) => listJcrew("jcrew", c) },
   { brand: "madewell", listProducts: (c) => listJcrew("madewell", c) },
+  // Crocs (US/CA): the site's Algolia indexes; shoes only (Jibbitz/bags excluded).
+  { brand: "crocs", listProducts: listCrocs },
+  // Levi's (US/CA): Constructor.io sale groups (levi.com itself is behind Akamai).
+  { brand: "levis", listProducts: listLevis },
+  // PVH: AU via the shared Magento GraphQL; US via the site's sale grid.
+  { brand: "calvinklein", listProducts: (c) => listPvh("calvinklein", c) },
+  { brand: "tommyhilfiger", listProducts: (c) => listPvh("tommyhilfiger", c) },
   { brand: "uspoloassn", listProducts: tr(uspoloassn.listProducts) },
   { brand: "cacharel", listProducts: tr(cacharel.listProducts) },
   { brand: "converse", listProducts: tr(converse.listProducts) },
@@ -237,7 +248,8 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "kinetix", listProducts: (c) => listFtech("kinetix", c) },
   { brand: "reebok", listProducts: (c) => listFtech("reebok", c) },
   { brand: "kiko", listProducts: tr(() => kiko.listProducts("TR")) },
-  { brand: "skechers", listProducts: tr(() => skechers.listProducts("TR")) },
+  // Skechers: PersonaClick in Turkey; Bloomreach (account 7927) in US/CA.
+  { brand: "skechers", listProducts: byMarket(() => skechers.listProducts("TR"), listSkechersNa) },
   { brand: "sneaksup", listProducts: tr(() => sneaksup.listProducts("TR")) },
   { brand: "arket", listProducts: (c) => listHmGroup("arket", c) },
   { brand: "stories", listProducts: (c) => listHmGroup("stories", c) },
