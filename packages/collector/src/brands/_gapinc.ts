@@ -25,7 +25,7 @@ import { getJson } from "../http";
 import { toMinor } from "../normalize";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
-export type GapIncSlug = "gap" | "oldnavy" | "bananarepublic" | "athleta";
+export type GapIncSlug = "gap" | "oldnavy" | "bananarepublic" | "athleta" | "gapfactory" | "brfactory";
 type Gender = ProductRecord["gender"];
 
 interface GapMarket {
@@ -50,6 +50,16 @@ const ON_CIDS: GapMarket["cids"] = [
   ["26239", "kadin"], // maternity
 ];
 const BR_CIDS: GapMarket["cids"] = [["26495", "kadin"], ["26219", "erkek"]];
+// Factory (outlet) stores: same API, brand codes gapfs / brfs, and the same
+// category ids on .com and .ca. Their clearance nodes, read from the mega-nav
+// on 2026-10-12. The "extra N% off" is a checkout promo, not in effectivePrice.
+const GAPFS_CIDS: GapMarket["cids"] = [
+  ["1042792", "kadin"], ["1042764", "erkek"], // women, men clearance
+  ["1042785", "cocuk"], ["1042766", "cocuk"], // girls, boys
+  ["1042786", "cocuk"], ["1042787", "cocuk"], // toddler girl, toddler boy
+  ["1091767", "cocuk"], ["1091779", "cocuk"], // baby girl, baby boy
+];
+const BRFS_CIDS: GapMarket["cids"] = [["1045379", "kadin"], ["1045495", "erkek"], ["1045489", "kadin"]]; // + petites
 
 export const GAPINC: Record<GapIncSlug, GapBrand> = {
   gap: {
@@ -89,6 +99,20 @@ export const GAPINC: Record<GapIncSlug, GapBrand> = {
   athleta: {
     code: "at",
     markets: { US: { site: "https://athleta.gap.com", cids: [["1023728", "kadin"], ["1073226", "cocuk"]] } },
+  },
+  gapfactory: {
+    code: "gapfs",
+    markets: {
+      US: { site: "https://www.gapfactory.com", cids: GAPFS_CIDS },
+      CA: { site: "https://www.gapfactory.ca", cids: GAPFS_CIDS },
+    },
+  },
+  brfactory: {
+    code: "brfs",
+    markets: {
+      US: { site: "https://bananarepublicfactory.gapfactory.com", cids: BRFS_CIDS },
+      CA: { site: "https://bananarepublicfactory.gapfactory.ca", cids: BRFS_CIDS },
+    },
   },
 };
 

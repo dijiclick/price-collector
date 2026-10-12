@@ -58,6 +58,7 @@ import * as haydigiy from "./brands/haydigiy";
 import { listBoohooGroup } from "./brands/boohoogroup";
 import { listTfgLondon } from "./brands/tfglondon";
 import { listGymshark } from "./brands/gymshark";
+import { listMacys } from "./brands/macys";
 import { listShopify } from "./brands/_shopify";
 import { shopifyStore } from "./brands/shopify-stores";
 import { listSweatyBetty } from "./brands/sweatybetty";
@@ -108,6 +109,11 @@ const tr2 = (only: CountryCode, list: () => Promise<ProductRecord[]>): List => (
 export const intlAdapters: { brand: string; listProducts: List }[] = [
   // Turkey — Akinon storefronts and multi-brand stores (no proxy).
   { brand: "gap", listProducts: byMarket(listGapTr, (c) => listGapInc("gap", c)) },
+  // Gap Inc Factory stores (US/CA): same API, brand codes gapfs / brfs.
+  { brand: "gapfactory", listProducts: (c) => listGapInc("gapfactory", c) },
+  { brand: "brfactory", listProducts: (c) => listGapInc("brfactory", c) },
+  // Macy's (US): the site's own /xapi/discover browse feed — Akamai walls the HTML, not this.
+  { brand: "macys", listProducts: listMacys },
   { brand: "uspoloassn", listProducts: tr(uspoloassn.listProducts) },
   { brand: "cacharel", listProducts: tr(cacharel.listProducts) },
   { brand: "converse", listProducts: tr(converse.listProducts) },
