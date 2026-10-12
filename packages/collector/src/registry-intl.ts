@@ -97,6 +97,8 @@ import { listSkechersNa } from "./brands/skechers-na";
 import { listCrocs } from "./brands/crocs";
 import { listLevis } from "./brands/levis";
 import { listPvh } from "./brands/pvh";
+import { listMichaelKors } from "./brands/michaelkors";
+import { listColumbia } from "./brands/columbia";
 import * as sneaksup from "./brands/sneaksup";
 import { listHmGroup } from "./brands/hmgroup";
 import * as topshop from "./brands/topshop";
@@ -132,6 +134,10 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   // PVH: AU via the shared Magento GraphQL; US via the site's sale grid.
   { brand: "calvinklein", listProducts: (c) => listPvh("calvinklein", c) },
   { brand: "tommyhilfiger", listProducts: (c) => listPvh("tommyhilfiger", c) },
+  // Michael Kors (US/CA/GB/CH/AU): SFCC sale grid; made-for-outlet styles dropped.
+  { brand: "michaelkors", listProducts: listMichaelKors },
+  // Columbia (US/CA): the site's Unbxd search (Cloudflare walls the site, not this).
+  { brand: "columbia", listProducts: listColumbia },
   { brand: "uspoloassn", listProducts: tr(uspoloassn.listProducts) },
   { brand: "cacharel", listProducts: tr(cacharel.listProducts) },
   { brand: "converse", listProducts: tr(converse.listProducts) },

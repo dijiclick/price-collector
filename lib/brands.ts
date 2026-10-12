@@ -142,6 +142,8 @@ export const BRANDS: BrandInfo[] = [
   { slug: "levis", label: "Levi's", category: "Giyim", logo: "/brands/levis.svg", countries: ["US", "CA"] },
   { slug: "calvinklein", label: "Calvin Klein", category: "Giyim", logo: "/brands/calvinklein.svg", countries: ["US", "AU"] },
   { slug: "tommyhilfiger", label: "Tommy Hilfiger", category: "Giyim", logo: "/brands/tommyhilfiger.svg", countries: ["US", "AU"] },
+  { slug: "michaelkors", label: "Michael Kors", category: "Çanta", logo: "/brands/michaelkors.svg", countries: ["US", "CA", "GB", "CH", "AU"] },
+  { slug: "columbia", label: "Columbia", category: "Spor", logo: "/brands/columbia.svg", countries: ["US", "CA"] },
   { slug: "athleta", label: "Athleta", category: "Spor", logo: "/brands/athleta.svg", countries: ["US"] },
   { slug: "abercrombie", label: "Abercrombie & Fitch", category: "Giyim", logo: "/brands/abercrombie.svg", countries: ["US", "CA", "GB"] },
   { slug: "hollister", label: "Hollister", category: "Giyim", logo: "/brands/hollister.svg", countries: ["US", "CA", "GB"] },

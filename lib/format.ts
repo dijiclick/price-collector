@@ -218,6 +218,8 @@ export const BRAND_LABELS: Record<string, string> = {
   levis: "Levi's",
   calvinklein: "Calvin Klein",
   tommyhilfiger: "Tommy Hilfiger",
+  michaelkors: "Michael Kors",
+  columbia: "Columbia",
   gapfactory: "Gap Factory",
   brfactory: "Banana Republic Factory",
   gymshark: "Gymshark",
