@@ -136,6 +136,8 @@ export const BRANDS: BrandInfo[] = [
   { slug: "gapfactory", label: "Gap Factory", category: "Giyim", logo: "/brands/gapfactory.svg", countries: ["US", "CA"] },
   { slug: "brfactory", label: "Banana Republic Factory", category: "Giyim", logo: "/brands/brfactory.svg", countries: ["US", "CA"] },
   { slug: "macys", label: "Macy's", category: "Çok markalı", logo: "/brands/macys.svg", countries: ["US"] },
+  { slug: "jcrew", label: "J.Crew", category: "Giyim", logo: "/brands/jcrew.svg", countries: ["US", "CA"] },
+  { slug: "madewell", label: "Madewell", category: "Giyim", logo: "/brands/madewell.svg", countries: ["US"] },
   { slug: "athleta", label: "Athleta", category: "Spor", logo: "/brands/athleta.svg", countries: ["US"] },
   { slug: "abercrombie", label: "Abercrombie & Fitch", category: "Giyim", logo: "/brands/abercrombie.svg", countries: ["US", "CA", "GB"] },
   { slug: "hollister", label: "Hollister", category: "Giyim", logo: "/brands/hollister.svg", countries: ["US", "CA", "GB"] },

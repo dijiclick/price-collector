@@ -59,6 +59,7 @@ import { listBoohooGroup } from "./brands/boohoogroup";
 import { listTfgLondon } from "./brands/tfglondon";
 import { listGymshark } from "./brands/gymshark";
 import { listMacys } from "./brands/macys";
+import { listJcrew } from "./brands/jcrew";
 import { listShopify } from "./brands/_shopify";
 import { shopifyStore } from "./brands/shopify-stores";
 import { listSweatyBetty } from "./brands/sweatybetty";
@@ -114,6 +115,11 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "brfactory", listProducts: (c) => listGapInc("brfactory", c) },
   // Macy's (US): the site's own /xapi/discover browse feed — Akamai walls the HTML, not this.
   { brand: "macys", listProducts: listMacys },
+  // J.Crew group: Constructor.io search feed (outside the Akamai wall). J.Crew
+  // Factory is NOT listed: 99% of its catalogue strikes an invented
+  // "comparable value", not a price it ever charged (2026-10-12).
+  { brand: "jcrew", listProducts: (c) => listJcrew("jcrew", c) },
+  { brand: "madewell", listProducts: (c) => listJcrew("madewell", c) },
   { brand: "uspoloassn", listProducts: tr(uspoloassn.listProducts) },
   { brand: "cacharel", listProducts: tr(cacharel.listProducts) },
   { brand: "converse", listProducts: tr(converse.listProducts) },

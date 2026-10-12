@@ -212,6 +212,8 @@ export const BRAND_LABELS: Record<string, string> = {
   princesspolly: "Princess Polly",
   stevemadden: "Steve Madden",
   macys: "Macy's",
+  jcrew: "J.Crew",
+  madewell: "Madewell",
   gapfactory: "Gap Factory",
   brfactory: "Banana Republic Factory",
   gymshark: "Gymshark",

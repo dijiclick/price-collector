@@ -35,6 +35,12 @@ export const brand = "macys";
 const SITE = "https://www.macys.com";
 const IMG = "https://slimages.macysassets.com/is/image/MCY/products/";
 const PER_PAGE = 120;
+/** The collector's own header set, pinned so a change in http.ts cannot silently change what the feed sees. */
+const HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  Accept: "application/json",
+  "Accept-Language": "en-US,en;q=0.9",
+};
 const CAP = 1500;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -49,7 +55,6 @@ export const WALKS: { path: string; id: number; label: string; gender: ProductRe
 
 export function pageUrl(path: string, id: number, pageIndex: number): string {
   const q = new URLSearchParams({
-    pathname: path,
     id: String(id),
     _navigationType: "BROWSE",
     _shoppingMode: "SITE",
@@ -62,7 +67,10 @@ export function pageUrl(path: string, id: number, pageIndex: number): string {
     _customerState: "GUEST",
     _deviceType: "DESKTOP",
   });
-  return `${SITE}/xapi/discover/v1/page?${q}`;
+  // `pathname` must go out with literal slashes: URLSearchParams would send
+  // `%2Fshop%2F…`, which the feed answers with a 200 `{"redirect":…}` stub and no
+  // grid (collector run 38220705111 got 0 products this way; probe 38221705486).
+  return `${SITE}/xapi/discover/v1/page?pathname=${path}&${q}`;
 }
 
 const ENTITIES: Record<string, string> = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " ", reg: "®", trade: "™" };
@@ -157,15 +165,24 @@ export async function listMacys(country: CountryCode): Promise<ProductRecord[]> 
   if (country !== "US") return [];
   const byId = new Map<string, ProductRecord>();
   let first = true;
+  let gridItems = 0;
+  const problems: string[] = [];
   for (const w of WALKS) {
     for (let page = 1; page <= w.pages; page++) {
       if (!first) await sleep(400);
       first = false;
-      const data = await getJson<any>(pageUrl(w.path, w.id, page), { country, retries: 1 }).catch((e) => {
+      const data = await getJson<any>(pageUrl(w.path, w.id, page), { country, retries: 1, headers: HEADERS }).catch((e) => {
+        problems.push(`${w.label} p${page}: ${String(e).slice(0, 120)}`);
         console.warn(`macys: ${w.label} p${page} failed: ${String(e).slice(0, 120)}`);
         return null;
       });
       const items = gridProducts(data);
+      gridItems += items.length;
+      if (data && !items.length) {
+        const why = data?.redirect ? `redirect to ${data.redirect.url}` : `no grid (keys: ${Object.keys(data ?? {}).join(",")})`;
+        problems.push(`${w.label} p${page}: ${why}`);
+        console.warn(`macys: ${w.label} p${page}: ${why}`);
+      }
       for (const p of items) {
         const r = mapMacys(p, w);
         if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
@@ -174,6 +191,9 @@ export async function listMacys(country: CountryCode): Promise<ProductRecord[]> 
       if (!items.length || (Number.isFinite(pages) && page >= pages)) break;
     }
   }
+  // Every walk empty means the feed changed or refused us — fail loudly so the
+  // watchdog flags it, instead of reporting "0 products" as a quiet success.
+  if (gridItems === 0) throw new Error(`macys: every sale walk returned no products (${problems.slice(0, 3).join("; ")})`);
   const all = [...byId.values()];
   return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
 }
