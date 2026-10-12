@@ -25,6 +25,7 @@ import * as vakkorama from "./brands/vakkorama";
 import * as nike from "./brands/nike";
 import * as newbalance from "./brands/newbalance";
 import * as puma from "./brands/puma";
+import { listPumaIntl } from "./brands/puma-intl";
 import * as superstep from "./brands/superstep";
 import * as modanisa from "./brands/modanisa";
 import * as network from "./brands/network";
@@ -93,7 +94,8 @@ export const adapters: BrandAdapter[] = [
   { brand: vakkorama.brand, country: "TR", listProducts: vakkorama.listProducts },
   { brand: nike.brand, country: "TR", listProducts: nike.listProducts },
   { brand: newbalance.brand, country: "TR", listProducts: newbalance.listProducts },
-  { brand: puma.brand, country: "TR", listProducts: puma.listProducts },
+  // Turkey: the distributor's Magento shop; US/CA/GB/CH: PUMA's global storefront GraphQL.
+  { brand: puma.brand, country: "TR", listProducts: byMarket(puma.listProducts, listPumaIntl) },
   { brand: superstep.brand, country: "TR", listProducts: superstep.listProducts },
   { brand: modanisa.brand, country: "TR", listProducts: byMarket(modanisa.listProducts, modanisaIntl.listProducts) },
   { brand: network.brand, country: "TR", listProducts: network.listProducts },

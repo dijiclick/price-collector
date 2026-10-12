@@ -69,7 +69,7 @@ export const BRANDS: BrandInfo[] = [
   { slug: "vakkorama", label: "Vakkorama", category: "Çok markalı", logo: "/brands/vakkorama.svg", countries: TR_ONLY },
   { slug: "nike", label: "Nike", category: "Ayakkabı", logo: "/brands/nike.svg", countries: ["TR", "US", "GB", "CH", "NO"] },
   { slug: "newbalance", label: "New Balance", category: "Ayakkabı", logo: "/brands/newbalance.svg", countries: TR_ONLY },
-  { slug: "puma", label: "PUMA", category: "Ayakkabı", logo: "/brands/puma.svg", countries: TR_ONLY },
+  { slug: "puma", label: "PUMA", category: "Ayakkabı", logo: "/brands/puma.svg", countries: ["TR", "US", "CA", "GB", "CH"] },
   { slug: "superstep", label: "SuperStep", category: "Çok markalı", logo: "/brands/superstep.svg", countries: TR_ONLY },
   { slug: "modanisa", label: "Modanisa", category: "Çok markalı", logo: "/brands/modanisa.svg", countries: ["TR", "AE", "SA"] },
   { slug: "network", label: "Network", category: "Giyim", logo: "/brands/network.svg", countries: TR_ONLY },
