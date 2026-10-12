@@ -33,6 +33,7 @@ import * as network from "./brands/network";
 import * as ipekyol from "./brands/ipekyol";
 import * as twistV2 from "./brands/twist-v2";
 import * as lacoste from "./brands/lacoste";
+import { listLacosteIntl } from "./brands/lacoste-intl";
 import * as pierrecardin from "./brands/pierrecardin";
 import * as derimod from "./brands/derimod";
 import { shopifyAdapters } from "./brands/shopify-stores";
@@ -103,7 +104,8 @@ export const adapters: BrandAdapter[] = [
   { brand: ipekyol.brand, country: "TR", listProducts: ipekyol.listProducts },
   // Twist and Mavi refuse GitHub runners; their Insider recommendation feeds do not (2026-10-11).
   { brand: "twist", country: "TR", listProducts: () => twistV2.listProducts("TR") },
-  { brand: lacoste.brand, country: "TR", listProducts: lacoste.listProducts },
+  // Turkey: lacoste.com.tr (Akinon); US: the NA app's guest token + Salesforce Shopper API.
+  { brand: lacoste.brand, country: "TR", listProducts: byMarket(lacoste.listProducts, listLacosteIntl) },
   { brand: pierrecardin.brand, country: "TR", listProducts: pierrecardin.listProducts },
   { brand: derimod.brand, country: "TR", listProducts: derimod.listProducts },
   { brand: marksandspencer.brand, country: "TR", listProducts: byMarket(marksandspencer.listProducts, listMarksIntl) },

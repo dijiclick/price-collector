@@ -99,6 +99,9 @@ import { listLevis } from "./brands/levis";
 import { listPvh } from "./brands/pvh";
 import { listMichaelKors } from "./brands/michaelkors";
 import { listColumbia } from "./brands/columbia";
+import { listTapestry } from "./brands/tapestry";
+import { listNordstromRack } from "./brands/nordstromrack";
+import { listAdidas } from "./brands/adidas";
 import * as sneaksup from "./brands/sneaksup";
 import { listHmGroup } from "./brands/hmgroup";
 import * as topshop from "./brands/topshop";
@@ -138,6 +141,15 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "michaelkors", listProducts: listMichaelKors },
   // Columbia (US/CA): the site's Unbxd search (Cloudflare walls the site, not this).
   { brand: "columbia", listProducts: listColumbia },
+  // Tapestry outlets (owner OK 2026-10-12): XGen search; the "was" is the
+  // outlet's comparable value, which the sites strike through.
+  { brand: "coachoutlet", listProducts: (c) => listTapestry("coachoutlet", c) },
+  { brand: "katespadeoutlet", listProducts: (c) => listTapestry("katespadeoutlet", c) },
+  // Nordstrom Rack (owner OK 2026-10-12): category pages with a crawler UA.
+  { brand: "nordstromrack", listProducts: listNordstromRack },
+  // adidas (owner OK 2026-10-12): the app gateway; Akamai lets some runners
+  // through, others 403 — a refused run throws and keeps the stored rows.
+  { brand: "adidas", listProducts: listAdidas },
   { brand: "uspoloassn", listProducts: tr(uspoloassn.listProducts) },
   { brand: "cacharel", listProducts: tr(cacharel.listProducts) },
   { brand: "converse", listProducts: tr(converse.listProducts) },
