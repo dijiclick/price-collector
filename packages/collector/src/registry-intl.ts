@@ -104,6 +104,9 @@ import { listTapestry } from "./brands/tapestry";
 import { listNordstromRack } from "./brands/nordstromrack";
 import { listAdidas } from "./brands/adidas";
 import { listSwarovski } from "./brands/swarovski";
+import { listUrbn } from "./brands/urbn";
+import { listUgg } from "./brands/ugg";
+import { listVans } from "./brands/vans";
 import * as sneaksup from "./brands/sneaksup";
 import { listHmGroup } from "./brands/hmgroup";
 import * as topshop from "./brands/topshop";
@@ -156,6 +159,15 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "adidas", listProducts: listAdidas },
   // Swarovski (owner OK 2026-10-12): outlet pages via the site's own Baqend cache; AE store direct.
   { brand: "swarovski", listProducts: listSwarovski },
+  // URBN (US/CA/GB): the stores' own Dynamic Yield recommendation feed — the
+  // sites and api.* hosts are DataDome-walled, this public endpoint is not.
+  { brand: "urbanoutfitters", listProducts: (c) => listUrbn("urbanoutfitters", c) },
+  { brand: "freepeople", listProducts: (c) => listUrbn("freepeople", c) },
+  { brand: "anthropologie", listProducts: (c) => listUrbn("anthropologie", c) },
+  // UGG AU (au.ugg.com search API) and Vans AU (vans.com.au Magento GraphQL);
+  // ugg.com / vans.com are walled for every other market.
+  { brand: "ugg", listProducts: listUgg },
+  { brand: "vans", listProducts: listVans },
   { brand: "uspoloassn", listProducts: tr(uspoloassn.listProducts) },
   { brand: "cacharel", listProducts: tr(cacharel.listProducts) },
   { brand: "converse", listProducts: tr(converse.listProducts) },

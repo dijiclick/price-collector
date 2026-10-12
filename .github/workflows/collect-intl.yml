@@ -92,6 +92,9 @@ jobs:
           # unsent events would send each alert several times; collect.yml's
           # notifier sends every market's events every 90 minutes.
           SWEEP_ONLY: "1"
+          # adidas: Akamai refuses GitHub's runner IPs (2026-10-12); the Hetzner
+          # box collects it instead (modadrop-adidas.timer).
+          SKIP_BRANDS: adidas
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATAIMPULSE_PROXY: ${{ secrets.DATAIMPULSE_PROXY }}
           # Sephora CH's Salesforce shop API takes the same public client id as

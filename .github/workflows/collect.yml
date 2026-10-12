@@ -91,7 +91,9 @@ jobs:
           # bandwidth to catch 14 price changes. collect-sephora.yml runs it
           # every 4 hours instead: ~3,2 GB/month, and cosmetics prices do not
           # move fast enough to notice the difference.
-          SKIP_BRANDS: sephora
+          # adidas: collected by the Hetzner box (modadrop-adidas.timer) — Akamai
+          # refuses GitHub's runner IPs (2026-10-12).
+          SKIP_BRANDS: sephora,adidas
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SEPHORA_CLIENT_ID: ${{ secrets.SEPHORA_CLIENT_ID }}
           DATAIMPULSE_PROXY: ${{ secrets.DATAIMPULSE_PROXY }}
