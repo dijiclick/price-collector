@@ -97,6 +97,7 @@ import { listSkechersNa } from "./brands/skechers-na";
 import { listCrocs } from "./brands/crocs";
 import { listLevis } from "./brands/levis";
 import { listPvh } from "./brands/pvh";
+import { listPvhTr } from "./brands/pvh-tr";
 import { listMichaelKors } from "./brands/michaelkors";
 import { listColumbia } from "./brands/columbia";
 import { listTapestry } from "./brands/tapestry";
@@ -135,13 +136,15 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "crocs", listProducts: listCrocs },
   // Levi's (US/CA): Constructor.io sale groups (levi.com itself is behind Akamai).
   { brand: "levis", listProducts: listLevis },
-  // PVH: AU via the shared Magento GraphQL; US via the site's sale grid.
-  { brand: "calvinklein", listProducts: (c) => listPvh("calvinklein", c) },
-  { brand: "tommyhilfiger", listProducts: (c) => listPvh("tommyhilfiger", c) },
+  // PVH: AU via the shared Magento GraphQL; US via the site's sale grid;
+  // Turkey via the partner storefronts' PersonaClick search (no proxy).
+  { brand: "calvinklein", listProducts: byMarket(() => listPvhTr("calvinklein"), (c) => listPvh("calvinklein", c)) },
+  { brand: "tommyhilfiger", listProducts: byMarket(() => listPvhTr("tommyhilfiger"), (c) => listPvh("tommyhilfiger", c)) },
   // Michael Kors (US/CA/GB/CH/AU): SFCC sale grid; made-for-outlet styles dropped.
   { brand: "michaelkors", listProducts: listMichaelKors },
   // Columbia (US/CA): the site's Unbxd search (Cloudflare walls the site, not this).
-  { brand: "columbia", listProducts: listColumbia },
+  // Turkey: columbia.com.tr is an Inveon Phantom storefront (no proxy).
+  { brand: "columbia", listProducts: byMarket(() => listPhantomBrand("columbia", "TR"), listColumbia) },
   // Tapestry outlets (owner OK 2026-10-12): XGen search; the "was" is the
   // outlet's comparable value, which the sites strike through.
   { brand: "coachoutlet", listProducts: (c) => listTapestry("coachoutlet", c) },

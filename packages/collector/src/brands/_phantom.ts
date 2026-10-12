@@ -1,6 +1,6 @@
 /**
  * Shared collector for Inveon "Phantom" storefronts (Next.js) — Yargıcı and
- * Hotiç (2026-10-11).
+ * Hotiç (2026-10-11), Columbia Turkey (2026-10-12).
  *
  * The listing grid pages through the storefront's own JSON route:
  *
@@ -35,6 +35,10 @@ export const PHANTOM_SHOPS: Record<string, PhantomShop> = {
   yargici: { brand: "yargici", site: "https://www.yargici.com", slugs: ["outlet"] },
   // No outlet tree on Hotiç; the whole range carries strike prices, so walk the three departments.
   hotic: { brand: "hotic", site: "https://www.hotic.com.tr", slugs: ["kadin-ayakkabi", "erkek-ayakkabi", "cantaaksesuar"] },
+  // Columbia Turkey (2026-10-12): the department trees hold every marked-down
+  // row (751 on 10-12, the union of the seasonal "indirim" slugs) and outlive
+  // the season names. 17 pages; answers a GitHub runner (probe run 38235646734).
+  columbia: { brand: "columbia", site: "https://www.columbia.com.tr", slugs: ["kadin", "erkek", "cocuk"] },
 };
 
 const PAGE_SIZE = 100;
