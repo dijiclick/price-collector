@@ -236,6 +236,33 @@ function knitOverride(name: string): string | null {
 }
 
 /**
+ * The name with the words that are NOT its noun taken out (2026-10-13, owner:
+ * "Boyner çanta" returned shorts):
+ *   - model codes: "… Kadın Şort CM-TOTE" was a bag because of "TOTE". An
+ *     upper-case code with a hyphen and a letter (CM-TOTE, SS24-BLK) is an
+ *     SKU, never a product word; single letters (T-SHIRT, V-YAKA) and sizes
+ *     (11-12) are kept.
+ *   - "<word> detaylı / desenli / baskılı / görünümlü …": "Çanta Detaylı Deri
+ *     Örgü Bel Kemeri" is a belt with bag-style detail, not a bag.
+ */
+// Unicode-aware edges: JavaScript's \b treats "ı" and "Ç" as non-word characters.
+const MODIFIER = /(?<!\p{L})\p{L}+\s+(?:detayl[ıi]|desenli|bask[ıi]l[ıi]|g[öo]r[üu]n[üu]ml[üu]|temal[ıi]|motifli|aplikeli|nak[ıi][şs]l[ıi]|fig[üu]rl[üu])(?!\p{L})/giu;
+export function nounOnly(name: string): string {
+  // A code only stands out in a mixed-case name; in an all-caps one (Zara)
+  // "LACE-TRIMMED" and "LINGERIE-STYLE" are words, not SKUs.
+  const mixed = /\p{Ll}/u.test(name);
+  return (mixed ? name : name.replace(/-/g, "\u2010"))
+    // Must contain a letter: "11-12" and "36-40" are SIZES, which some brand
+    // dialects read (Penti's kids' swimwear), not codes.
+    .replace(/\b(?=[A-Z0-9-]*[A-Z])[A-Z0-9]{2,}(?:-[A-Z0-9]+)+\b/g, " ")
+    .replace(/(?<!\p{L})etek\s+ucu(?!\p{L})/giu, " ") // "etek ucu" is a hem, not a skirt
+    .replace(MODIFIER, " ")
+    .replace(/\u2010/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
  * The product's type. Order of authority (owner report 2026-10-02 — socks and
  * bikini bottoms on the Shoes shelf):
  *   1. The brand's own category, when it names a type — the retailer already
@@ -250,8 +277,20 @@ export function classifyType(
   name: string,
   brand?: string | null,
 ): string | null {
+  // The noun-only name first; when it names nothing ("Kot Görünümlü Jegging",
+  // "Wide Leg Jeans Baskılı"), the modifier was carrying the meaning — keep it.
+  const trimmed = nounOnly(name ?? "");
+  const t = classifyRaw(category, trimmed, brand);
+  return t ?? (trimmed === (name ?? "").replace(/\s+/g, " ").trim() ? t : classifyRaw(category, name ?? "", brand));
+}
+
+function classifyRaw(
+  category: string | null | undefined,
+  name: string,
+  brand?: string | null,
+): string | null {
   const cat = brand && LABEL_NOT_CATEGORY.has(brand) ? "" : fold(category ?? "");
-  const n = fold(dialect(brand, name ?? ""));
+  const n = fold(dialect(brand, name));
   let type: string | null;
   const shared = cat.trim() ? sharedSection(cat) : null;
   if (shared) {
