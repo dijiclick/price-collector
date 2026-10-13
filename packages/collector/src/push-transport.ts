@@ -66,7 +66,25 @@ export interface PushContent {
   pct?: number;
   /** Where a news push lands in the app (expo-router path). */
   href?: string;
+  /**
+   * "coin": the coin-drop sound (owner 2026-10-12: "a sound of a coin drop,
+   * like money"). Price drops, target prices and Assistant pushes use it.
+   * `coin.wav` ships in builds from 2.9.3; an older binary without the file
+   * plays the default sound (iOS) or uses the fallback channel (Android).
+   */
+  sound?: "coin";
+  /** Android only: this device created the "coin" channel (its prefs say `coin: true`). */
+  coinChannel?: boolean;
 }
+
+/** Whether a device's synced prefs say it has the coin channel (app ≥ 2.9.3). */
+export const hasCoinChannel = (rawPrefs: unknown): boolean => {
+  let v = rawPrefs;
+  if (typeof v === "string") { try { v = JSON.parse(v); } catch { return false; } }
+  return typeof v === "object" && v !== null && (v as { coin?: unknown }).coin === true;
+};
+
+const coinSound = (c: PushContent) => c.sound === "coin" || c.kind === "drop" || c.kind === "target";
 
 /** The data both transports carry, without undefined keys. */
 function pushData(c: PushContent): Record<string, string | number> {
@@ -91,7 +109,7 @@ export function buildApnsPayload(c: PushContent): Record<string, unknown> {
   return {
     aps: {
       alert: { title: c.title, body: c.body },
-      sound: "default",
+      sound: coinSound(c) ? "coin.wav" : "default",
       "thread-id": c.productId != null ? String(c.productId) : "news",
     },
     ...data,
@@ -109,7 +127,12 @@ export function buildFcmMessage(token: string, c: PushContent): Record<string, u
       token,
       notification: { title: c.title, body: c.body },
       data: Object.fromEntries(Object.entries(pushData(c)).map(([k, v]) => [k, String(v)])),
-      android: { priority: "high", notification: { channel_id: "price-drops" } },
+      android: {
+        priority: "high",
+        // Only a device that created the channel gets it: an older Android
+        // build would drop a "coin" push into the low-priority fallback channel.
+        notification: coinSound(c) && c.coinChannel ? { channel_id: "coin", sound: "coin" } : { channel_id: "price-drops" },
+      },
     },
   };
 }

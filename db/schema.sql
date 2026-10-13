@@ -550,3 +550,6 @@ CREATE TABLE IF NOT EXISTS stilist_alarms (
   last_notified_at  TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_stilist_alarms_token ON stilist_alarms (token);
+-- Implicit = remembered from a search, not set by the user (lib/interests.ts):
+-- new products only, one push per device per 48 h, expires after 14 days.
+ALTER TABLE stilist_alarms ADD COLUMN IF NOT EXISTS implicit BOOLEAN NOT NULL DEFAULT false;

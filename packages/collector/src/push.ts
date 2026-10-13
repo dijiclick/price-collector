@@ -1,7 +1,7 @@
 import type { Db } from "./db";
 import { fromMinor } from "./normalize";
 import { BRAND_LABELS } from "../../../lib/format";
-import {
+import { hasCoinChannel,
   classifyToken, loadCreds, sendApns, sendFcm, type PushContent,
 } from "./push-transport";
 
@@ -334,6 +334,7 @@ async function deliver(rows: PushRow[]): Promise<Outcome[]> {
       productId: m.data.productId,
       kind: m.data.kind,
       pct: m.data.pct,
+      coinChannel: hasCoinChannel(r.prefs),
     };
   };
 
