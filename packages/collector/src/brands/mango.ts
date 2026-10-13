@@ -501,6 +501,20 @@ export function withRendition(path: string | null, assets: string): string | nul
 }
 
 /**
+ * Mango's product links now end in the colour and size codes —
+ * `…/volanli-cizgili-elbise/27017946/52/00` — and a link without them is
+ * answered "This request was blocked" (403) by Mango's firewall, in Safari too
+ * (2026-10-13, owner: "it tells me request is blocked"). The v4 detail `url`
+ * stops at the id, so the colour this record is for is added, with size 00.
+ * Older-style links (`…_37091331`) and ones already suffixed are left alone.
+ */
+export function productUrl(url: string, colorId: unknown): string {
+  const c = colorId == null ? "" : String(colorId).trim();
+  if (!/^\d{1,3}$/.test(c)) return url;
+  return /\/\d{6,10}$/.test(url) ? `${url}/${c.padStart(2, "0")}/00` : url;
+}
+
+/**
  * Build one ProductRecord from a seed + its two orchestrator responses.
  * `prices` is keyed by colorId; `detail` may be null (name/url degrade).
  */
@@ -564,7 +578,7 @@ export function buildRecord(
     country,
     externalId: seed.id,
     name: detail?.name ?? `Mango ${seed.id}`,
-    url: detail?.url ? `${SITE}${detail.url}` : `${SITE}/${site.path}`,
+    url: detail?.url ? productUrl(`${SITE}${detail.url}`, lead.colorId ?? ownColor?.id) : `${SITE}/${site.path}`,
     imageUrl,
     images,
     price: toMinor(priceEntry.price),
