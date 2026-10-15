@@ -1,0 +1,132 @@
+/**
+ * French display names for the browse taxonomy. Same keys as
+ * productLabels.en.ts (see its header: keys stay Turkish, subtypes are keyed
+ * `type:subtype`, labels are plural). Sentence case, retailer wording.
+ */
+
+export const TYPE_LABELS_FR: Record<string, string> = {
+  makyaj: "Maquillage",
+  parfum: "Parfums",
+  sac: "Cheveux",
+  "cilt-bakim": "Soins du visage",
+  "kisisel-bakim": "Hygiène",
+  ayakkabi: "Chaussures",
+  canta: "Sacs",
+  mayo: "Bain et plage",
+  "ic-giyim": "Lingerie",
+  elbise: "Robes",
+  "dis-giyim": "Manteaux et vestes",
+  triko: "Maille et sweats",
+  ust: "Hauts",
+  alt: "Bas",
+  aksesuar: "Accessoires",
+};
+
+export const GROUP_LABELS_FR: Record<string, string> = {
+  giyim: "Vêtements",
+  ayakkabi: "Chaussures",
+  canta: "Sacs",
+  aksesuar: "Accessoires",
+  kozmetik: "Beauté",
+};
+
+/** Keyed `type:subtype` — see productLabels.en.ts on repeated keys. */
+export const SUBTYPE_LABELS_FR: Record<string, string> = {
+  "alt:etek": "Jupes",
+  "alt:sort": "Shorts",
+  "alt:tayt": "Leggings et joggings",
+  "alt:jean": "Jeans",
+  "alt:pantolon": "Pantalons",
+
+  "ust:tisort": "T-shirts",
+  "ust:gomlek": "Chemises",
+  "ust:bluz": "Blouses",
+  "ust:atlet": "Débardeurs et crop tops",
+  "ust:tunik": "Tuniques",
+
+  "dis-giyim:trenckot": "Trench-coats",
+  "dis-giyim:blazer": "Blazers",
+  "dis-giyim:yelek": "Gilets sans manches",
+  "dis-giyim:mont": "Manteaux et doudounes",
+  "dis-giyim:ceket": "Vestes",
+
+  "ayakkabi:bot": "Bottes et bottines",
+  "ayakkabi:topuklu": "Talons",
+  "ayakkabi:sneaker": "Baskets",
+  "ayakkabi:sandalet": "Sandales et claquettes",
+  "ayakkabi:babet": "Ballerines et mocassins",
+
+  "cilt-bakim:gunes": "Solaires",
+  "cilt-bakim:maske": "Masques",
+  "cilt-bakim:serum": "Sérums",
+  "cilt-bakim:goz": "Contour des yeux",
+  "cilt-bakim:dudak": "Soins des lèvres",
+  "cilt-bakim:temizleyici": "Nettoyants",
+  "cilt-bakim:nemlendirici": "Hydratants",
+
+  "elbise:tulum": "Combinaisons",
+  "elbise:abiye": "Robes de soirée",
+  "elbise:gomlek": "Robes chemises",
+  "elbise:maksi": "Robes longues",
+  "elbise:midi": "Robes midi",
+  "elbise:mini": "Robes courtes",
+
+  "kisisel-bakim:hijyen": "Protections hygiéniques",
+  "kisisel-bakim:agiz": "Soins bucco-dentaires",
+  "kisisel-bakim:banyo": "Bain et douche",
+  "kisisel-bakim:tiras": "Rasage et épilation",
+  "kisisel-bakim:mendil": "Lingettes",
+  "kisisel-bakim:yara": "Pansements",
+
+  "triko:hirka": "Cardigans",
+  "triko:sweatshirt": "Sweats et hoodies",
+  "triko:polo": "Polos",
+  "triko:kazak": "Pulls",
+
+  "ic-giyim:pijama": "Pyjamas et nuisettes",
+  "ic-giyim:corap": "Chaussettes et collants",
+  "ic-giyim:sutyen": "Soutiens-gorge",
+  "ic-giyim:kulot": "Culottes et boxers",
+  "ic-giyim:atlet": "Débardeurs et bodys",
+
+  "mayo:bikini": "Bikinis",
+  "mayo:mayo": "Maillots une pièce",
+  "mayo:deniz-sortu": "Shorts de bain",
+  "mayo:plaj": "Tenues de plage",
+
+  "canta:cuzdan": "Portefeuilles et porte-cartes",
+  "canta:sirt": "Sacs à dos",
+  "canta:tote": "Cabas et totes",
+  "canta:capraz": "Sacs bandoulière et épaule",
+  "canta:el": "Sacs à main",
+  "canta:valiz": "Bagages et voyage",
+  "canta:canta-aksesuar": "Accessoires de sac",
+
+  "aksesuar:gozluk": "Lunettes",
+  "aksesuar:sapka": "Chapeaux et bonnets",
+  "aksesuar:kemer": "Ceintures",
+  "aksesuar:sal": "Écharpes et foulards",
+  "aksesuar:taki": "Bijoux",
+  "aksesuar:saat": "Montres",
+  "aksesuar:toka": "Accessoires cheveux",
+
+  "makyaj:dudak": "Lèvres",
+  "makyaj:goz": "Yeux",
+  "makyaj:yuz": "Teint",
+  "makyaj:oje": "Ongles",
+  "makyaj:firca": "Pinceaux et accessoires",
+  "makyaj:temizleme": "Démaquillants",
+
+  "parfum:deodorant": "Déodorants",
+  "parfum:edp": "Eaux de parfum",
+  "parfum:edt": "Eaux de toilette",
+  "parfum:vucut": "Brumes parfumées",
+  "parfum:ev": "Parfums d'intérieur",
+  "parfum:set": "Coffrets parfum",
+
+  "sac:boya": "Colorations",
+  "sac:sampuan": "Shampooings",
+  "sac:maske": "Masques et huiles",
+  "sac:sekillendirici": "Coiffants",
+  "sac:krem": "Après-shampooings et soins",
+};

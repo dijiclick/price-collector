@@ -55,9 +55,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # playwright and patchright are pinned to the SAME release: `scrapling install`
+      # downloads the Chromium build playwright wants, but the browser is launched
+      # through patchright. Unpinned, playwright 1.64 (chromium-1248) arrived ahead
+      # of patchright 1.63 (chromium-1243) and every Mango fetch died with
+      # "Executable doesn't exist" (2026-10). Bump both together, never one.
       - name: Install Scrapling (Mango)
         run: |
-          pip install "scrapling[fetchers]==0.4.15"
+          pip install "scrapling[fetchers]==0.4.15" "playwright==1.63.0" "patchright==1.63.0"
           scrapling install
       # The run logs of a PUBLIC repo are public. GitHub masks a secret's exact
       # value, but the collector derives per-country proxy URLs from it

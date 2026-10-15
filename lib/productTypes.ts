@@ -1,5 +1,26 @@
 import { appLang } from "./format";
 import { GROUP_LABELS_EN, SUBTYPE_LABELS_EN, TYPE_LABELS_EN } from "./productLabels.en";
+import { GROUP_LABELS_FR, SUBTYPE_LABELS_FR, TYPE_LABELS_FR } from "./productLabels.fr";
+import { GROUP_LABELS_ES, SUBTYPE_LABELS_ES, TYPE_LABELS_ES } from "./productLabels.es";
+import { GROUP_LABELS_ZH, SUBTYPE_LABELS_ZH, TYPE_LABELS_ZH } from "./productLabels.zh";
+import type { AppLang } from "./lang";
+
+type Labels = Record<string, string>;
+/**
+ * Translated shelf names per language. Turkish is not here: it IS the label in
+ * PRODUCT_TYPE_LABELS / PRODUCT_GROUPS / PRODUCT_SUBTYPES. A language missing a
+ * key falls back to English, then Turkish — a French reader understands
+ * "Coats" sooner than "Mont & Kaban".
+ */
+const TYPE_LABELS: Partial<Record<AppLang, Labels>> = { en: TYPE_LABELS_EN, fr: TYPE_LABELS_FR, es: TYPE_LABELS_ES, zh: TYPE_LABELS_ZH };
+const GROUP_LABELS: Partial<Record<AppLang, Labels>> = { en: GROUP_LABELS_EN, fr: GROUP_LABELS_FR, es: GROUP_LABELS_ES, zh: GROUP_LABELS_ZH };
+const SUBTYPE_LABELS: Partial<Record<AppLang, Labels>> = { en: SUBTYPE_LABELS_EN, fr: SUBTYPE_LABELS_FR, es: SUBTYPE_LABELS_ES, zh: SUBTYPE_LABELS_ZH };
+
+/** A translated label, or undefined for Turkish (whose label is the source). */
+function translated(table: Partial<Record<AppLang, Labels>>, key: string, l: AppLang): string | undefined {
+  if (l === "tr") return undefined;
+  return table[l]?.[key] ?? table.en?.[key];
+}
 
 /**
  * The canonical cross-brand product taxonomy — the single vocabulary shared by
@@ -385,11 +406,11 @@ export const PRODUCT_TYPE_ORDER = [
  * added without an English name shows "Triko" — recognisable — instead of
  * "triko" reading as a bug.
  */
-export const productTypeLabel = (key: string): string =>
-  (appLang() === "en" ? TYPE_LABELS_EN[key] : undefined) ?? PRODUCT_TYPE_LABELS[key] ?? key;
+export const productTypeLabel = (key: string, l: AppLang = appLang()): string =>
+  translated(TYPE_LABELS, key, l) ?? PRODUCT_TYPE_LABELS[key] ?? key;
 
-export const productGroupLabel = (key: string): string =>
-  (appLang() === "en" ? GROUP_LABELS_EN[key] : undefined) ??
+export const productGroupLabel = (key: string, l: AppLang = appLang()): string =>
+  translated(GROUP_LABELS, key, l) ??
   PRODUCT_GROUPS.find((g) => g.key === key)?.label ??
   key;
 
@@ -637,9 +658,9 @@ export function subtypeForName(type: string | null | undefined, name: string, br
 
 const SNEAKER_BRANDS = new Set(["puma", "nike", "newbalance"]);
 
-export const subtypeLabel = (type: string, key: string): string =>
+export const subtypeLabel = (type: string, key: string, l: AppLang = appLang()): string =>
   // `type:key`, because subtype keys repeat: makyaj/goz is eye makeup and
   // cilt-bakim/goz is eye cream. See productLabels.en.ts.
-  (appLang() === "en" ? SUBTYPE_LABELS_EN[`${type}:${key}`] : undefined) ??
+  translated(SUBTYPE_LABELS, `${type}:${key}`, l) ??
   PRODUCT_SUBTYPES[type]?.find((s) => s.key === key)?.label ??
   key;

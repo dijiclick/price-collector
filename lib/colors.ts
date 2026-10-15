@@ -17,12 +17,16 @@
  * Plain JS-compatible TS with no app imports: the collector, the API and the
  * app all read it.
  */
+import type { AppLang } from "./lang";
 import { fold } from "./productTypes";
 
 export interface ColorFamily {
   key: string;
   tr: string;
   en: string;
+  fr: string;
+  es: string;
+  zh: string;
   /** Swatch colour for the filter chip. */
   hex: string;
   re: RegExp;
@@ -30,21 +34,21 @@ export interface ColorFamily {
 
 // prettier-ignore
 export const COLOR_FAMILIES: ColorFamily[] = [
-  { key: "lacivert",   tr: "Lacivert",    en: "Navy",        hex: "#1f2a44", re: /lacivert|denizci|\bnavy|\bmarine\b|\bmarino\b|dunkelblau|bleu marine|\bblu notte/ },
-  { key: "siyah",      tr: "Siyah",       en: "Black",       hex: "#111111", re: /siyah|\bblack|\bnoir|schwarz|\bnegro|\bnero\b|\bzwart|\bsvart/ },
-  { key: "beyaz",      tr: "Beyaz",       en: "White",       hex: "#ffffff", re: /beyaz|ekru|\becru|\bkrem\b|\bcream|\bivory|fildisi|off[ -]?white|\bwhite|\bblanc|\bweiss|\bweiß|\bblanco|\bbianco|\bwit\b|\bvit\b|\bhvit|\bhvid/ },
-  { key: "gri",        tr: "Gri",         en: "Grey",        hex: "#9a9a9a", re: /\bgri\b|antrasit|anthracite|fume\b|\bgrey|\bgray|charcoal|\bgris\b|\bgrau\b|\bgrigio|\bgrijs|\bgra\b/ },
-  { key: "bej",        tr: "Bej",         en: "Beige",       hex: "#d9c3a5", re: /\bbej\b|\bbeige|camel|devetuyu|\bten\b|\bnude\b|\bkum\b|\bsand|\btaupe|vizon|\bstone\b|\bkhaki beige|\btan\b/ },
-  { key: "kahverengi", tr: "Kahverengi",  en: "Brown",       hex: "#7a4e2d", re: /kahve|\bbrown|\bmarron|\bbraun|\bmarrone|\bbruin|\bbrun\b|\btaba\b|tarcin|cikolata|chocolate|cognac|konyak|\bmocha/ },
-  { key: "kirmizi",    tr: "Kırmızı",     en: "Red",         hex: "#c0262d", re: /kirmizi|\bred\b|\brouge|\brot\b|\brojo|\brosso|\brood\b|\broed|bordo|burgundy|bordeaux|maroon|visne|\bcherry|\bwine\b/ },
-  { key: "pembe",      tr: "Pembe",       en: "Pink",        hex: "#f2a7c3", re: /pembe|\bpink|\brose\b|\brosa\b|\broze\b|fusya|fuchsia|pudra|\bblush\b|\bgul\b|magenta/ },
-  { key: "mor",        tr: "Mor",         en: "Purple",      hex: "#7b4ea3", re: /\bmor\b|\bpurple|\bviolet|\bviola\b|\blila|\blilac|lavanta|lavender|\bmurdum|eflatun|\bmorado|\bplum\b|\bpaars|\blilla/ },
-  { key: "mavi",       tr: "Mavi",        en: "Blue",        hex: "#3d7fd1", re: /\bmavi|\bblue|\bbleu|\bblau|\bazul|\bblu\b|\bblauw|\bbla\b|indigo|\bdenim|\bkot\b|\bsky\b|\bcobalt/ },
-  { key: "yesil",      tr: "Yeşil",       en: "Green",       hex: "#3f8a4f", re: /yesil|\bgreen|\bvert\b|\bgrun|\bgrün|\bverde|\bgroen|\bgron|haki|khaki|olive|zeytin|\bmint|\bnane|turkuaz|turquoise|\bteal|petrol|\bsage|\bkaki/ },
-  { key: "sari",       tr: "Sarı",        en: "Yellow",      hex: "#efc93a", re: /\bsari\b|yellow|\bjaune|\bgelb|amarillo|\bgiallo|\bgeel|hardal|mustard|\blime\b|limon/ },
-  { key: "turuncu",    tr: "Turuncu",     en: "Orange",      hex: "#ee7a2f", re: /turuncu|\borange|\bnaranja|\barancio|\boranje|mercan|\bcoral|kiremit|terracotta|terrakotta|somon|salmon|\brust\b|\bpas\b/ },
-  { key: "metalik",    tr: "Metalik",     en: "Metallic",    hex: "#c9b26b", re: /\baltin|\bgold|\bdore|\bdoré|\bdorado|\boro\b|gumus|\bsilver|\bargent|\bsilber|\bplata\b|\bargento|metalik|metallic|\bbronz|\bbronze|\bcopper|\bbakir/ },
-  { key: "cok-renkli", tr: "Çok renkli",  en: "Multicolour", hex: "linear", re: /cok renkli|\bmulti|\bmix\b|rengarenk|\bprint\b|desenli|cizgili|striped|ekose|\bcheck/ },
+  { key: "lacivert",   tr: "Lacivert",    en: "Navy", fr: "Bleu marine", es: "Azul marino", zh: "藏青",        hex: "#1f2a44", re: /lacivert|denizci|\bnavy|\bmarine\b|\bmarino\b|dunkelblau|bleu marine|\bblu notte/ },
+  { key: "siyah",      tr: "Siyah",       en: "Black", fr: "Noir", es: "Negro", zh: "黑色",       hex: "#111111", re: /siyah|\bblack|\bnoir|schwarz|\bnegro|\bnero\b|\bzwart|\bsvart/ },
+  { key: "beyaz",      tr: "Beyaz",       en: "White", fr: "Blanc", es: "Blanco", zh: "白色",       hex: "#ffffff", re: /beyaz|ekru|\becru|\bkrem\b|\bcream|\bivory|fildisi|off[ -]?white|\bwhite|\bblanc|\bweiss|\bweiß|\bblanco|\bbianco|\bwit\b|\bvit\b|\bhvit|\bhvid/ },
+  { key: "gri",        tr: "Gri",         en: "Grey", fr: "Gris", es: "Gris", zh: "灰色",        hex: "#9a9a9a", re: /\bgri\b|antrasit|anthracite|fume\b|\bgrey|\bgray|charcoal|\bgris\b|\bgrau\b|\bgrigio|\bgrijs|\bgra\b/ },
+  { key: "bej",        tr: "Bej",         en: "Beige", fr: "Beige", es: "Beige", zh: "米色",       hex: "#d9c3a5", re: /\bbej\b|\bbeige|camel|devetuyu|\bten\b|\bnude\b|\bkum\b|\bsand|\btaupe|vizon|\bstone\b|\bkhaki beige|\btan\b/ },
+  { key: "kahverengi", tr: "Kahverengi",  en: "Brown", fr: "Marron", es: "Marrón", zh: "棕色",       hex: "#7a4e2d", re: /kahve|\bbrown|\bmarron|\bbraun|\bmarrone|\bbruin|\bbrun\b|\btaba\b|tarcin|cikolata|chocolate|cognac|konyak|\bmocha/ },
+  { key: "kirmizi",    tr: "Kırmızı",     en: "Red", fr: "Rouge", es: "Rojo", zh: "红色",         hex: "#c0262d", re: /kirmizi|\bred\b|\brouge|\brot\b|\brojo|\brosso|\brood\b|\broed|bordo|burgundy|bordeaux|maroon|visne|\bcherry|\bwine\b/ },
+  { key: "pembe",      tr: "Pembe",       en: "Pink", fr: "Rose", es: "Rosa", zh: "粉色",        hex: "#f2a7c3", re: /pembe|\bpink|\brose\b|\brosa\b|\broze\b|fusya|fuchsia|pudra|\bblush\b|\bgul\b|magenta/ },
+  { key: "mor",        tr: "Mor",         en: "Purple", fr: "Violet", es: "Morado", zh: "紫色",      hex: "#7b4ea3", re: /\bmor\b|\bpurple|\bviolet|\bviola\b|\blila|\blilac|lavanta|lavender|\bmurdum|eflatun|\bmorado|\bplum\b|\bpaars|\blilla/ },
+  { key: "mavi",       tr: "Mavi",        en: "Blue", fr: "Bleu", es: "Azul", zh: "蓝色",        hex: "#3d7fd1", re: /\bmavi|\bblue|\bbleu|\bblau|\bazul|\bblu\b|\bblauw|\bbla\b|indigo|\bdenim|\bkot\b|\bsky\b|\bcobalt/ },
+  { key: "yesil",      tr: "Yeşil",       en: "Green", fr: "Vert", es: "Verde", zh: "绿色",       hex: "#3f8a4f", re: /yesil|\bgreen|\bvert\b|\bgrun|\bgrün|\bverde|\bgroen|\bgron|haki|khaki|olive|zeytin|\bmint|\bnane|turkuaz|turquoise|\bteal|petrol|\bsage|\bkaki/ },
+  { key: "sari",       tr: "Sarı",        en: "Yellow", fr: "Jaune", es: "Amarillo", zh: "黄色",      hex: "#efc93a", re: /\bsari\b|yellow|\bjaune|\bgelb|amarillo|\bgiallo|\bgeel|hardal|mustard|\blime\b|limon/ },
+  { key: "turuncu",    tr: "Turuncu",     en: "Orange", fr: "Orange", es: "Naranja", zh: "橙色",      hex: "#ee7a2f", re: /turuncu|\borange|\bnaranja|\barancio|\boranje|mercan|\bcoral|kiremit|terracotta|terrakotta|somon|salmon|\brust\b|\bpas\b/ },
+  { key: "metalik",    tr: "Metalik",     en: "Metallic", fr: "Métallisé", es: "Metalizado", zh: "金属色",    hex: "#c9b26b", re: /\baltin|\bgold|\bdore|\bdoré|\bdorado|\boro\b|gumus|\bsilver|\bargent|\bsilber|\bplata\b|\bargento|metalik|metallic|\bbronz|\bbronze|\bcopper|\bbakir/ },
+  { key: "cok-renkli", tr: "Çok renkli",  en: "Multicolour", fr: "Multicolore", es: "Multicolor", zh: "多色", hex: "linear", re: /cok renkli|\bmulti|\bmix\b|rengarenk|\bprint\b|desenli|cizgili|striped|ekose|\bcheck/ },
 ];
 
 /** Cosmetics names are full of colour-ish words that are not the product's colour. */
@@ -90,5 +94,5 @@ export function colorFamilies(
   return [...out];
 }
 
-export const colorLabel = (key: string, lang: "tr" | "en" = "tr"): string =>
+export const colorLabel = (key: string, lang: AppLang = "tr"): string =>
   COLOR_FAMILIES.find((c) => c.key === key)?.[lang] ?? key;

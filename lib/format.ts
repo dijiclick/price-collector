@@ -1,4 +1,5 @@
 import { COUNTRIES, CURRENCY_STYLE, DEFAULT_COUNTRY, type CountryCode } from "./countries";
+import { LOCALE_TAG, type AppLang } from "./lang";
 
 /**
  * The language the app is currently speaking.
@@ -11,15 +12,13 @@ import { COUNTRIES, CURRENCY_STYLE, DEFAULT_COUNTRY, type CountryCode } from "./
  * child renders under the right one. The web is Turkish, never calls the
  * setter, and therefore has no shared mutable state across requests.
  */
-let lang: "tr" | "en" = "tr";
+let lang: AppLang = "tr";
 
-export function setAppLang(l: "tr" | "en"): void {
+export function setAppLang(l: AppLang): void {
   lang = l;
 }
 
-export const appLang = (): "tr" | "en" => lang;
-
-const numberLocale = () => (lang === "en" ? "en-US" : "tr-TR");
+export const appLang = (): AppLang => lang;
 
 /**
  * Format integer minor units (kuruş) as Turkish Lira: 133399 -> "₺1.333,99",
@@ -34,10 +33,16 @@ export function tl(minor: number): string {
 }
 
 /** Group separator and decimal mark per language. See formatMoney. */
-const SEPARATORS = {
+const SEPARATORS: Record<AppLang, { group: string; decimal: string }> = {
   tr: { group: ".", decimal: "," },
   en: { group: ",", decimal: "." },
-} as const;
+  // French groups with a NARROW no-break space (U+202F), the Imprimerie
+  // nationale rule every French shop prints — a plain space would let a price
+  // wrap between its digits.
+  fr: { group: "\u202f", decimal: "," },
+  es: { group: ".", decimal: "," },
+  zh: { group: ",", decimal: "." },
+};
 
 /**
  * Integer minor units → a printed price, in the currency the shop charges.
@@ -64,7 +69,7 @@ const SEPARATORS = {
 export function formatMoney(
   minor: number,
   currency?: string | null,
-  l: "tr" | "en" = lang,
+  l: AppLang = lang,
 ): string {
   const code = currency || "TRY";
   const style = CURRENCY_STYLE[code] ?? { symbol: code, symbolBefore: true };
@@ -149,7 +154,7 @@ export function currencySymbol(cur?: string | null): string {
 export const priceBuckets = (): readonly [number, number] => COUNTRIES[market].buckets;
 
 /** Locale tag for dates. Follows the LANGUAGE, not the market — a date is words. */
-export const dateLocale = (): string => (lang === "en" ? "en-US" : "tr-TR");
+export const dateLocale = (): string => LOCALE_TAG[lang];
 
 /**
  * A percentage, written the way the reader's language writes it.
@@ -159,13 +164,22 @@ export const dateLocale = (): string => (lang === "en" ? "en-US" : "tr-TR");
  * U+2212, not a hyphen — the glyph every discount pill in the app has always
  * used, so Turkish output is byte-for-byte what the screens hardcoded before.
  */
-export function percent(n: number, opts: { off?: boolean } = {}, l: "tr" | "en" = lang): string {
-  const body = l === "en" ? `${n}%` : `%${n}`;
+export function percent(n: number, opts: { off?: boolean } = {}, l: AppLang = lang): string {
+  // Turkish leads with the sign; French puts a narrow no-break space before it
+  // ("61 %"); English, Spanish and Chinese write "61%".
+  const body = l === "tr" ? `%${n}` : l === "fr" ? `${n}\u202f%` : `${n}%`;
   return opts.off ? `−${body}` : body;
 }
 
 /** Plain grouped integer: 3037 -> "3.037" / "3,037". Counts, not money. */
-export const nf = (n: number): string => n.toLocaleString(numberLocale());
+export const nf = (n: number): string => {
+  // By hand, like formatMoney: Hermes may lack the ICU data for fr/es/zh, and
+  // `toLocaleString` would then quietly print the wrong separators on device.
+  if (!Number.isInteger(n)) return n.toLocaleString(LOCALE_TAG[lang]);
+  const { group } = SEPARATORS[lang] ?? SEPARATORS.tr;
+  const body = String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, group);
+  return n < 0 ? `-${body}` : body;
+};
 
 export const BRAND_LABELS: Record<string, string> = {
   zara: "Zara",
@@ -406,10 +420,10 @@ export const brandShort = (b: string) => BRAND_SHORT[b] ?? brandLabel(b);
  * Turkish letter (ç ğ ö ş ü) uppercases correctly without help.
  */
 export function trUpper(s: string): string {
-  // Only in Turkish. Applied to English it produces "NOTİFİCATİONS", which is
+  // Only in Turkish. Applied to any other language it produces "NOTİFİCATİONS", which is
   // the same class of typo in the other direction — the dotted capital is a
   // Turkish letter, not a decoration.
-  if (lang === "en") return s.toUpperCase();
+  if (lang !== "tr") return s.toUpperCase();
   return s.replace(/i/g, "İ").replace(/ı/g, "I").toUpperCase();
 }
 

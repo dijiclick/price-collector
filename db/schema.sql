@@ -492,6 +492,16 @@ CREATE TABLE IF NOT EXISTS brand_sales (
 -- Anonymous app counts (app/api/ping, lib/ping.ts, 2026-10-03): installs,
 -- opens and push opens per day, platform and version. No identifier, no IP —
 -- a tally, so the people who decline analytics are counted too.
+-- When the server first saw each store version live (lib/play-live.ts): the
+-- force-update grace period counts from here, because Google Play's API says
+-- what is live but not since when.
+CREATE TABLE IF NOT EXISTS app_live_versions (
+  platform   TEXT NOT NULL,
+  version    TEXT NOT NULL,
+  first_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (platform, version)
+);
+
 CREATE TABLE IF NOT EXISTS app_pings (
   day      DATE NOT NULL,
   platform TEXT NOT NULL,
