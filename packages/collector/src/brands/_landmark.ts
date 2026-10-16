@@ -18,6 +18,18 @@
  *   list). `percentageDiscount` is filterable, so only reduced rows are asked
  *   for. `variants[].sku_size` + `inStock` are per-size availability.
  * - `search_type=category&q=<root>` walks a department; rows ≤ 200 per call.
+ * - Max's reduced set flips with its sales (2026-10-16): ~290 AE / ~340 SA rows
+ *   between sales, >1,500 during one (10-11 18:00 → 10-12 06:00 and 10-15
+ *   18:00 → 10-16 06:40 UTC). Every page answered in full both ways — the
+ *   short runs were the real reduced set. A sale-only walk then swung the run
+ *   between 1500 and ~290 rows: the sweep's 50% guard skipped the drop, so
+ *   ~1,000 expired deals stayed "in stock" at their old sale price. So each
+ *   department's reduced rows come first and are topped up to its cap with
+ *   full-price rows (as Akinon shops do between sales): the run size holds,
+ *   the sweep runs, and a full-price row that goes on sale is a real drop.
+ * - A page shorter than the result count says it should be (or a doc-less
+ *   reply) is retried once, then fails the run: a half-read department must
+ *   not pass as a complete one and mark the rest gone.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -80,6 +92,7 @@ export const LANDMARK_SITES: Record<string, LandmarkSite> = {
 };
 
 const ROWS = 200;
+const PAUSE_MS = Number(process.env.LANDMARK_PAUSE_MS ?? 500);
 const CAP = Number(process.env.LANDMARK_MAX_PRODUCTS ?? 1500);
 const FL = "pid,title,brand,price,sale_price,url,thumb_image,inStock,allCategories,percentageDiscount,variants,sku_size,skuid";
 const ALPHA = /^(x{0,3}s|m|x{0,4}l|\d?x[sl]|one size)$/i;
@@ -136,7 +149,7 @@ export function mapLandmark(s: LandmarkSite, country: CountryCode, gender: Produ
   };
 }
 
-export function landmarkUrl(s: LandmarkSite, country: CountryCode, q: string, start: number, rows = ROWS): string {
+export function landmarkUrl(s: LandmarkSite, country: CountryCode, q: string, start: number, rows = ROWS, saleOnly = true): string {
   const cc = country.toLowerCase();
   const p = new URLSearchParams({
     account_id: s.accountId,
@@ -150,7 +163,7 @@ export function landmarkUrl(s: LandmarkSite, country: CountryCode, q: string, st
     rows: String(rows),
     start: String(start),
     fl: FL,
-    fq: "percentageDiscount:[1 TO *]",
+    ...(saleOnly ? { fq: "percentageDiscount:[1 TO *]" } : {}),
     url: `${s.site}/${cc}/en/`,
     ref_url: `${s.site}/${cc}/en/`,
     _br_uid_2: "uid=1791700000000:v=15.0:ts=1791700000000:hc=1",
@@ -159,28 +172,62 @@ export function landmarkUrl(s: LandmarkSite, country: CountryCode, q: string, st
   return `https://core.dxpapi.com/api/v1/core/?${p.toString()}`;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * One page of a department walk. A page that is short of what `numFound`
+ * promises, or carries no doc list at all, is asked for again once; still
+ * short, it throws — the caller must not read it as the end of the walk.
+ */
+async function landmarkPage(s: LandmarkSite, country: CountryCode, q: string, start: number, saleOnly: boolean) {
+  let why = "";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt) await sleep(PAUSE_MS * 3);
+    const data = await getJson<any>(landmarkUrl(s, country, q, start, ROWS, saleOnly), { country });
+    const docs = data?.response?.docs;
+    const numFound = Number(data?.response?.numFound);
+    if (Array.isArray(docs) && Number.isFinite(numFound)) {
+      const expected = Math.min(ROWS, Math.max(0, numFound - start));
+      if (docs.length >= expected) return { docs: docs as any[], numFound };
+      why = `docs=${docs.length} numFound=${numFound}`;
+    } else {
+      why = "no doc list";
+    }
+  }
+  throw new Error(`${s.slug}/${country}: Bloomreach ${q}${saleOnly ? " (reduced)" : ""} page at ${start} came back short (${why})`);
+}
+
 export async function listLandmark(slug: string, country: CountryCode): Promise<ProductRecord[]> {
   const s = LANDMARK_SITES[slug];
   if (!s || !s.markets.includes(country)) return [];
   const byId = new Map<string, ProductRecord>();
+  let reduced = 0;
   let first = true;
   for (const root of s.roots) {
     let taken = 0;
-    for (let start = 0; taken < root.cap; start += ROWS) {
-      if (!first) await new Promise((r) => setTimeout(r, 500));
-      first = false;
-      const data = await getJson<any>(landmarkUrl(s, country, root.q, start), { country });
-      const docs: any[] = data?.response?.docs ?? [];
-      for (const d of docs) {
-        if (taken >= root.cap) break;
-        const r = mapLandmark(s, country, root.gender, d);
-        if (!r || r.listPrice == null || byId.has(r.externalId)) continue;
-        byId.set(r.externalId, r);
-        taken++;
+    // Reduced rows first, then (if the department's cap is not full) full-price rows.
+    for (const saleOnly of [true, false]) {
+      for (let start = 0; taken < root.cap; start += ROWS) {
+        if (!first) await sleep(PAUSE_MS);
+        first = false;
+        const { docs, numFound } = await landmarkPage(s, country, root.q, start, saleOnly);
+        for (const d of docs) {
+          if (taken >= root.cap) break;
+          const r = mapLandmark(s, country, root.gender, d);
+          if (!r || byId.has(r.externalId) || (saleOnly && r.listPrice == null)) continue;
+          byId.set(r.externalId, r);
+          taken++;
+          if (r.listPrice != null) reduced++;
+        }
+        if (docs.length < ROWS || start + ROWS >= numFound) break;
       }
-      if (docs.length < ROWS || start + ROWS >= Number(data?.response?.numFound ?? 0)) break;
     }
   }
+  // Max/Centrepoint/Splash always carry markdowns somewhere; none at all means
+  // the reduced filter answered wrong, and a full-price-only run would sweep
+  // every deal away.
+  if (byId.size && !reduced) throw new Error(`${slug}/${country}: Bloomreach returned no reduced rows`);
   const all = [...byId.values()];
-  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
+  const rank = (r: ProductRecord) => (r.listPrice != null ? 0 : 2) + (r.inStock ? 0 : 1);
+  return all.sort((a, b) => rank(a) - rank(b)).slice(0, CAP);
 }
