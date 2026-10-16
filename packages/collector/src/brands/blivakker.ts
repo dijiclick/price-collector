@@ -66,7 +66,9 @@ export function cardsOf(view: string): string[] {
 /** Map one product card. Pure. */
 export function mapBlivakkerCard(card: string, country: CountryCode = "NO"): ProductRecord | null {
   const id = card.match(/data-product-id="(\d+)"/)?.[1];
-  const href = card.match(/<a href="(\/product\/[^"]+)"/)?.[1];
+  // The image link gained a class attribute in October 2026 (`<a class="…" href=…>`),
+  // so match the href on any <a>, wherever it sits among the attributes.
+  const href = card.match(/<a\b[^>]*\bhref="(\/product\/[^"]+)"/)?.[1];
   if (!id || !href) return null;
   const brand = decode(card.match(/<span class="heading[^"]*">([^<]*)<\/span>/)?.[1] ?? "");
   const pname = decode(card.match(/<span class="product-name[^"]*">([^<]*)<\/span>/)?.[1] ?? "");

@@ -14,7 +14,16 @@
  * Product-Variation JSON. The UK store is fetched through michaelkors.eu: the
  * same SFCC site (`mk_uk`, GBP) answers there, while the michaelkors.co.uk edge
  * puts runner IPs through an Akamai crypto challenge (429 `cpr_chlge`, three
- * runs in a row). Product links still point at michaelkors.co.uk. Headers must
+ * runs in a row). Product links still point at michaelkors.co.uk. The edges
+ * challenge a runner intermittently, host by host (2026-10-12 14:05: GB 429 on
+ * michaelkors.eu at start=400, AU 429 on michaelkors.global at start=0, CH fine
+ * on .eu in the same sweep). mk_uk, mk_ch and mk_anz answer on all three of
+ * .eu/.global/.co.uk, so a refused call is retried on the sibling hosts
+ * (`mirrors`) before the market fails. Since ~2026-10-14 .global and .co.uk
+ * sit behind Cloudflare and serve runners, while .eu (still Akamai) answers 403
+ * to every runner (GB/CH failed 13 runs in a row; probe 38865222204 on
+ * 2026-10-16: .eu 403, .global/.co.uk 200 for mk_uk, mk_ch and mk_anz), so all
+ * three read through .global first and .eu is the last resort. Headers must
  * be sent once each: a second `user-agent` key under different casing is
  * merged by fetch into "Chrome, Safari", which is refused.
  *
@@ -51,16 +60,22 @@ interface Market {
   /** SFCC site id + locale: `/on/demandware.store/Sites-<site>-Site/<locale>/`. */
   site: string;
   locale: string;
+  /** Other hosts that serve the same SFCC site, tried in turn when `api` refuses a call. */
+  mirrors?: string[];
   /** "Michael Kors Outlet" styles appear in this market's sale grid. */
   outletMixed: boolean;
 }
 
+/** In order of preference: .eu last, it 403s runners since 2026-10-14. */
+const EU_EDGES = ["https://www.michaelkors.global", "https://www.michaelkors.co.uk", "https://www.michaelkors.eu"];
+const others = (api: string) => EU_EDGES.filter((h) => h !== api);
+
 export const MK_MARKETS: Partial<Record<CountryCode, Market>> = {
   US: { host: "https://www.michaelkors.com", api: "https://www.michaelkors.com", site: "mk_us", locale: "en_US", outletMixed: true },
   CA: { host: "https://www.michaelkors.com", api: "https://www.michaelkors.com", site: "mk_ca", locale: "en_CA", outletMixed: true },
-  GB: { host: "https://www.michaelkors.co.uk", api: "https://www.michaelkors.eu", site: "mk_uk", locale: "en_GB", outletMixed: false },
-  CH: { host: "https://www.michaelkors.eu", api: "https://www.michaelkors.eu", site: "mk_ch", locale: "en_CH", outletMixed: false },
-  AU: { host: "https://www.michaelkors.global", api: "https://www.michaelkors.global", site: "mk_anz", locale: "en_AU", outletMixed: false },
+  GB: { host: "https://www.michaelkors.co.uk", api: "https://www.michaelkors.global", site: "mk_uk", locale: "en_GB", mirrors: others("https://www.michaelkors.global"), outletMixed: false },
+  CH: { host: "https://www.michaelkors.eu", api: "https://www.michaelkors.global", site: "mk_ch", locale: "en_CH", mirrors: others("https://www.michaelkors.global"), outletMixed: false },
+  AU: { host: "https://www.michaelkors.global", api: "https://www.michaelkors.global", site: "mk_anz", locale: "en_AU", mirrors: others("https://www.michaelkors.global"), outletMixed: false },
 };
 
 /** Safari carries no client hints, so Akamai has nothing to find inconsistent. */
@@ -90,6 +105,18 @@ export function variationUrl(country: CountryCode, pid: string, colour: string):
   return `${base(m)}/Product-Variation?pid=${encodeURIComponent(pid)}&dwvar_${pid}_color=${encodeURIComponent(colour)}&quantity=1`;
 }
 
+/** The URL to use on each attempt: the primary host, then each mirror, round-robin. Pure. */
+export function attemptUrls(url: string, country: CountryCode, attempts: number): string[] {
+  const m = MK_MARKETS[country];
+  const hosts = m ? [m.api, ...(m.mirrors ?? [])] : [];
+  const out: string[] = [];
+  for (let i = 0; i < attempts; i++) {
+    const h = hosts[i % Math.max(hosts.length, 1)];
+    out.push(m && h && url.startsWith(m.api) ? h + url.slice(m.api.length) : url);
+  }
+  return out;
+}
+
 async function fetchText(url: string, country: CountryCode, xhr = false): Promise<string> {
   const headers: Record<string, string> = {
     // Same key casing as http.ts, so these replace its defaults instead of joining them.
@@ -98,14 +125,15 @@ async function fetchText(url: string, country: CountryCode, xhr = false): Promis
     Accept: xhr ? "application/json, text/javascript, */*; q=0.01" : "*/*",
   };
   if (xhr) headers["X-Requested-With"] = "XMLHttpRequest";
+  const urls = attemptUrls(url, country, MK_MARKETS[country]?.mirrors?.length ? 4 : 3);
   let lastErr: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < urls.length; attempt++) {
     try {
-      return await getText(url, { country, headers });
+      return await getText(urls[attempt], { country, headers });
     } catch (err) {
       lastErr = err;
-      // 429 from the UK edge once: back off and retry.
-      await sleep(1500 * (attempt + 1));
+      // An edge's 429 challenge: back off, and move to the next host if there is one.
+      if (attempt < urls.length - 1) await sleep(1500 * (attempt + 1));
     }
   }
   throw lastErr;

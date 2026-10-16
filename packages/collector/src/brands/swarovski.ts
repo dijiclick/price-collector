@@ -13,7 +13,10 @@
  *   ?sort=relevance&page=N` (0-based, 64 tiles a page, the page reports
  *   "N Results"). No trailing slash after `fl-outlet`. A page past the end, and
  *   now and then a cached error, come back 400; a throwaway query parameter
- *   gets a fresh copy.
+ *   gets a fresh copy. Since 2026-10-13 Baqend's own origin fetch is refused
+ *   most of the time (fast 400, `server-timing: errorcode;desc=310`, ~1 fresh
+ *   copy in 4 succeeds) and the refusal is then cached under the plain URL, so
+ *   a 400 is retried with up to `FRESH_TRIES` fresh cache-busters.
  * - Stock: the tiles carry none. The "Available online" facet
  *   (`…/fl-outlet/productHasStockFlag/1`) lists the in-stock subset, so it is
  *   read first and everything else in the full listing is out of stock.
@@ -52,6 +55,8 @@ const PAGE = 64;
 const MAX_PAGES = 25;
 const CAP = Number(process.env.SWAROVSKI_MAX_PRODUCTS ?? 1500);
 const TIMEOUT = 30_000;
+/** Fresh copies tried after a 400 — each fails fast (~0.3 s), ~1 in 4 succeeds. */
+const FRESH_TRIES = 8;
 const AE_HOST = "https://www.swarovski.ae";
 const AE_PAGE = 300;
 const IMAGE_WIDTH = "w_800";
@@ -202,20 +207,36 @@ async function speedKitBuild(): Promise<SpeedKitBuild> {
   return FALLBACK_BUILD;
 }
 
-/** One listing page; a 400 is retried once with a cache-buster, then means "no page". */
-async function fetchListing(country: CountryCode, locale: string, page: number, build: SpeedKitBuild, inStock: boolean) {
-  const headers = { Origin: SITE, Referer: `${SITE}/`, Accept: "text/html" };
-  try {
-    return await getText(listingUrl(locale, page, build, inStock), { country, headers, timeoutMs: TIMEOUT });
-  } catch (err) {
-    if (!/HTTP (400|5\d\d)/.test((err as Error).message)) throw err;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * `get(undefined)` (the plain cached URL), then on a 400/5xx up to `tries`
+ * fresh copies `get(bust)`. Null when every copy answered 400 (also how a page
+ * past the end looks). Pure apart from `get`/`wait`.
+ */
+export async function withFreshCopies(
+  get: (bust?: string) => Promise<string>,
+  tries = FRESH_TRIES,
+  wait: (ms: number) => Promise<unknown> = sleep,
+): Promise<string | null> {
+  let last: unknown;
+  for (let i = 0; i <= tries; i++) {
     try {
-      return await getText(listingUrl(locale, page, build, inStock, String(Date.now())), { country, headers, timeoutMs: TIMEOUT });
-    } catch (err2) {
-      if (/HTTP 400/.test((err2 as Error).message)) return null;
-      throw err2;
+      return await get(i === 0 ? undefined : `${Date.now().toString(36)}${i}`);
+    } catch (err) {
+      if (!/HTTP (400|5\d\d)/.test((err as Error).message)) throw err;
+      last = err;
+      if (i < tries) await wait(300 * Math.min(i + 1, 3));
     }
   }
+  if (/HTTP 400/.test((last as Error).message)) return null;
+  throw last;
+}
+
+/** One listing page; null when Baqend never served a copy. */
+function fetchListing(country: CountryCode, locale: string, page: number, build: SpeedKitBuild, inStock: boolean) {
+  const headers = { Origin: SITE, Referer: `${SITE}/`, Accept: "text/html" };
+  return withFreshCopies((bust) => getText(listingUrl(locale, page, build, inStock, bust), { country, headers, timeoutMs: TIMEOUT }));
 }
 
 /** Every page of one listing (all of it, or the in-stock facet). */
@@ -224,9 +245,16 @@ async function readListing(country: CountryCode, locale: string, build: SpeedKit
   const ids = new Set<string>();
   let pages = MAX_PAGES;
   let total = 0;
+  /** Pages inside the reported total that Baqend never served (skipped, not the end). */
+  let missed = 0;
   for (let page = 0; page < pages; page++) {
     const html = await fetchListing(country, locale, page, build, inStock);
-    if (html == null) break;
+    if (html == null) {
+      // Past page 0 the result count says how many pages exist, so a refused
+      // page is a gap, not the end (2026-10-16: US/AU stuck at 128 = 2 pages).
+      if (page > 0 && page < pages) { missed++; continue; }
+      break;
+    }
     if (page === 0) {
       total = resultCount(html);
       pages = Math.min(MAX_PAGES, Math.max(1, Math.ceil(total / PAGE)));
@@ -236,16 +264,22 @@ async function readListing(country: CountryCode, locale: string, build: SpeedKit
     rows.push(...parseComPage(country, html));
     if (tiles === 0) break;
   }
-  return { rows, ids, total };
+  return { rows, ids, total, missed };
 }
 
 async function listCom(country: CountryCode, locale: string): Promise<ProductRecord[]> {
   const build = await speedKitBuild();
   // Stock first: a facet failure leaves every row "in stock" rather than losing the market.
-  const stocked = await readListing(country, locale, build, true).catch((err) => {
+  let stocked = await readListing(country, locale, build, true).catch((err) => {
     console.warn(`swarovski/${country}: in-stock facet failed (${(err as Error).message})`);
     return null;
   });
+  // A facet that read nothing (refused on page 0) says nothing about stock.
+  // Nor does one with refused pages: rows on those pages would read as sold out.
+  if (stocked && (stocked.ids.size === 0 || stocked.missed > 0)) {
+    console.warn(`swarovski/${country}: in-stock facet incomplete (${stocked.ids.size} tiles, ${stocked.missed} pages refused), stock left unknown`);
+    stocked = null;
+  }
   const all = await readListing(country, locale, build, false);
   const byId = new Map<string, ProductRecord>();
   for (const r of [...(stocked?.rows ?? []), ...all.rows]) {

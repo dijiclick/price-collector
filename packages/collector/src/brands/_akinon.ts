@@ -181,10 +181,28 @@ async function fetchPdpVariants(shop: AkinonShop, url: string): Promise<ProductV
 }
 
 /**
+ * Below this many reduced rows a shop is between sales, not in one. Lacoste TR
+ * 2026-10-16: the season sale ended and ONE watch of 2,018 rows kept a strike
+ * price; returning only that row dropped the 1,880-row catalogue (and its size
+ * tracking) every time a stray markdown appeared, and the run read as a 99%
+ * crawler drop. Same floor as the health rule's `drop` baseline.
+ */
+export const MIN_SALE_ROWS = 50;
+
+/**
+ * Which rows a walk returns: the reduced ones during a sale; between sales
+ * (fewer than MIN_SALE_ROWS reduced) the reduced rows first, topped up with
+ * full-price rows, so the catalogue keeps being tracked. Capped at `max`.
+ */
+export function pickAkinonRecords(sale: ProductRecord[], full: ProductRecord[], max: number): ProductRecord[] {
+  return (sale.length >= MIN_SALE_ROWS ? sale : [...sale, ...full]).slice(0, max);
+}
+
+/**
  * Walk `shop.listPath` and return its discounted products (price < retail).
- * If the walk finds nothing on sale at all, the full-price rows are returned
- * instead (capped), so a brand between sales still has a catalogue to track
- * sizes on — the same fallback Koton uses for its detail pass.
+ * Between sales (see pickAkinonRecords) the full-price rows are returned too
+ * (capped), so a brand still has a catalogue to track sizes on — the same
+ * fallback Koton uses for its detail pass.
  */
 export async function listAkinon(shop: AkinonShop, limits: AkinonLimits): Promise<ProductRecord[]> {
   const pageUrl = (n: number) => {
@@ -212,7 +230,7 @@ export async function listAkinon(shop: AkinonShop, limits: AkinonLimits): Promis
     take(data?.products ?? []);
   });
 
-  const records = [...(sale.size ? sale : full).values()].slice(0, limits.maxProducts);
+  const records = pickAkinonRecords([...sale.values()], [...full.values()], limits.maxProducts);
 
   // Sizes the listing did not embed: one PDP each, a rotating shuffled subset
   // per run (the upsert keeps earlier variants, so coverage accumulates).

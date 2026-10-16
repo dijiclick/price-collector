@@ -138,11 +138,20 @@ export async function listNextPlc(s: NextPlcSite, country: CountryCode): Promise
   const cap = 1500;
   const byId = new Map<string, ProductRecord>();
   let requests = 0;
+  let lastFirst = "";
   outer: for (const gender of s.genders) {
     for (let p = 0; p < MAX_PAGES; p++) {
       if (requests++ > 0) await sleep(PAUSE_MS);
-      const data = await getJson<any>(searchUrl(s, gender, p * ROWS), { country });
+      let data = await getJson<any>(searchUrl(s, gender, p * ROWS), { country });
+      // Bloomreach occasionally answers 200 with an empty doc list (next/GB,
+      // 2026-10-13: 0 products, no error, Reiss fine in the same run). An empty
+      // FIRST page of a 100k-item index is a hiccup, not "no sale" — ask again.
+      if (p === 0 && !(data?.response?.docs ?? []).length) {
+        await sleep(PAUSE_MS * 3);
+        data = await getJson<any>(searchUrl(s, gender, 0), { country });
+      }
       const docs: any[] = data?.response?.docs ?? [];
+      if (p === 0) lastFirst = `numFound=${data?.response?.numFound ?? "?"} docs=${docs.length}`;
       let reduced = 0;
       for (const d of docs) {
         const r = mapNextPlc(s, country, d);
@@ -155,6 +164,9 @@ export async function listNextPlc(s: NextPlcSite, country: CountryCode): Promise
       if (reduced === 0 || docs.length < ROWS) break;
     }
   }
+  // Out of season Next still carries ~60+ reduced third-party rows, so an empty
+  // result is a bad answer from the API; fail loudly rather than report "no sale".
+  if (!byId.size) throw new Error(`${s.brand}: Bloomreach returned no reduced rows (${lastFirst})`);
   return [...byId.values()].slice(0, cap);
 }
 
