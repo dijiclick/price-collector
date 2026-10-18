@@ -80,6 +80,9 @@ export const BRANDS: BrandInfo[] = [
   // Added 2026-10-18 — owner: jewellery, watches (Saat&Saat), Levi's and other good missing brands.
   { slug: "saatvesaat", label: "Saat&Saat", category: "Saat", logo: "/brands/saatvesaat.svg", countries: TR_ONLY },
   { slug: "altinbas", label: "Altınbaş", category: "Takı", logo: "/brands/altinbas.svg", countries: TR_ONLY },
+  { slug: "atasay", label: "Atasay", category: "Takı", logo: "/brands/atasay.svg", countries: TR_ONLY },
+  { slug: "zenpirlanta", label: "Zen Pırlanta", category: "Takı", logo: "/brands/zenpirlanta.svg", countries: TR_ONLY },
+  { slug: "casio", label: "Casio", category: "Saat", logo: "/brands/casio.svg", countries: TR_ONLY },
   { slug: "machka", label: "Machka", category: "Giyim", logo: "/brands/machka.svg", countries: TR_ONLY },
   { slug: "adl", label: "ADL", category: "Giyim", logo: "/brands/adl.svg", countries: TR_ONLY },
   { slug: "wcollection", label: "W Collection", category: "Giyim", logo: "/brands/wcollection.svg", countries: TR_ONLY },

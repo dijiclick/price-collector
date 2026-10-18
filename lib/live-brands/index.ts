@@ -19,6 +19,9 @@ import { twistUrl } from "./twist";
 import { lacosteUrl } from "./lacoste";
 import { pierrecardinUrl } from "./pierrecardin";
 import { derimodUrl } from "./derimod";
+import { casioUrl } from "./casio";
+import { atasayUrl } from "./atasay";
+import { zenpirlantaUrl } from "./zenpirlanta";
 import { aldoUrl } from "./aldo";
 import { quzuUrl } from "./quzu";
 import { lesbenjaminsUrl } from "./lesbenjamins";
@@ -59,6 +62,9 @@ export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduc
   lacoste: lacosteUrl,
   pierrecardin: pierrecardinUrl,
   derimod: derimodUrl,
+  casio: casioUrl,
+  atasay: atasayUrl,
+  zenpirlanta: zenpirlantaUrl,
   aldo: aldoUrl,
   quzu: quzuUrl,
   lesbenjamins: lesbenjaminsUrl,

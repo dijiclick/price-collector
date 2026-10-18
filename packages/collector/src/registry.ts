@@ -46,6 +46,9 @@ import * as wcollection from "./brands/wcollection";
 import * as jimmykey from "./brands/jimmykey";
 import * as loft from "./brands/loft";
 import * as roman from "./brands/roman";
+import * as casio from "./brands/casio";
+import * as atasay from "./brands/atasay";
+import * as zenpirlanta from "./brands/zenpirlanta";
 import { shopifyAdapters } from "./brands/shopify-stores";
 import { byMarket, intlAdapters } from "./registry-intl";
 import { listSephoraIntl } from "./brands/sephora-intl";
@@ -129,6 +132,9 @@ export const adapters: BrandAdapter[] = [
   { brand: jimmykey.brand, country: "TR", listProducts: jimmykey.listProducts },
   { brand: loft.brand, country: "TR", listProducts: loft.listProducts },
   { brand: roman.brand, country: "TR", listProducts: roman.listProducts },
+  { brand: casio.brand, country: "TR", listProducts: casio.listProducts },
+  { brand: atasay.brand, country: "TR", listProducts: atasay.listProducts },
+  { brand: zenpirlanta.brand, country: "TR", listProducts: zenpirlanta.listProducts },
   { brand: marksandspencer.brand, country: "TR", listProducts: byMarket(marksandspencer.listProducts, listMarksIntl) },
   { brand: victoriassecret.brand, country: "TR", listProducts: byMarket(victoriassecret.listProducts, (c) => (c === "US" || c === "CA" ? listVictoriasSecretNA(c) : victoriassecretIntl.listProducts(c))) },
   { brand: lcw.brand, country: "TR", listProducts: lcw.listProducts },
