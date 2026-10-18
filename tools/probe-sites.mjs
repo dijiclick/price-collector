@@ -166,7 +166,7 @@ if (process.env.PROBE_REQUESTS?.trim()) {
     try {
       const r = await fetch(q.url, { method: q.method ?? "GET", headers: { "user-agent": UA, ...(q.headers ?? {}) }, body: q.body, signal: AbortSignal.timeout(20000) });
       const body = await r.text();
-      const line = { url: q.url, method: q.method ?? "GET", status: r.status, bytes: body.length, ms: Date.now() - t, edge: r.headers.get("cf-ray") ? "cloudflare" : r.headers.get("server") ?? "", head: body.slice(0, 200) };
+      const line = { url: q.url, method: q.method ?? "GET", status: r.status, bytes: body.length, ms: Date.now() - t, edge: r.headers.get("cf-ray") ? "cloudflare" : r.headers.get("server") ?? "", head: body.slice(0, Math.min(Number(q.headBytes) || 200, 400000)) };
       res.push(line);
       console.log(`${String(r.status).padEnd(4)} ${String(body.length).padStart(8)}B ${line.method} ${line.edge} ${q.url}`);
       console.log("     " + line.head.replace(/\s+/g, " "));
