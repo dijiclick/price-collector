@@ -153,7 +153,7 @@ export const PRODUCT_TYPES: ProductType[] = [
   // Forma" (a kit's shorts) stays a short. English "jersey" stays out — it is
   // also a fabric ("Jersey Maxi Dress").
   { key: "ust",        label: "Üst Giyim",     re: /\bforma(si|lari|lar)?\b/i },
-  { key: "aksesuar",   label: "Aksesuar",      re: /atki|scarf|sapka|\bhat\b|\bcap\b|\bbere\b|beanie|kemer|\bbelt|taki|jewel|kolye|necklace|kupe|earring|yuzuk|\bring\b|bileklik|bilezi[kg]|bracelet|charm|gozluk|sunglass|glasses|eldiven|glove|\bsaat(?:i|leri|ler)?\b|watch|sac band|headband|\btoka\b|fular|\bsal\b|shawl|bros|brooch|piercing|anahtarlik|keychain/i },
+  { key: "aksesuar",   label: "Aksesuar",      re: /atki|scarf|sapka|\bhat\b|\bcap\b|\bbere\b|beanie|kemer|\bbelt|taki|jewel|kolye|necklace|kupe|earring|yuzuk|\bring\b|bileklik|bilezi[kg]|bracelet|charm|gozluk|sunglass|glasses|eldiven|glove|(?<!\d )(?<!\d)(?<!kum )\bsaat(?:i|leri|ler)?\b|watch|sac band|headband|\btoka\b|fular|\bsal\b|shawl|bros|brooch|piercing|anahtarlik|keychain/i },
   // Shelf words no rule above knew (2026-10-18 audit of every brand's untyped
   // rows): Lacoste/GANT file polos under "Polo", Vakko scarves and ties under
   // "Eşarp"/"Kravat"/"Kaşkol", Dagi under "Boxer", Gratis eyeliners under "Göz
@@ -167,7 +167,7 @@ export const PRODUCT_TYPES: ProductType[] = [
   { key: "ayakkabi",   label: "Ayakkabı",      re: /stiletto|krampon|\bcleats?\b/i },
   { key: "makyaj",     label: "Makyaj",        re: /goz kalem|eye ?pencil/i },
   { key: "sac",        label: "Saç Bakımı",    re: /sac sprey|sac kopu|\bjole\b|hair ?wax/i },
-  { key: "parfum",     label: "Parfüm",        re: /kolonya/i },
+  { key: "parfum",     label: "Parfüm",        re: /kolonya|antiperspirant|terleme karsit/i },
   { key: "kisisel-bakim", label: "Kişisel Bakım", re: /cimbiz|torpu|ponza|prezervatif|kondom/i },
   // Weak makeup words, LAST on purpose — see the strong makyaj rule above.
   { key: "makyaj",     label: "Makyaj",        re: /blush|pudra|powder|highlight|primer|contour|sponge|\bnails?\b/i },
@@ -642,7 +642,7 @@ export const PRODUCT_SUBTYPES: Record<string, ProductSubtype[]> = {
     { key: "kemer", label: "Kemer", re: /kemer|\bbelt/ },
     { key: "sal", label: "Şal & Atkı", re: /\bsal\b|sali\b|fular|atki|esarp|bandana|scarf|eldiven/ },
     { key: "taki", label: "Takı", re: /kupe|kolye|bileklik|bilezi[kg]|yuzu[kg]|\bring\b|charm|zincir|earring|necklace|bracelet|anahtarlik|brosc?|piercing|halhal/ },
-    { key: "saat", label: "Saat", re: /\bsaat|\bwatch\b/ },
+    { key: "saat", label: "Saat", re: /(?<!\d )(?<!\d)(?<!kum )\bsaat|\bwatch\b/ },
     { key: "toka", label: "Toka & Saç Aksesuarı", re: /\btoka|sac bandi|bandana|hair (clip|tie|pin)|\bbone\b/ },
   ],
   makyaj: [
