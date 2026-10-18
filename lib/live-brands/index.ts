@@ -21,6 +21,8 @@ import { pierrecardinUrl } from "./pierrecardin";
 import { derimodUrl } from "./derimod";
 import { bloomingdalesUsUrl } from "./bloomingdales-us";
 import { kohlsUrl } from "./kohls";
+import { asicsUrl } from "./asics";
+import { benefitUrl } from "./benefit";
 import { patagoniaUrl } from "./patagonia";
 import { ralphlaurenUrl } from "./ralphlauren";
 import { kendrascottUrl } from "./kendrascott";
@@ -84,7 +86,7 @@ export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduc
   lacoste: lacosteUrl,
   pierrecardin: pierrecardinUrl,
   derimod: derimodUrl,
-  bloomingdales: bloomingdalesUsUrl, kohls: kohlsUrl, patagonia: patagoniaUrl, ralphlauren: ralphlaurenUrl,
+  bloomingdales: bloomingdalesUsUrl, kohls: kohlsUrl, asics: asicsUrl, benefit: benefitUrl, patagonia: patagoniaUrl, ralphlauren: ralphlaurenUrl,
   kendrascott: kendrascottUrl, toryburch: toryburchUrl, dsw: dswUrl, anntaylor: anntaylorUrl,
   lanebryant: lanebryantUrl, pacsun: pacsunUrl, birkenstock: birkenstockUrl, bathandbodyworks: bathandbodyworksUrl,
   torrid: torridUrl, express: expressUrl, marcjacobs: marcjacobsUrl,

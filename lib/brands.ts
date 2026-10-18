@@ -254,6 +254,8 @@ export const BRANDS: BrandInfo[] = [
   { slug: "vperfumes", label: "VPerfumes", category: "Kozmetik", logo: "/brands/vperfumes.svg", countries: ["AE", "SA"] },
   { slug: "bloomingdales", label: "Bloomingdale's", category: "Çok markalı", logo: "/brands/bloomingdales.svg", countries: ["AE", "US"] },
   // US/CA, added 2026-10-18.
+  { slug: "asics", label: "ASICS", category: "Ayakkabı", logo: "/brands/asics.svg", countries: ["US"] },
+  { slug: "benefit", label: "Benefit", category: "Kozmetik", logo: "/brands/benefit.svg", countries: ["US"] },
   { slug: "kohls", label: "Kohl's", category: "Çok markalı", logo: "/brands/kohls.svg", countries: ["US"] },
   { slug: "patagonia", label: "Patagonia", category: "Spor", logo: "/brands/patagonia.svg", countries: ["US", "CA"] },
   { slug: "ralphlauren", label: "Ralph Lauren", category: "Giyim", logo: "/brands/ralphlauren.svg", countries: ["US", "CA"] },

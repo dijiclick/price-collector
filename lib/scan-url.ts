@@ -163,6 +163,8 @@ const CANONICAL_HOST: Record<string, string> = {
   "lacoste.com.tr": "www.lacoste.com.tr",
   "pierrecardin.com.tr": "www.pierrecardin.com.tr",
   "derimod.com.tr": "derimod.com.tr",
+  "asics.com": "www.asics.com",
+  "benefitcosmetics.com": "www.benefitcosmetics.com",
   "kohls.com": "www.kohls.com",
   "patagonia.com": "www.patagonia.com",
   "patagonia.ca": "www.patagonia.ca",

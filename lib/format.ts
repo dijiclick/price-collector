@@ -214,6 +214,8 @@ export const BRAND_LABELS: Record<string, string> = {
   lacoste: "Lacoste",
   pierrecardin: "Pierre Cardin",
   derimod: "Derimod",
+  asics: "ASICS",
+  benefit: "Benefit",
   kohls: "Kohl's",
   patagonia: "Patagonia",
   ralphlauren: "Ralph Lauren",

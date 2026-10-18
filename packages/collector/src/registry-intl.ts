@@ -119,6 +119,8 @@ import * as sneaksup from "./brands/sneaksup";
 import { listHmGroup } from "./brands/hmgroup";
 import { listBloomingdalesUs } from "./brands/bloomingdales-us";
 import { listKohls } from "./brands/kohls";
+import { listAsics } from "./brands/asics";
+import { listBenefit } from "./brands/benefit";
 import { listPatagonia } from "./brands/patagonia";
 import { listRalphLauren } from "./brands/ralphlauren";
 import { listUnderArmourNa } from "./brands/underarmour-na";
@@ -332,6 +334,8 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "cos", listProducts: (c) => (c === "US" ? listHmGroupUs("cos", c) : listHmGroup("cos", c)) },
   // US/CA, added 2026-10-18 (owner: "add them, find a way without proxy").
   { brand: "kohls", listProducts: listKohls },
+  { brand: "asics", listProducts: listAsics },
+  { brand: "benefit", listProducts: listBenefit },
   { brand: "patagonia", listProducts: listPatagonia },
   { brand: "ralphlauren", listProducts: listRalphLauren },
   { brand: "kendrascott", listProducts: listKendraScott },
