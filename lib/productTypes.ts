@@ -169,6 +169,22 @@ export const PRODUCT_TYPES: ProductType[] = [
   { key: "sac",        label: "Saç Bakımı",    re: /sac sprey|sac kopu|\bjole\b|hair ?wax/i },
   { key: "parfum",     label: "Parfüm",        re: /kolonya|antiperspirant|terleme karsit/i },
   { key: "kisisel-bakim", label: "Kişisel Bakım", re: /cimbiz|torpu|ponza|prezervatif|kondom/i },
+  // Other markets' shelf words (2026-10-18 audit of US/CA/GB/AU/AE/SA/CH/NO:
+  // 19% of Swiss and 23% of Norwegian feed rows had no type). fold() only
+  // flattens Turkish letters, so ø/ä/å are written out. Last in the table:
+  // they only name rows nothing above did.
+  { key: "elbise",     label: "Elbise",        re: /kjole|kleid(?!ung)|kleider|klänning|\bjurk/i },
+  { key: "alt",        label: "Alt Giyim",     re: /skjørt|\bhosen?\b|\bbukse|\bbyxor|\bskort|\brock\b(?!\s*(?:band|n|'n))/i },
+  { key: "dis-giyim",  label: "Dış Giyim",     re: /jakke|jacke|jacka|\bmantel|kåpe|topcoat|overcoat|\bweste\b/i },
+  { key: "triko",      label: "Triko & Sweat", re: /genser|strikk|strick|stickad|tröja/i },
+  { key: "ust",        label: "Üst Giyim",     re: /\bbluse|\bhemd|skjorte|skjorta|\btopp\b|\bcami\b|henley/i },
+  { key: "ic-giyim",   label: "İç Giyim",      re: /\bbh\b|\btanga|truse|unterwäsche|undertøy|strømpe|strumpf|sokker|socken|strumpor/i },
+  { key: "mayo",       label: "Mayo & Plaj",   re: /badedrakt|badeanzug|baddräkt/i },
+  { key: "ayakkabi",   label: "Ayakkabı",      re: /footwear|\bpumps\b|stiefel|støvle|\bsko\b|\bschuhe?\b|\bskor\b|trainers|\bslides\b|\bmules?\b/i },
+  { key: "canta",      label: "Çanta",         re: /\bbags?\b|veske|tasche|väska|satchel|duffel/i },
+  { key: "aksesuar",   label: "Aksesuar",      re: /smykke|øredob|ørering|ohrring|halskette|schmuck|\bmütze|skjerf|solbrille|sonnenbrille|\bbelte\b|gürtel/i },
+  { key: "makyaj",     label: "Makyaj",        re: /leppestift|lippenstift|läppstift|\bpuder\b|øyenskygge|lidschatten|nagellack|neglelakk|gellack|skin tint|cheek tint|\bkajal/i },
+  { key: "kisisel-bakim", label: "Kişisel Bakım", re: /duschgel|duschschaum|dusjsåpe|toothbrush|zahnbürste|tannbørste/i },
   // Weak makeup words, LAST on purpose — see the strong makyaj rule above.
   { key: "makyaj",     label: "Makyaj",        re: /blush|pudra|powder|highlight|primer|contour|sponge|\bnails?\b/i },
 ];
@@ -342,7 +358,9 @@ function classifyRaw(
     // ETEK") names two shelves, so it cannot decide between them; the name can.
     // Bershka filed 113 necklaces and earrings as bags this way.
     const byName = firstType(n);
-    type = byName && !COSMETIC_KEYS.has(byName) ? byName : firstType(cat);
+    // Perfume is never a colour or fabric word, so it may name the row even on
+    // a shared shelf: Pull&Bear files its scents under "Footwear | Accessories".
+    type = byName && (!COSMETIC_KEYS.has(byName) || byName === "parfum") ? byName : firstType(cat);
   } else {
     type = (cat.trim() ? firstType(cat) : null) ?? firstType(fold(`${category ?? ""} ${dialect(brand, name ?? "")}`));
   }

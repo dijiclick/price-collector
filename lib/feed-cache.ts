@@ -58,7 +58,7 @@ const foldSql = (col: string) => `lower(translate(coalesce(${col}, ''), 'İIıÇ
 export const HOME_SECTION_RE =
   "(ev dekor|dekorasyon|mobilya|mutfak|sofra|atistirmalik|gida|takviye|kitap|dergi|havlu set|nevresim|yatak ortusu|battaniye|throw|mum &|oda kokusu|oda & araba|aydinlatma|banyo aksesuar|catal|bardak|kirtasiye|oyuncak|ev tekstil|^hali$)";
 export const HOME_NAME_RE =
-  "(\\mtabak\\M|\\mkase\\M|carsaf|nevresim|yastik kilifi|vazo|mumluk|\\mtava\\M|tencere|\\mkupa\\M|bardak|paspas|protein bar|sakiz|biblo|sehpa|sandalye|abajur|\\mtablo\\M|cerceve)";
+  "(\\mtabak\\M|\\mkase\\M|carsaf|nevresim|yastik kilifi|vazo|mumluk|\\mtava\\M|tencere|\\mkupa\\M|bardak|paspas|protein bar|sakiz|biblo|sehpa|sandalye|abajur|\\mtablo\\M|cerceve|bed linen|duvet cover|pillowcase|cushion cover|place mat|serving board|candle holder|storage basket|table lamp|sengesett|putetrekk|lysestake|oppbevaring|bordlampe|bettwäsche|kissenbezug|vorhang|kerzenhalter|tischlampe|\\mball\\M|bälle)";
 export const HOME_URL_RE = "^https?://[^/]+/([a-z]{2}(-[a-z]{2})?/)?home/";
 export const notHomeGoods = (a: string) => `NOT (
        (${foldSql(`${a}.category`)} ~ '${HOME_SECTION_RE}' AND ${a}.product_type IS DISTINCT FROM 'ayakkabi')
