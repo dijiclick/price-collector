@@ -107,6 +107,10 @@ export const SUBTYPE_LABELS_ES: Record<string, string> = {
   "aksesuar:kemer": "Cinturones",
   "aksesuar:sal": "Bufandas y fulares",
   "aksesuar:taki": "Joyería",
+  "aksesuar:kolye": "Collares",
+  "aksesuar:kupe": "Pendientes",
+  "aksesuar:bileklik": "Pulseras",
+  "aksesuar:yuzuk": "Anillos",
   "aksesuar:saat": "Relojes",
   "aksesuar:toka": "Accesorios para el pelo",
 

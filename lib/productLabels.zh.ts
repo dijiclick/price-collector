@@ -107,6 +107,10 @@ export const SUBTYPE_LABELS_ZH: Record<string, string> = {
   "aksesuar:kemer": "腰带",
   "aksesuar:sal": "围巾",
   "aksesuar:taki": "首饰",
+  "aksesuar:kolye": "项链",
+  "aksesuar:kupe": "耳环",
+  "aksesuar:bileklik": "手链",
+  "aksesuar:yuzuk": "戒指",
   "aksesuar:saat": "手表",
   "aksesuar:toka": "发饰",
 

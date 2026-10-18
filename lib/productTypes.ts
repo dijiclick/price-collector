@@ -659,8 +659,15 @@ export const PRODUCT_SUBTYPES: Record<string, ProductSubtype[]> = {
     { key: "sapka", label: "Şapka & Bere", re: /sapka|\bbere\b|kasket|beanie|\bcap\b|fedora|bucket hat/ },
     { key: "kemer", label: "Kemer", re: /kemer|\bbelt/ },
     { key: "sal", label: "Şal & Atkı", re: /\bsal\b|sali\b|fular|atki|esarp|bandana|scarf|eldiven/ },
-    { key: "taki", label: "Takı", re: /kupe|kolye|bileklik|bilezi[kg]|yuzu[kg]|\bring\b|charm|zincir|earring|necklace|bracelet|anahtarlik|brosc?|piercing|halhal/ },
     { key: "saat", label: "Saat", re: /(?<!\d )(?<!\d)(?<!kum )\bsaat|\bwatch\b/ },
+    // Jewellery by piece (owner 2026-10-18: Saat&Saat's one "Aksesuar" strip
+    // mixed watches, necklaces and bracelets). Watches first, so a bangle
+    // watch stays a watch; whatever names no piece stays "Takı".
+    { key: "kolye", label: "Kolye", re: /kolye|necklace|pendant/ },
+    { key: "kupe", label: "Küpe", re: /kupe|earring|\bhoops?\b/ },
+    { key: "bileklik", label: "Bileklik & Bilezik", re: /bileklik|bilezi[kg]|bracelet|bangle|kelepce/ },
+    { key: "yuzuk", label: "Yüzük", re: /yuzu[kg]|\brings?\b/ },
+    { key: "taki", label: "Takı", re: /kupe|kolye|bileklik|bilezi[kg]|yuzu[kg]|\bring\b|charm|zincir|earring|necklace|bracelet|anahtarlik|brosc?|piercing|halhal/ },
     { key: "toka", label: "Toka & Saç Aksesuarı", re: /\btoka|sac bandi|bandana|hair (clip|tie|pin)|\bbone\b/ },
   ],
   makyaj: [

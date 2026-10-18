@@ -124,6 +124,10 @@ export const SUBTYPE_LABELS_EN: Record<string, string> = {
   "aksesuar:kemer": "Belts",
   "aksesuar:sal": "Scarves & Wraps",
   "aksesuar:taki": "Jewellery",
+  "aksesuar:kolye": "Necklaces",
+  "aksesuar:kupe": "Earrings",
+  "aksesuar:bileklik": "Bracelets",
+  "aksesuar:yuzuk": "Rings",
   "aksesuar:saat": "Watches",
   "aksesuar:toka": "Hair Accessories",
 
