@@ -276,11 +276,17 @@ export async function listRnd(shop: RndShop, limits: RndLimits): Promise<Product
       pages++;
       let html: string;
       try {
-        html = await getText(pageUrl(shop, l.path, n), { timeoutMs: 30_000 });
+        html = await getText(pageUrl(shop, l.path, n), { timeoutMs: 30_000 }).catch(async () => {
+          // One slow page from a GitHub runner ended Vans' first sweep at
+          // 48 of ~800 deals (2026-10-18): wait, then give it longer once.
+          await sleep(PAUSE_MS * 3);
+          return getText(pageUrl(shop, l.path, n), { timeoutMs: 60_000 });
+        });
       } catch (err) {
         // A refused first page is an outage, not an empty sale: fail the brand
         // so the stored rows are kept rather than delisted.
         if (byId.size === 0 && pages === 1) throw err;
+        console.warn(`${shop.brand}: page ${n} of ${l.path} failed twice, stopping at ${byId.size} rows`);
         break;
       }
       let fresh = 0;

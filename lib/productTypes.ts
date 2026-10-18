@@ -161,7 +161,7 @@ export const PRODUCT_TYPES: ProductType[] = [
   // "Polo Yaka Kazak" is still a knit, "Polo Şapka" still a hat.
   // Not the brands: "U.S. Polo Assn." slides, "Polo Ralph Lauren" sections.
   { key: "ust",        label: "Üst Giyim",     re: /\bpolo\b(?!\s*(?:assn|ralph|sport))/i },
-  { key: "aksesuar",   label: "Aksesuar",      re: /esarp|kravat|papyon|kaskol|bandana/i },
+  { key: "aksesuar",   label: "Aksesuar",      re: /esarp|kravat|papyon|kaskol|bandana|yuzu[kg]|rodyum kaplama/i },
   { key: "ic-giyim",   label: "İç Giyim",      re: /boxer|bokser/i },
   { key: "dis-giyim",  label: "Dış Giyim",     re: /kimono/i },
   { key: "ayakkabi",   label: "Ayakkabı",      re: /stiletto|krampon|\bcleats?\b/i },
