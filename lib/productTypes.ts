@@ -153,7 +153,7 @@ export const PRODUCT_TYPES: ProductType[] = [
   // Forma" (a kit's shorts) stays a short. English "jersey" stays out — it is
   // also a fabric ("Jersey Maxi Dress").
   { key: "ust",        label: "Üst Giyim",     re: /\bforma(si|lari|lar)?\b/i },
-  { key: "aksesuar",   label: "Aksesuar",      re: /atki|scarf|sapka|\bhat\b|\bcap\b|\bbere\b|beanie|kemer|\bbelt|taki|jewel|kolye|necklace|kupe|earring|yuzuk|\bring\b|bileklik|bilezi[kg]|bracelet|charm|gozluk|sunglass|glasses|eldiven|glove|\bsaat\b|watch|sac band|headband|\btoka\b|fular|\bsal\b|shawl|bros|brooch|piercing|anahtarlik|keychain/i },
+  { key: "aksesuar",   label: "Aksesuar",      re: /atki|scarf|sapka|\bhat\b|\bcap\b|\bbere\b|beanie|kemer|\bbelt|taki|jewel|kolye|necklace|kupe|earring|yuzuk|\bring\b|bileklik|bilezi[kg]|bracelet|charm|gozluk|sunglass|glasses|eldiven|glove|\bsaat(?:i|leri|ler)?\b|watch|sac band|headband|\btoka\b|fular|\bsal\b|shawl|bros|brooch|piercing|anahtarlik|keychain/i },
   // Shelf words no rule above knew (2026-10-18 audit of every brand's untyped
   // rows): Lacoste/GANT file polos under "Polo", Vakko scarves and ties under
   // "Eşarp"/"Kravat"/"Kaşkol", Dagi under "Boxer", Gratis eyeliners under "Göz
