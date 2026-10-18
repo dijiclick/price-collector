@@ -84,8 +84,68 @@ export function appHeaders(country: CountryCode, ua: string = appUa()): Record<s
   };
 }
 
-export function listingUrl(country: CountryCode, start: number): string {
-  return `${API}/gw/prd/search/url/${ADIDAS_MARKETS[country]!.collection}?start=${start}`;
+export function listingUrl(country: CountryCode, start: number, refinement?: string): string {
+  const base = `${API}/gw/prd/search/url/${ADIDAS_MARKETS[country]!.collection}?start=${start}`;
+  return refinement ? `${base}&refinements=${encodeURIComponent(refinement)}` : base;
+}
+
+/**
+ * One pass over the outlet narrowed by adidas's OWN filter, and what that
+ * filter tells us about every product it returns (2026-10-18).
+ *
+ * The listing carries no product type and often no gender: the subtitle is
+ * just "Originals" for most rows, and names like "MERCEDES - AMG PETRONAS
+ * FORMULA ONE TEAM" say nothing — so caps were filed as shoes, and men's items
+ * had no gender and slipped into the women's default feed. adidas's filters
+ * (Cinsiyet, Ürün Kategorisi) know both, so the outlet is read per gender and
+ * the small accessories list once more, and each row keeps what its list says.
+ */
+export interface Sweep {
+  /** `refinement_id:value`, as the filter's own APPLY path names it. */
+  refinement: string;
+  gender?: ProductRecord["gender"];
+  /** A category hint the type classifier reads first ("Aksesuar"). */
+  category?: string;
+  pages: number;
+}
+
+const GENDER_OF: Record<string, ProductRecord["gender"]> = { women: "kadin", men: "erkek", kids: "cocuk", unisex: null };
+/** The page budget per gender, women first: the app's default audience. */
+const GENDER_SHARE: Record<string, number> = { women: 0.45, men: 0.3, kids: 0.15, unisex: 0.1 };
+
+/**
+ * adidas files one cap under Kadın AND Erkek. On both (or on unisex) it is for
+ * everyone → null, which the women's default feed still shows; on one list it
+ * is that gender. Exported for its test.
+ */
+export function settleGender(seen: Set<string>): ProductRecord["gender"] {
+  const adult = (["kadin", "erkek"] as const).filter((g) => seen.has(g));
+  if (adult.length === 2 || seen.has("unisex")) return null;
+  if (adult.length === 1) return adult[0];
+  return seen.has("cocuk") ? "cocuk" : null;
+}
+
+/** Exported for its test. Plans the sweeps from page 0's refinements; [] = fall back to one plain pass. */
+export function planSweeps(refinements: any[], maxPages: number): Sweep[] {
+  const out: Sweep[] = [];
+  const valueOf = (v: any): string | null => {
+    const path = String(v?.action?.path ?? "");
+    const m = path.match(/refinements=([^&]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  };
+  const gender = refinements.find((r) => /age_gender|gender/.test(String(r?.refinement_id ?? "")));
+  for (const v of gender?.values ?? []) {
+    const key = String(v?.non_localized_value ?? "");
+    const ref = valueOf(v);
+    if (!ref || !(key in GENDER_OF)) continue;
+    const need = Math.ceil(Number(v?.count ?? 0) / PAGE_SIZE);
+    out.push({ refinement: ref, gender: GENDER_OF[key], pages: Math.max(1, Math.min(need, Math.round(maxPages * GENDER_SHARE[key]))) });
+  }
+  const division = refinements.find((r) => /^division/.test(String(r?.refinement_id ?? "")));
+  const acc = (division?.values ?? []).find((v: any) => v?.non_localized_value === "accessories");
+  const accRef = acc ? valueOf(acc) : null;
+  if (accRef) out.push({ refinement: accRef, category: "Aksesuar", pages: Math.min(4, Math.max(1, Math.ceil(Number(acc.count ?? 0) / PAGE_SIZE))) });
+  return out;
 }
 
 /** First word of the subtitle ("Women Originals", "Damer TERREX", "Erkek Performance"). */
@@ -135,6 +195,7 @@ export function mapAdidas(p: any, country: CountryCode): ProductRecord | null {
     inStock: true,
     // The subtitle is "<gender> <line>" (Originals/Performance/TERREX) — not a
     // product type; the type classifier reads the name ("… Shoes", "… Pants").
+    // listAdidas fills it with "Aksesuar" for ids on adidas's accessories list.
     category: null,
     gender: genderOf(p.subtitle),
     variants: null,
@@ -174,22 +235,54 @@ export async function listAdidas(country: CountryCode): Promise<ProductRecord[]>
   if (!ADIDAS_MARKETS[country]) return [];
   const headers = appHeaders(country);
   const byId = new Map<string, ProductRecord>();
-  let total = Infinity;
-  for (let page = 0; page < MAX_PAGES && page * PAGE_SIZE < total; page++) {
-    const data = await getJson<any>(listingUrl(country, page * PAGE_SIZE), { headers, country });
-    if (page === 0 && data?.collection_match === false) {
-      throw new Error(`adidas/${country}: "${ADIDAS_MARKETS[country]!.collection}" is no longer a collection`);
+  /** Every gender list each id appeared on; settled after every pass (`settleGender`). */
+  const gendersOf = new Map<string, Set<NonNullable<ProductRecord["gender"]> | "unisex">>();
+  const categoryOf = new Map<string, string>();
+
+  /** One listing pass; `sweep` narrows it to one of adidas's own filters. */
+  const pass = async (sweep: Sweep | null, maxPages: number, first?: any) => {
+    let total = Infinity;
+    for (let page = 0; page < maxPages && page * PAGE_SIZE < total; page++) {
+      const data = page === 0 && first ? first : await getJson<any>(listingUrl(country, page * PAGE_SIZE, sweep?.refinement), { headers, country });
+      total = Number(data?.total ?? 0);
+      const products: any[] = data?._embedded?.products ?? [];
+      for (const p of products) {
+        const r = mapAdidas(p, country);
+        if (!r) continue;
+        if (!byId.has(r.externalId)) byId.set(r.externalId, r);
+        if (sweep && "gender" in sweep) {
+          const seen = gendersOf.get(r.externalId) ?? new Set();
+          seen.add(sweep.gender ?? "unisex");
+          gendersOf.set(r.externalId, seen);
+        }
+        if (sweep?.category) categoryOf.set(r.externalId, sweep.category);
+      }
+      // A page can come back one short (AU page 2: 47) — only an empty page or a
+      // missing `next` link ends the listing.
+      if (products.length === 0 || !data?._links?.next) break;
+      if (byId.size >= CAP) break;
     }
-    total = Number(data?.total ?? 0);
-    const products: any[] = data?._embedded?.products ?? [];
-    for (const p of products) {
-      const r = mapAdidas(p, country);
-      if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
+  };
+
+  const first = await getJson<any>(listingUrl(country, 0), { headers, country });
+  if (first?.collection_match === false) {
+    throw new Error(`adidas/${country}: "${ADIDAS_MARKETS[country]!.collection}" is no longer a collection`);
+  }
+  const sweeps = planSweeps(Array.isArray(first?.refinements) ? first.refinements : [], MAX_PAGES);
+  if (sweeps.length === 0) {
+    // No filters on offer (an older or reshaped API): the plain pass, as before.
+    await pass(null, MAX_PAGES, first);
+  } else {
+    for (const sw of sweeps) {
+      if (byId.size >= CAP && !sw.category) continue;
+      await pass(sw, sw.pages);
     }
-    // A page can come back one short (AU page 2: 47) — only an empty page or a
-    // missing `next` link ends the listing.
-    if (products.length === 0 || !data?._links?.next) break;
-    if (byId.size >= CAP) break;
+  }
+  for (const [id, r] of byId) {
+    const seen = gendersOf.get(id);
+    if (seen) r.gender = settleGender(seen);
+    const cat = categoryOf.get(id);
+    if (cat) r.category = cat;
   }
   if (byId.size === 0) throw new Error(`adidas/${country}: no discounted products`);
 

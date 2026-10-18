@@ -148,6 +148,11 @@ export const PRODUCT_TYPES: ProductType[] = [
   // Jeans" is a brand name that hits the Alt regex.)
   { key: "ust",        label: "Üst Giyim",     re: /tisort|t-?shirt|tshirt|\btee\b|gomlek|\bshirt|bluz|blouse|\btop\b|\bust\b|atlet|\btank|\bbody\b|bodysuit|\bcrop|halter|bustier|bustiyer|korse|corset/i },
   { key: "alt",        label: "Alt Giyim",     re: /pantolon|trouser|\bpants\b|\bpant\b|\bjean|denim|\bkot\b|etek|\bskirt|\bsort|\bshort(?!\s*-?\s*sleeve)|bermuda|\btayt\b|jogger|palazzo|chino|esofman|kapri|capri|biker|\bpnt\b/i },
+  // `forma` is a sports jersey in Turkish (2026-10-18: 1.148 live rows had no
+  // type, "Pilot Forması" among them). After the bottoms, so "Home Shorts …
+  // Forma" (a kit's shorts) stays a short. English "jersey" stays out — it is
+  // also a fabric ("Jersey Maxi Dress").
+  { key: "ust",        label: "Üst Giyim",     re: /\bforma(si|lari|lar)?\b/i },
   { key: "aksesuar",   label: "Aksesuar",      re: /atki|scarf|sapka|\bhat\b|\bcap\b|\bbere\b|beanie|kemer|\bbelt|taki|jewel|kolye|necklace|kupe|earring|yuzuk|\bring\b|bileklik|bilezi[kg]|bracelet|charm|gozluk|sunglass|glasses|eldiven|glove|\bsaat\b|watch|sac band|headband|\btoka\b|fular|\bsal\b|shawl|bros|brooch|piercing|anahtarlik|keychain/i },
   // Weak makeup words, LAST on purpose — see the strong makyaj rule above.
   { key: "makyaj",     label: "Makyaj",        re: /blush|pudra|powder|highlight|primer|contour|sponge|\bnails?\b/i },
@@ -221,6 +226,9 @@ function sharedSection(cat: string): Set<string> | null {
   const parts = cat.split(/\s*[|,/&]\s*|\s+-\s+|\s+ve\s+|\s+and\s+/);
   // A suit section holds jackets, trousers and waistcoats alike.
   if (/takim elbise/.test(cat)) return new Set(["dis-giyim", "alt"]);
+  // A team-kit shelf ("Forma", InStreet) holds the shorts with the jerseys; the
+  // name decides, and a name that says nothing leaves it a jersey (2026-10-18).
+  if (/^\s*forma(lar)?\s*$/.test(cat)) return new Set(["ust", "alt"]);
   if (parts.length < 2) return null;
   // "Aksesuar" names a shelf only here: as a type word it would take every bag
   // a store files under a plain "Aksesuar" category.
