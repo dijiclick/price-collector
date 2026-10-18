@@ -498,6 +498,9 @@ export async function pushNotify(db: Db, opts: PushNotifyOpts = {}): Promise<num
      JOIN products p ON p.id = e.product_id
      LEFT JOIN push_devices d ON d.token = w.token
      WHERE e.type IN ('price_drop','back_in_stock') AND e.push_notified_at IS NULL
+       -- Gratis drops are card-price campaigns that come and go (gratis.ts):
+       -- shown in the app, never pushed (owner 2026-10-18). Marked below.
+       AND NOT (e.type = 'price_drop' AND p.brand = 'gratis')
        AND NOT EXISTS (SELECT 1 FROM push_held h WHERE h.event_id = e.id AND h.token = w.token)`,
     [now.toISOString()],
   );

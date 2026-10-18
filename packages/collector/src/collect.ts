@@ -1,5 +1,6 @@
 import { main } from "./collector";
 import { adapters, marketAdapters, selectCountries } from "./registry";
+import { nightPaused } from "../../../lib/night-pause";
 
 /**
  * Optional brand filters, so one schedule can run a subset of the registry.
@@ -39,6 +40,8 @@ try {
 let selected = marketAdapters(countries);
 if (only.length > 0) selected = selected.filter((a) => only.includes(a.brand));
 if (skip.length > 0) selected = selected.filter((a) => !skip.includes(a.brand));
+// Gratis is not swept 00:00–09:00 Turkish time (lib/night-pause.ts).
+selected = selected.filter((a) => !nightPaused(a.brand));
 
 const unknown = only.filter((b) => !adapters.some((a) => a.brand === b));
 if (unknown.length > 0) {

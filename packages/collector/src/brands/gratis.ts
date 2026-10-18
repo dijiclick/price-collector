@@ -77,16 +77,23 @@ function groupKey(p: any): string | null {
  * anyone tracking them. The same 50%-on/50%-off pair appears ~a dozen times in
  * September's events. None of it was a shelf price.
  *
- * So the price is `discountedPrice` (the shelf price, which carries Gratis's
- * own real markdowns), and the list price is `normalPrice` when that is
- * genuinely higher. `promotionPrice` is ignored entirely.
+ * Until 2026-10-18 the price was `discountedPrice` and `promotionPrice` was
+ * ignored. Then Gratis moved its everyday deals onto the card: shelf markdowns
+ * went to 0 (96 of 96 sampled from a runner, 18:43Z) while 57 of them carried
+ * a "Gratis Kart Fiyatı" at about half price — and the app showed no Gratis
+ * deals at all. Owner's call: the card price counts (the card is free), with
+ * two guards for the night campaigns above: Gratis is not swept 00:00–09:00
+ * (lib/night-pause.ts), and a Gratis price drop sends no push (push.ts).
  */
 export function payablePrice(prices: any): { price: number; list: number | null } | null {
   const normal: unknown = prices?.normalPrice;
   const shelf: unknown = prices?.discountedPrice ?? normal;
   if (typeof shelf !== "number" || shelf <= 0) return null;
-  const list = typeof normal === "number" && normal > shelf ? normal : null;
-  return { price: shelf, list };
+  const promo: unknown = prices?.promotionPrice;
+  const isCard = /gratis\s*kart/i.test(`${prices?.promotionLabel ?? ""} ${prices?.discountedText ?? ""}`);
+  const price = isCard && typeof promo === "number" && promo > 0 && promo < shelf ? promo : shelf;
+  const top = typeof normal === "number" && normal > shelf ? normal : shelf;
+  return { price, list: top > price ? top : null };
 }
 
 /**
