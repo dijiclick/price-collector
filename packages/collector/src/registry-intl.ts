@@ -117,6 +117,30 @@ import { listUgg } from "./brands/ugg";
 import { listVans } from "./brands/vans";
 import * as sneaksup from "./brands/sneaksup";
 import { listHmGroup } from "./brands/hmgroup";
+import { listBloomingdalesUs } from "./brands/bloomingdales-us";
+import { listKohls } from "./brands/kohls";
+import { listPatagonia } from "./brands/patagonia";
+import { listRalphLauren } from "./brands/ralphlauren";
+import { listUnderArmourNa } from "./brands/underarmour-na";
+import { listKendraScott } from "./brands/kendrascott";
+import { listToryBurch } from "./brands/toryburch";
+import { listDsw } from "./brands/dsw";
+import { listAnnInc } from "./brands/anninc";
+import { listLaneBryant } from "./brands/lanebryant";
+import { listPacsun } from "./brands/pacsun";
+import { listBirkenstock } from "./brands/birkenstock";
+import { listBathAndBodyWorksUs } from "./brands/bathandbodyworks-us";
+import { listProducts as listTorrid } from "./brands/torrid";
+import { listProducts as listExpress } from "./brands/express";
+import { listProducts as listMarcJacobs } from "./brands/marcjacobs";
+import { listConverseUs } from "./brands/converse-us";
+import { listVansUs } from "./brands/vans-us";
+import { listHmGroupUs } from "./brands/hmgroup-us";
+import { listJoeFresh } from "./brands/joefresh";
+import { listSportChek } from "./brands/sportchek";
+import { listMarks } from "./brands/marks";
+import { listSportingLife } from "./brands/sportinglife";
+import { listSsense } from "./brands/ssense";
 import * as topshop from "./brands/topshop";
 import * as newlook from "./brands/newlook";
 import * as asos from "./brands/asos";
@@ -181,12 +205,12 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   // UGG AU (au.ugg.com search API) and Vans AU (vans.com.au Magento GraphQL);
   // ugg.com / vans.com are walled for every other market.
   { brand: "ugg", listProducts: listUgg },
-  { brand: "vans", listProducts: byMarket(vansTr.listProducts, listVans) },
+  { brand: "vans", listProducts: byMarket(vansTr.listProducts, (c) => (c === "US" ? listVansUs(c) : listVans(c))) },
   { brand: "timberland", listProducts: tr(timberland.listProducts) },
-  { brand: "underarmour", listProducts: tr(underarmour.listProducts) },
+  { brand: "underarmour", listProducts: byMarket(underarmour.listProducts, listUnderArmourNa) },
   { brand: "uspoloassn", listProducts: tr(uspoloassn.listProducts) },
   { brand: "cacharel", listProducts: tr(cacharel.listProducts) },
-  { brand: "converse", listProducts: tr(converse.listProducts) },
+  { brand: "converse", listProducts: byMarket(converse.listProducts, listConverseUs) },
   { brand: "gant", listProducts: tr(gant.listProducts) },
   { brand: "maccosmetics", listProducts: tr(maccosmetics.listProducts) },
   { brand: "flormar", listProducts: tr(flormar.listProducts) },
@@ -259,11 +283,11 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "fredrikoglouisa", listProducts: listFredrikOgLouisa },
   { brand: "gullfunn", listProducts: listGullfunn },
   // UAE / Saudi Arabia
-  { brand: "bathandbodyworks", listProducts: (c) => (c === "TR" ? listTicimaxBrand("bathandbodyworks", c) : listAlshaya("bathandbodyworks", c)) },
+  { brand: "bathandbodyworks", listProducts: (c) => (c === "TR" ? listTicimaxBrand("bathandbodyworks", c) : c === "US" ? listBathAndBodyWorksUs(c) : listAlshaya("bathandbodyworks", c)) },
   { brand: "americaneagle", listProducts: (c) => (c === "US" || c === "CA" ? listAmericanEagleNA(c) : listAlshaya("americaneagle", c)) },
   { brand: "goldenscent", listProducts: goldenscent.listProducts },
   { brand: "vperfumes", listProducts: vperfumes.listProducts },
-  { brand: "bloomingdales", listProducts: bloomingdales.listProducts },
+  { brand: "bloomingdales", listProducts: (c) => (c === "US" ? listBloomingdalesUs(c) : bloomingdales.listProducts(c)) },
   { brand: "damas", listProducts: damas.listProducts },
   { brand: "ajmal", listProducts: ajmal.listProducts },
   { brand: "nahdi", listProducts: nahdi.listProducts },
@@ -304,7 +328,27 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "skechers", listProducts: byMarket(() => skechers.listProducts("TR"), listSkechersNa) },
   { brand: "sneaksup", listProducts: tr(() => sneaksup.listProducts("TR")) },
   { brand: "arket", listProducts: (c) => listHmGroup("arket", c) },
-  { brand: "stories", listProducts: (c) => listHmGroup("stories", c) },
+  { brand: "stories", listProducts: (c) => (c === "US" ? listHmGroupUs("stories", c) : listHmGroup("stories", c)) },
+  { brand: "cos", listProducts: (c) => (c === "US" ? listHmGroupUs("cos", c) : listHmGroup("cos", c)) },
+  // US/CA, added 2026-10-18 (owner: "add them, find a way without proxy").
+  { brand: "kohls", listProducts: listKohls },
+  { brand: "patagonia", listProducts: listPatagonia },
+  { brand: "ralphlauren", listProducts: listRalphLauren },
+  { brand: "kendrascott", listProducts: listKendraScott },
+  { brand: "toryburch", listProducts: listToryBurch },
+  { brand: "dsw", listProducts: listDsw },
+  { brand: "anntaylor", listProducts: (c) => listAnnInc("anntaylor", c) },
+  { brand: "lanebryant", listProducts: listLaneBryant },
+  { brand: "pacsun", listProducts: listPacsun },
+  { brand: "birkenstock", listProducts: listBirkenstock },
+  { brand: "torrid", listProducts: listTorrid },
+  { brand: "express", listProducts: listExpress },
+  { brand: "marcjacobs", listProducts: listMarcJacobs },
+  { brand: "joefresh", listProducts: listJoeFresh },
+  { brand: "sportchek", listProducts: listSportChek },
+  { brand: "marks", listProducts: listMarks },
+  { brand: "sportinglife", listProducts: listSportingLife },
+  { brand: "ssense", listProducts: listSsense },
   { brand: "weekday", listProducts: (c) => listHmGroup("weekday", c) },
   { brand: "topshop", listProducts: tr2("GB", () => topshop.listProducts("GB")) },
   { brand: "newlook", listProducts: tr2("GB", () => newlook.listProducts("GB")) },

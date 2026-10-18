@@ -3,6 +3,9 @@ import { DEFAULT_COUNTRY, isCountry, type CountryCode } from "../../../lib/count
 import { brandServes } from "../../../lib/brands";
 import * as zara from "./brands/zara";
 import * as guess from "./brands/guess";
+import { listGuessUs } from "./brands/guess-us";
+import { listNewBalanceNa } from "./brands/newbalance-na";
+import { listAnnInc } from "./brands/anninc";
 import * as penti from "./brands/penti";
 import * as sephora from "./brands/sephora";
 import * as hm from "./brands/hm";
@@ -45,7 +48,6 @@ import * as adl from "./brands/adl";
 import * as wcollection from "./brands/wcollection";
 import * as jimmykey from "./brands/jimmykey";
 import * as loft from "./brands/loft";
-import * as roman from "./brands/roman";
 import * as casio from "./brands/casio";
 import * as atasay from "./brands/atasay";
 import * as zenpirlanta from "./brands/zenpirlanta";
@@ -83,7 +85,7 @@ import * as mudo from "./brands/mudo";
  */
 export const adapters: BrandAdapter[] = [
   { brand: zara.brand, country: "TR", listProducts: zara.listProducts },
-  { brand: guess.brand, country: "TR", listProducts: guess.listProducts },
+  { brand: guess.brand, country: "TR", listProducts: (c) => (c === "US" ? listGuessUs(c) : guess.listProducts(c)) },
   { brand: penti.brand, country: "TR", listProducts: penti.listProducts },
   // Sephora is a different platform in every region: TR OCAPI, US/CA site API,
   // AU through Sephora Asia's API, CH its own SFCC (2026-10-11).
@@ -108,7 +110,7 @@ export const adapters: BrandAdapter[] = [
   { brand: vakko.brand, country: "TR", listProducts: vakko.listProducts },
   { brand: vakkorama.brand, country: "TR", listProducts: vakkorama.listProducts },
   { brand: nike.brand, country: "TR", listProducts: nike.listProducts },
-  { brand: newbalance.brand, country: "TR", listProducts: newbalance.listProducts },
+  { brand: newbalance.brand, country: "TR", listProducts: byMarket(newbalance.listProducts, listNewBalanceNa) },
   // Turkey: the distributor's Magento shop; US/CA/GB/CH: PUMA's global storefront GraphQL.
   { brand: puma.brand, country: "TR", listProducts: byMarket(puma.listProducts, listPumaIntl) },
   { brand: superstep.brand, country: "TR", listProducts: superstep.listProducts },
@@ -130,8 +132,7 @@ export const adapters: BrandAdapter[] = [
   { brand: adl.brand, country: "TR", listProducts: adl.listProducts },
   { brand: wcollection.brand, country: "TR", listProducts: wcollection.listProducts },
   { brand: jimmykey.brand, country: "TR", listProducts: jimmykey.listProducts },
-  { brand: loft.brand, country: "TR", listProducts: loft.listProducts },
-  { brand: roman.brand, country: "TR", listProducts: roman.listProducts },
+  { brand: loft.brand, country: "TR", listProducts: byMarket(loft.listProducts, (c) => listAnnInc("loft", c)) },
   { brand: casio.brand, country: "TR", listProducts: casio.listProducts },
   { brand: atasay.brand, country: "TR", listProducts: atasay.listProducts },
   { brand: zenpirlanta.brand, country: "TR", listProducts: zenpirlanta.listProducts },

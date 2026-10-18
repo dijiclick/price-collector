@@ -19,6 +19,29 @@ import { twistUrl } from "./twist";
 import { lacosteUrl } from "./lacoste";
 import { pierrecardinUrl } from "./pierrecardin";
 import { derimodUrl } from "./derimod";
+import { bloomingdalesUsUrl } from "./bloomingdales-us";
+import { kohlsUrl } from "./kohls";
+import { patagoniaUrl } from "./patagonia";
+import { ralphlaurenUrl } from "./ralphlauren";
+import { kendrascottUrl } from "./kendrascott";
+import { toryburchUrl } from "./toryburch";
+import { dswUrl } from "./dsw";
+import { anntaylorUrl } from "./anntaylor";
+import { loftUsUrl } from "./loft-us";
+import { lanebryantUrl } from "./lanebryant";
+import { pacsunUrl } from "./pacsun";
+import { birkenstockUrl } from "./birkenstock";
+import { bathandbodyworksUrl } from "./bathandbodyworks";
+import { torridUrl } from "./torrid";
+import { expressUrl } from "./express";
+import { marcjacobsUrl } from "./marcjacobs";
+import { joefreshUrl } from "./joefresh";
+import { sportchekUrl } from "./sportchek";
+import { marksUrl } from "./marks";
+import { sportinglifeUrl } from "./sportinglife";
+import { ssenseUrl } from "./ssense";
+import { newbalanceNaUrl } from "./newbalance-na";
+import { underarmourNaUrl } from "./underarmour-na";
 import { casioUrl } from "./casio";
 import { atasayUrl } from "./atasay";
 import { zenpirlantaUrl } from "./zenpirlanta";
@@ -37,7 +60,6 @@ import { adlUrl } from "./adl";
 import { wcollectionUrl } from "./wcollection";
 import { jimmykeyUrl } from "./jimmykey";
 import { loftUrl } from "./loft";
-import { romanUrl } from "./roman";
 import { marksandspencerUrl } from "./marksandspencer";
 import { victoriassecretUrl } from "./victoriassecret";
 import { lcwUrl } from "./lcw";
@@ -52,7 +74,7 @@ export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduc
   vakko: vakkoUrl,
   vakkorama: vakkoramaUrl,
   nike: nikeUrl,
-  newbalance: newbalanceUrl,
+  newbalance: async (u: string) => (await newbalanceNaUrl(u)) ?? newbalanceUrl(u),
   puma: pumaUrl,
   superstep: superstepUrl,
   modanisa: modanisaUrl,
@@ -62,6 +84,11 @@ export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduc
   lacoste: lacosteUrl,
   pierrecardin: pierrecardinUrl,
   derimod: derimodUrl,
+  bloomingdales: bloomingdalesUsUrl, kohls: kohlsUrl, patagonia: patagoniaUrl, ralphlauren: ralphlaurenUrl,
+  kendrascott: kendrascottUrl, toryburch: toryburchUrl, dsw: dswUrl, anntaylor: anntaylorUrl,
+  lanebryant: lanebryantUrl, pacsun: pacsunUrl, birkenstock: birkenstockUrl, bathandbodyworks: bathandbodyworksUrl,
+  torrid: torridUrl, express: expressUrl, marcjacobs: marcjacobsUrl,
+  joefresh: joefreshUrl, sportchek: sportchekUrl, marks: marksUrl, sportinglife: sportinglifeUrl, ssense: ssenseUrl,
   casio: casioUrl,
   atasay: atasayUrl,
   zenpirlanta: zenpirlantaUrl,
@@ -74,13 +101,12 @@ export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduc
   levis: levisUrl,
   vans: vansUrl,
   timberland: timberlandUrl,
-  underarmour: underarmourUrl,
+  underarmour: async (u: string) => (await underarmourNaUrl(u)) ?? underarmourUrl(u),
   machka: machkaUrl,
   adl: adlUrl,
   wcollection: wcollectionUrl,
   jimmykey: jimmykeyUrl,
-  loft: loftUrl,
-  roman: romanUrl,
+  loft: async (u: string) => (await loftUrl(u)) ?? loftUsUrl(u),
   marksandspencer: marksandspencerUrl,
   victoriassecret: victoriassecretUrl,
   lcw: lcwUrl,

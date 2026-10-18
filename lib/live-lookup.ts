@@ -58,6 +58,7 @@ export interface LiveProduct {
 import { UA, countryFor, dispatcher, json, postJson, toMinor } from "./live-http";
 export { DEFAULT_COUNTRY, countryFor, proxyUrlFor, usingProxy } from "./live-http";
 import { EXTRA_RESOLVERS } from "./live-brands";
+import { guessUsUrl } from "./live-brands/guess-us";
 
 /* ---------------------------------------------------------------- rossmann */
 
@@ -1035,7 +1036,7 @@ const RESOLVERS: Record<string, (url: string) => Promise<LiveProduct | null>> = 
   gratis: gratisUrl,
   rossmann: rossmannUrl,
   hm: hmUrl,
-  guess: guessUrl,
+  guess: async (u: string) => (await guessUsUrl(u)) ?? guessUrl(u),
   zara: zaraUrl,
   massimodutti: (url) => inditexUrl("massimodutti", url),
   stradivarius: (url) => inditexUrl("stradivarius", url),
@@ -1055,6 +1056,8 @@ export function brandFromUrl(raw: string): string | undefined {
   // Hosts whose name contains no usable slug: American Eagle US/CA is ae.com
   // ("ae" would claim every .ae address), and its Gulf shops are americaneagle.ae.
   if (labels.slice(-2).join(".") === "ae.com") return "americaneagle";
+  // "express" (Express US, 2026-10-18) is inside aliexpress.com.
+  if (labels.slice(-2).join(".") === "aliexpress.com") return undefined;
   return [...BRANDS].sort((a, b) => b.slug.length - a.slug.length)
     .find((b) => (b.slug.length <= 3 ? labels.includes(b.slug) : host.includes(b.slug)))?.slug;
 }
