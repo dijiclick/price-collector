@@ -93,7 +93,7 @@ export const PRODUCT_TYPES: ProductType[] = [
   // a cream, and the moment the rule below learned to read the Turkish suffix
   // it took the entire shaving aisle: 40 products, measured, including every
   // Arko and Nivea Men foam and gel.
-  { key: "kisisel-bakim", label: "Kişisel Bakım", re: /tiras|shave|jilet|razor|\bagda\b|epilas|tuy dokucu|hair remov|depilat/i },
+  { key: "kisisel-bakim", label: "Kişisel Bakım", re: /tiras|\btras\b|shave|jilet|razor|\bagda\b|epilas|tuy dokucu|hair remov|depilat/i },
   // Sunglasses ahead of skincare: "güneş" (sun) is a skincare word for SPF
   // creams, and every "Güneş Gözlüğü" — 3,073 live rows, Beymen's whole eyewear
   // shelf — was filed under Cilt Bakımı/Güneş Ürünleri, so a search for
@@ -154,6 +154,21 @@ export const PRODUCT_TYPES: ProductType[] = [
   // also a fabric ("Jersey Maxi Dress").
   { key: "ust",        label: "Üst Giyim",     re: /\bforma(si|lari|lar)?\b/i },
   { key: "aksesuar",   label: "Aksesuar",      re: /atki|scarf|sapka|\bhat\b|\bcap\b|\bbere\b|beanie|kemer|\bbelt|taki|jewel|kolye|necklace|kupe|earring|yuzuk|\bring\b|bileklik|bilezi[kg]|bracelet|charm|gozluk|sunglass|glasses|eldiven|glove|\bsaat\b|watch|sac band|headband|\btoka\b|fular|\bsal\b|shawl|bros|brooch|piercing|anahtarlik|keychain/i },
+  // Shelf words no rule above knew (2026-10-18 audit of every brand's untyped
+  // rows): Lacoste/GANT file polos under "Polo", Vakko scarves and ties under
+  // "Eşarp"/"Kravat"/"Kaşkol", Dagi under "Boxer", Gratis eyeliners under "Göz
+  // Kalemi". Last in the table, so they only name rows nothing else did —
+  // "Polo Yaka Kazak" is still a knit, "Polo Şapka" still a hat.
+  // Not the brands: "U.S. Polo Assn." slides, "Polo Ralph Lauren" sections.
+  { key: "ust",        label: "Üst Giyim",     re: /\bpolo\b(?!\s*(?:assn|ralph|sport))/i },
+  { key: "aksesuar",   label: "Aksesuar",      re: /esarp|kravat|papyon|kaskol|bandana/i },
+  { key: "ic-giyim",   label: "İç Giyim",      re: /boxer|bokser/i },
+  { key: "dis-giyim",  label: "Dış Giyim",     re: /kimono/i },
+  { key: "ayakkabi",   label: "Ayakkabı",      re: /stiletto|krampon|\bcleats?\b/i },
+  { key: "makyaj",     label: "Makyaj",        re: /goz kalem|eye ?pencil/i },
+  { key: "sac",        label: "Saç Bakımı",    re: /sac sprey|sac kopu|\bjole\b|hair ?wax/i },
+  { key: "parfum",     label: "Parfüm",        re: /kolonya/i },
+  { key: "kisisel-bakim", label: "Kişisel Bakım", re: /cimbiz|torpu|ponza|prezervatif|kondom/i },
   // Weak makeup words, LAST on purpose — see the strong makyaj rule above.
   { key: "makyaj",     label: "Makyaj",        re: /blush|pudra|powder|highlight|primer|contour|sponge|\bnails?\b/i },
 ];
@@ -331,7 +346,27 @@ function classifyRaw(
   } else {
     type = (cat.trim() ? firstType(cat) : null) ?? firstType(fold(`${category ?? ""} ${dialect(brand, name ?? "")}`));
   }
+  type = garmentOverride(n, type);
   if (type === "triko") return knitOverride(n) ?? type;
+  return type;
+}
+
+const SLEEPWEAR = /pijama|pajama|pyjama|gecelik|sabahlik|nightgown|nightdress|nightie/;
+const OUTER_GARMENT = new Set(["alt", "ust", "elbise", "dis-giyim", "triko"]);
+
+/**
+ * When the section names the shelf but the NAME names the garment better
+ * (2026-10-18 audit, every brand): Suwen files "Şort Pijama Takımı" under
+ * "Şort Set", Twist a "Spor Sütyeni" under "Büstiyer", Sportive an "Eşofman
+ * Üstü" under tracksuits (bottoms), and H&M's "High Waist … Jeans" read as
+ * underwear through the Penti code "HIGHWAIST".
+ */
+function garmentOverride(n: string, type: string | null): string | null {
+  if (!type) return type;
+  if (OUTER_GARMENT.has(type) && SLEEPWEAR.test(n)) return "ic-giyim";
+  if (type === "ust" && /sutyen|\bbra\b|bralet/.test(n)) return "ic-giyim";
+  if (type === "alt" && /esofman ust/.test(n)) return "triko";
+  if (type === "ic-giyim" && !SLEEPWEAR.test(n) && /\bjeans?\b/.test(n) && !/\bsocks?\b|corap/.test(n)) return "alt";
   return type;
 }
 
@@ -569,7 +604,7 @@ export const PRODUCT_SUBTYPES: Record<string, ProductSubtype[]> = {
     { key: "hijyen", label: "Hijyenik Ped", re: /hijyenik ped|\bped\b|tampon|molped|orkid(?!e)|kotex|panty ?liner/ },
     { key: "agiz", label: "Ağız Bakımı", re: /dis macunu|dis fircasi|gargara|agiz bakim|mouthwash|toothpaste|toothbrush|dis ipi/ },
     { key: "banyo", label: "Duş & Banyo", re: /dus jeli|shower gel|\bbanyo\b|\bsabun|\bsoap\b|body wash|vucut losyon|body lotion/ },
-    { key: "tiras", label: "Tıraş & Ağda", re: /tiras|shave|jilet|razor|epilas|\bagda\b|tuy dokucu|hair remov|depilat/ },
+    { key: "tiras", label: "Tıraş & Ağda", re: /tiras|\btras\b|shave|jilet|razor|epilas|\bagda\b|tuy dokucu|hair remov|depilat/ },
     { key: "mendil", label: "Islak Mendil", re: /islak mendil|wet wipe|\bmendil\b/ },
     { key: "yara", label: "Yara Bandı", re: /yara band|band-?aid|plaster/ },
   ],

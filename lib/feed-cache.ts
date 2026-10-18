@@ -43,6 +43,28 @@ export const DISCOUNTED =
  */
 export const FEED_MAX_AGE_HOURS = 8;
 
+/**
+ * Not fashion or beauty at all (2026-10-18 audit of every brand's women's feed:
+ * ~2% was bed sheets, plates, furniture, snacks and supplements — Lefties'
+ * /home/ shop, Yargıcı's "Mobilya", Vakko's "Nevresim Takımları", Gratis'
+ * "Atıştırmalık"). Read from the store's own section first; a bare name only
+ * counts when the classifier found no product type in it, so "Pike T-shirt"
+ * (piqué) and "Halı Saha Ayakkabısı" (football boots) stay.
+ *
+ * Text is folded the way lib/productTypes.ts folds it (İ/ı/ç/ğ/ö/ş/ü → ascii)
+ * because Postgres lower() turns "İ" into "i̇" and the patterns would miss it.
+ */
+const foldSql = (col: string) => `lower(translate(coalesce(${col}, ''), 'İIıÇçĞğÖöŞşÜü', 'iiiccggoossuu'))`;
+export const HOME_SECTION_RE =
+  "(ev dekor|dekorasyon|mobilya|mutfak|sofra|atistirmalik|gida|takviye|kitap|dergi|havlu set|nevresim|yatak ortusu|battaniye|throw|mum &|oda kokusu|oda & araba|aydinlatma|banyo aksesuar|catal|bardak|kirtasiye|oyuncak|ev tekstil|^hali$)";
+export const HOME_NAME_RE =
+  "(\\mtabak\\M|\\mkase\\M|carsaf|nevresim|yastik kilifi|vazo|mumluk|\\mtava\\M|tencere|\\mkupa\\M|bardak|paspas|protein bar|sakiz|biblo|sehpa|sandalye|abajur|\\mtablo\\M|cerceve)";
+export const HOME_URL_RE = "^https?://[^/]+/([a-z]{2}(-[a-z]{2})?/)?home/";
+export const notHomeGoods = (a: string) => `NOT (
+       (${foldSql(`${a}.category`)} ~ '${HOME_SECTION_RE}' AND ${a}.product_type IS DISTINCT FROM 'ayakkabi')
+    OR (${a}.product_type IS NULL AND ${foldSql(`${a}.name`)} ~ '${HOME_NAME_RE}')
+    OR coalesce(${a}.url, '') ~* '${HOME_URL_RE}')`;
+
 /** Rows a feed row needs; the order is the INSERT's column list. */
 const FEED_COLS = [
   "id", "country", "brand", "currency", "name", "url", "image_url", "category",
@@ -89,7 +111,8 @@ const feedSelect = (scope: string, onSale = true) => `
     FROM products p
    WHERE ${scope}
      ${onSale ? `AND p.current_list_price IS NOT NULL AND ${DISCOUNTED.replace(/current_/g, "p.current_")}` : ""}
-     AND p.image_url IS NOT NULL AND p.in_stock AND p.${FRESH}`;
+     AND p.image_url IS NOT NULL AND p.in_stock AND p.${FRESH}
+     AND ${notHomeGoods("p")}`;
 
 /**
  * The search catalogue (2026-10-11): the same compact rows as the feed cache,
@@ -236,6 +259,7 @@ export const REFRESH_CATALOGUE_SQL = `
     FROM products
    WHERE country = $1 AND brand = $2
      AND image_url IS NOT NULL AND in_stock AND ${FRESH} AND current_price >= $3
+     AND ${notHomeGoods("products")}
    GROUP BY product_type, product_subtype, gender`;
 
 interface Queryable {
