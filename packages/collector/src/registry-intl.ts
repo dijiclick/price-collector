@@ -98,6 +98,12 @@ import * as skechers from "./brands/skechers";
 import { listSkechersNa } from "./brands/skechers-na";
 import { listCrocs } from "./brands/crocs";
 import { listLevis } from "./brands/levis";
+import * as levisTr from "./brands/levis-tr";
+import * as vansTr from "./brands/vans-tr";
+import * as timberland from "./brands/timberland";
+import * as underarmour from "./brands/underarmour";
+import * as aldoTr from "./brands/aldo";
+import * as swarovskiTr from "./brands/swarovski-tr";
 import { listPvh } from "./brands/pvh";
 import { listPvhTr } from "./brands/pvh-tr";
 import { listMichaelKors } from "./brands/michaelkors";
@@ -145,7 +151,8 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   // Crocs (US/CA): the site's Algolia indexes; shoes only (Jibbitz/bags excluded).
   { brand: "crocs", listProducts: listCrocs },
   // Levi's (US/CA): Constructor.io sale groups (levi.com itself is behind Akamai).
-  { brand: "levis", listProducts: listLevis },
+  // Turkey: levis.com.tr (RND Commerce), added 2026-10-18.
+  { brand: "levis", listProducts: byMarket(levisTr.listProducts, listLevis) },
   // PVH: AU via the shared Magento GraphQL; US via the site's sale grid;
   // Turkey via the partner storefronts' PersonaClick search (no proxy).
   { brand: "calvinklein", listProducts: byMarket(() => listPvhTr("calvinklein"), (c) => listPvh("calvinklein", c)) },
@@ -165,7 +172,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   // through, others 403 — a refused run throws and keeps the stored rows.
   { brand: "adidas", listProducts: listAdidas },
   // Swarovski (owner OK 2026-10-12): outlet pages via the site's own Baqend cache; AE store direct.
-  { brand: "swarovski", listProducts: listSwarovski },
+  { brand: "swarovski", listProducts: byMarket(swarovskiTr.listProducts, listSwarovski) },
   // URBN (US/CA/GB): the stores' own Dynamic Yield recommendation feed — the
   // sites and api.* hosts are DataDome-walled, this public endpoint is not.
   { brand: "urbanoutfitters", listProducts: (c) => listUrbn("urbanoutfitters", c) },
@@ -174,7 +181,9 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   // UGG AU (au.ugg.com search API) and Vans AU (vans.com.au Magento GraphQL);
   // ugg.com / vans.com are walled for every other market.
   { brand: "ugg", listProducts: listUgg },
-  { brand: "vans", listProducts: listVans },
+  { brand: "vans", listProducts: byMarket(vansTr.listProducts, listVans) },
+  { brand: "timberland", listProducts: tr(timberland.listProducts) },
+  { brand: "underarmour", listProducts: tr(underarmour.listProducts) },
   { brand: "uspoloassn", listProducts: tr(uspoloassn.listProducts) },
   { brand: "cacharel", listProducts: tr(cacharel.listProducts) },
   { brand: "converse", listProducts: tr(converse.listProducts) },
@@ -203,7 +212,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "ulta", listProducts: listUlta },
   { brand: "skims", listProducts: listSkims },
   { brand: "fashionnova", listProducts: listFashionNova },
-  { brand: "aldo", listProducts: listAldo },
+  { brand: "aldo", listProducts: byMarket(aldoTr.listProducts, listAldo) },
   { brand: "on", listProducts: listOn },
   { brand: "roots", listProducts: listRoots },
   { brand: "lavieenrose", listProducts: listLaVieEnRose },

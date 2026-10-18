@@ -36,6 +36,16 @@ import * as lacoste from "./brands/lacoste";
 import { listLacosteIntl } from "./brands/lacoste-intl";
 import * as pierrecardin from "./brands/pierrecardin";
 import * as derimod from "./brands/derimod";
+import * as quzu from "./brands/quzu";
+import * as lesbenjamins from "./brands/lesbenjamins";
+import * as altinbas from "./brands/altinbas";
+import * as saatvesaat from "./brands/saatvesaat";
+import * as machka from "./brands/machka";
+import * as adl from "./brands/adl";
+import * as wcollection from "./brands/wcollection";
+import * as jimmykey from "./brands/jimmykey";
+import * as loft from "./brands/loft";
+import * as roman from "./brands/roman";
 import { shopifyAdapters } from "./brands/shopify-stores";
 import { byMarket, intlAdapters } from "./registry-intl";
 import { listSephoraIntl } from "./brands/sephora-intl";
@@ -108,6 +118,17 @@ export const adapters: BrandAdapter[] = [
   { brand: lacoste.brand, country: "TR", listProducts: byMarket(lacoste.listProducts, listLacosteIntl) },
   { brand: pierrecardin.brand, country: "TR", listProducts: pierrecardin.listProducts },
   { brand: derimod.brand, country: "TR", listProducts: derimod.listProducts },
+  // Added 2026-10-18 (owner: jewellery, watches and missing good brands).
+  { brand: quzu.brand, country: "TR", listProducts: quzu.listProducts },
+  { brand: lesbenjamins.brand, country: "TR", listProducts: lesbenjamins.listProducts },
+  { brand: altinbas.brand, country: "TR", listProducts: altinbas.listProducts },
+  { brand: saatvesaat.brand, country: "TR", listProducts: saatvesaat.listProducts },
+  { brand: machka.brand, country: "TR", listProducts: machka.listProducts },
+  { brand: adl.brand, country: "TR", listProducts: adl.listProducts },
+  { brand: wcollection.brand, country: "TR", listProducts: wcollection.listProducts },
+  { brand: jimmykey.brand, country: "TR", listProducts: jimmykey.listProducts },
+  { brand: loft.brand, country: "TR", listProducts: loft.listProducts },
+  { brand: roman.brand, country: "TR", listProducts: roman.listProducts },
   { brand: marksandspencer.brand, country: "TR", listProducts: byMarket(marksandspencer.listProducts, listMarksIntl) },
   { brand: victoriassecret.brand, country: "TR", listProducts: byMarket(victoriassecret.listProducts, (c) => (c === "US" || c === "CA" ? listVictoriasSecretNA(c) : victoriassecretIntl.listProducts(c))) },
   { brand: lcw.brand, country: "TR", listProducts: lcw.listProducts },

@@ -19,6 +19,22 @@ import { twistUrl } from "./twist";
 import { lacosteUrl } from "./lacoste";
 import { pierrecardinUrl } from "./pierrecardin";
 import { derimodUrl } from "./derimod";
+import { aldoUrl } from "./aldo";
+import { quzuUrl } from "./quzu";
+import { lesbenjaminsUrl } from "./lesbenjamins";
+import { altinbasUrl } from "./altinbas";
+import { swarovskiUrl } from "./swarovski";
+import { saatvesaatUrl } from "./saatvesaat";
+import { levisUrl } from "./levis";
+import { vansUrl } from "./vans";
+import { timberlandUrl } from "./timberland";
+import { underarmourUrl } from "./underarmour";
+import { machkaUrl } from "./machka";
+import { adlUrl } from "./adl";
+import { wcollectionUrl } from "./wcollection";
+import { jimmykeyUrl } from "./jimmykey";
+import { loftUrl } from "./loft";
+import { romanUrl } from "./roman";
 import { marksandspencerUrl } from "./marksandspencer";
 import { victoriassecretUrl } from "./victoriassecret";
 import { lcwUrl } from "./lcw";
@@ -43,6 +59,22 @@ export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduc
   lacoste: lacosteUrl,
   pierrecardin: pierrecardinUrl,
   derimod: derimodUrl,
+  aldo: aldoUrl,
+  quzu: quzuUrl,
+  lesbenjamins: lesbenjaminsUrl,
+  altinbas: altinbasUrl,
+  swarovski: swarovskiUrl,
+  saatvesaat: saatvesaatUrl,
+  levis: levisUrl,
+  vans: vansUrl,
+  timberland: timberlandUrl,
+  underarmour: underarmourUrl,
+  machka: machkaUrl,
+  adl: adlUrl,
+  wcollection: wcollectionUrl,
+  jimmykey: jimmykeyUrl,
+  loft: loftUrl,
+  roman: romanUrl,
   marksandspencer: marksandspencerUrl,
   victoriassecret: victoriassecretUrl,
   lcw: lcwUrl,
