@@ -6,6 +6,7 @@ import type { ProductRecord, PriceEvent, Snap, ProductVariants } from "./types";
 import { classifyType } from "./productType";
 import { cleanListPrice } from "./normalize";
 import { subtypeForName } from "../../../lib/productTypes";
+import { makerOf } from "../../../lib/maker";
 import { resolveGender } from "../../../lib/gender";
 import { colorFamilies } from "../../../lib/colors";
 import { DEFAULT_COUNTRY } from "../../../lib/countries";
@@ -185,6 +186,9 @@ export function contentHash(r: ProductRecord): string {
   // keeps every existing fingerprint unchanged, while a product that gains one
   // hashes differently ONCE — which is exactly what writes the backfill.
   if ((r.images?.length ?? 0) > 1) parts.push(r.images);
+  // Same rule: a maker (lib/maker.ts) rewrites a row once when it first appears.
+  const maker = makerOf(r);
+  if (maker) parts.push({ maker });
   h.update(JSON.stringify(parts));
   return h.digest("hex");
 }
@@ -285,12 +289,12 @@ async function upsertChanged(
         (() => {
           const f = colorFamilies(r.colorName, r.variants?.colors, r.name, classifyType(r.category, r.name, r.brand));
           return f.length ? f : null;
-        })());
+        })(), makerOf(r));
     }
     const rows = await db.query<{ id: number; brand: string; country: string; external_id: string }>(
       "INSERT INTO products (brand, country, external_id, name, url, image_url, category, product_type, product_subtype, variants, group_key, color_name, gender, barcodes," +
-        " current_price, current_list_price, currency, in_stock, content_hash, color_families) VALUES " +
-        placeholders(chunk.length, 20) +
+        " current_price, current_list_price, currency, in_stock, content_hash, color_families, maker) VALUES " +
+        placeholders(chunk.length, 21) +
         // The three-column unique INDEX from schema phase A. It must exist in
         // production before this ships, or every write errors "no unique or
         // exclusion constraint matching the ON CONFLICT specification".
@@ -309,6 +313,7 @@ async function upsertChanged(
         " barcodes=COALESCE(EXCLUDED.barcodes, products.barcodes)," +
         " group_key=EXCLUDED.group_key, color_name=EXCLUDED.color_name," +
         " color_families=COALESCE(EXCLUDED.color_families, products.color_families)," +
+        " maker=COALESCE(EXCLUDED.maker, products.maker)," +
         " current_price=EXCLUDED.current_price," +
         " current_list_price=EXCLUDED.current_list_price, in_stock=EXCLUDED.in_stock," +
         " content_hash=EXCLUDED.content_hash," +

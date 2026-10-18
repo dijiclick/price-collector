@@ -52,6 +52,8 @@ export interface ProductRecord {
    */
   barcodes?: string[] | null;
   category?: string | null;
+  /** The real brand behind a multi-brand store's product (lib/maker.ts). */
+  maker?: string | null;
   /**
    * Which section tree the adapter found this product in. Only the adapter can
    * know this (the stored category text holds product types, not sections), so

@@ -70,7 +70,7 @@ const FEED_COLS = [
   "id", "country", "brand", "currency", "name", "url", "image_url", "category",
   "product_type", "product_subtype", "gender", "group_key", "color_name", "color_families",
   "current_price", "current_list_price", "in_stock", "last_seen", "sizeless", "avail_sizes",
-  "pct", "gk", "color_key",
+  "pct", "gk", "color_key", "maker",
 ] as const;
 
 /**
@@ -107,7 +107,8 @@ const feedSelect = (scope: string, onSale = true) => `
          COALESCE(round(100.0 * (p.current_list_price - p.current_price)
                         / NULLIF(p.current_list_price, 0))::int, 0) AS pct,
          COALESCE(p.group_key, 'id:' || p.id::text) AS gk,
-         COALESCE(NULLIF(lower(btrim(p.color_name)), ''), 'id:' || p.id::text) AS color_key
+         COALESCE(NULLIF(lower(btrim(p.color_name)), ''), 'id:' || p.id::text) AS color_key,
+         p.maker
     FROM products p
    WHERE ${scope}
      ${onSale ? `AND p.current_list_price IS NOT NULL AND ${DISCOUNTED.replace(/current_/g, "p.current_")}` : ""}

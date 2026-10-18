@@ -89,6 +89,7 @@ export function mapSaatvesaat(s: any): ProductRecord | null {
     country: "TR",
     externalId: String(s.sku),
     name: nameOf(s),
+    maker: typeof s?.brand === "string" && s.brand.trim() ? s.brand.trim() : null,
     url: `${SITE}/${s.url_key}`,
     imageUrl: first,
     images: cleanGallery(extra, first),

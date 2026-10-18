@@ -384,6 +384,9 @@ CREATE TABLE IF NOT EXISTS feed_items (
   gk                 TEXT COLLATE "C" NOT NULL,
   color_key          TEXT COLLATE "C" NOT NULL
 );
+-- The real brand behind a multi-brand store's product (lib/maker.ts, 2026-10-18).
+ALTER TABLE products ADD COLUMN IF NOT EXISTS maker TEXT;
+ALTER TABLE feed_items ADD COLUMN IF NOT EXISTS maker TEXT;
 CREATE INDEX IF NOT EXISTS idx_feed_items_country_brand ON feed_items (country, brand);
 
 -- The search catalogue (2026-10-11, lib/feed-cache.ts CATALOGUE_MARKETS): the
@@ -395,6 +398,7 @@ CREATE INDEX IF NOT EXISTS idx_feed_items_country_brand ON feed_items (country, 
 CREATE TABLE IF NOT EXISTS catalogue_items (LIKE feed_items INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES);
 CREATE INDEX IF NOT EXISTS idx_catalogue_items_country_brand ON catalogue_items (country, brand);
 CREATE INDEX IF NOT EXISTS idx_catalogue_items_shelf ON catalogue_items (country, product_type, product_subtype);
+ALTER TABLE catalogue_items ADD COLUMN IF NOT EXISTS maker TEXT;
 
 -- Full-catalogue tallies (browse-all counts), per brand, rewritten by the same
 -- refresh. /api/meta sums these instead of counting every in-stock product.
