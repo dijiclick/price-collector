@@ -141,11 +141,13 @@ export const catalogueMarket = (country: string): boolean => CATALOGUE_MARKETS.i
  */
 const CATALOGUE_CHANGED = `WHERE f.last_seen < EXCLUDED.last_seen - interval '12 hours'
   OR (f.name, f.url, f.image_url, f.current_price, f.current_list_price, f.in_stock, f.product_type,
-      f.product_subtype, f.gender, f.color_families, f.color_name, f.group_key, f.avail_sizes, f.sizeless, f.category)
+      f.product_subtype, f.gender, f.color_families, f.color_name, f.group_key, f.avail_sizes, f.sizeless, f.category,
+      f.maker)
      IS DISTINCT FROM
      (EXCLUDED.name, EXCLUDED.url, EXCLUDED.image_url, EXCLUDED.current_price, EXCLUDED.current_list_price,
       EXCLUDED.in_stock, EXCLUDED.product_type, EXCLUDED.product_subtype, EXCLUDED.gender, EXCLUDED.color_families,
-      EXCLUDED.color_name, EXCLUDED.group_key, EXCLUDED.avail_sizes, EXCLUDED.sizeless, EXCLUDED.category)`;
+      EXCLUDED.color_name, EXCLUDED.group_key, EXCLUDED.avail_sizes, EXCLUDED.sizeless, EXCLUDED.category,
+      EXCLUDED.maker)`;
 
 const upsertSet = FEED_COLS.filter((c) => c !== "id")
   .map((c) => `${c} = EXCLUDED.${c}`)
