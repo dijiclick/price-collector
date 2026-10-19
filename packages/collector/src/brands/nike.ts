@@ -137,8 +137,85 @@ export function mapThread(thread: any, country: CountryCode = "TR"): ProductReco
 
 export const brand = "nike";
 
+/**
+ * FULL CATALOGUE, Turkey only (2026-10-19). The thread feed cannot be walked
+ * whole: `anchor` past ~1,000 is refused (VALUE_TOO_LARGE) and no filterable
+ * field splits ~9.5k ACTIVE threads into pieces that small. The web wall the
+ * site itself renders (`discover/product_wall`, path /tr/w) CAN be walked:
+ * ~4,975 model groups = ~9,170 colourways, 100 groups a page (50 pages, no
+ * anchor cap). Its rows carry price but no sizes, so the colour codes are then
+ * fetched from the thread feed 100 at a time by `styleColor(...)` — the same
+ * threads and the same mapper as before, so sizes/photos/barcodes are as good
+ * as the sale walk's. The old deals filter (discounted + ACTIVE, ~175) is still
+ * walked first and kept as-is, so every deal row is exactly what it was.
+ *
+ * Every gap THROWS (a page error, a wall short of its own total by >1%, a
+ * thread batch missing >1% of its codes, a cap): the run's sweep would mark
+ * anything unseen as sold out.
+ */
+const WALL = "https://api.nike.com/discover/product_wall/v1/marketplace/TR/language/tr/consumerChannelId/" + CHANNEL;
+const WALL_CALLER = "com.nike.commerce.nikedotcom.web";
+const WALL_PAGE = 100;
+const WALL_MAX_PAGES = Number(process.env.NIKE_WALL_MAX_PAGES ?? 150); // 15,000 model groups
+const THREAD_BATCH = 100;
+const FULL_MAX_PRODUCTS = Number(process.env.NIKE_FULL_MAX_PRODUCTS ?? 30000);
+
+/** Colour codes (`IV6028-100`) on one wall page, in wall order. Pure. */
+export function wallCodes(page: any): string[] {
+  const out: string[] = [];
+  for (const g of page?.productGroupings ?? []) for (const p of g?.products ?? []) if (typeof p?.productCode === "string" && p.productCode) out.push(p.productCode);
+  return out;
+}
+
+async function listNikeTrFull(): Promise<ProductRecord[]> {
+  const byId = new Map<string, ProductRecord>();
+  // 1. The deals walk, unchanged (sold-out ACTIVE deals included, as before).
+  const dealFilters = ["productInfo.merchPrice.discounted(true)", "productInfo.merchProduct.status(ACTIVE)"];
+  for (let page = 0; ; page++) {
+    if (page >= MAX_PAGES) throw new Error(`nike: deals walk over ${MAX_PAGES} pages`);
+    const data = await getJson<any>(threadsUrl(dealFilters, page * PAGE, PAGE, "TR"), { proxy: true, retries: 2 });
+    const objects: any[] = data?.objects ?? [];
+    for (const t of objects) for (const r of mapThread(t, "TR")) byId.set(r.externalId, r);
+    if (objects.length < PAGE || !data?.pages?.next) break;
+  }
+  // 2. Every colour code on the site's own wall.
+  const codes = new Set<string>();
+  let groups = 0;
+  let total = 0;
+  for (let page = 0; ; page++) {
+    if (page >= WALL_MAX_PAGES) throw new Error(`nike: wall over ${WALL_MAX_PAGES} pages — raise NIKE_WALL_MAX_PAGES`);
+    const j = await getJson<any>(`${WALL}?path=/tr/w&queryType=PRODUCTS&anchor=${page * WALL_PAGE}&count=${WALL_PAGE}`, {
+      // A runner without it gets 400 NIKE_API_CALLER_ID_HEADER_NOT_PRESENT (probe 39313619256).
+      headers: { "nike-api-caller-id": WALL_CALLER },
+      proxy: true,
+      retries: 2,
+    });
+    total = Number(j?.pages?.totalResources ?? 0);
+    const g: any[] = j?.productGroupings ?? [];
+    groups += g.length;
+    for (const c of wallCodes(j)) codes.add(c);
+    if (!g.length || !j?.pages?.next) break;
+  }
+  // The wall's own count runs a few groups above what it pages out (4,948 of 4,975 on 10-19).
+  if (!total || groups < total * 0.99) throw new Error(`nike: wall paged ${groups} of ${total} groups`);
+  if (codes.size > FULL_MAX_PRODUCTS) throw new Error(`nike: ${codes.size} colourways, over the cap of ${FULL_MAX_PRODUCTS}`);
+  // 3. Thread detail for every code not already in hand, 100 per call.
+  const todo = [...codes].filter((c) => !byId.has(c));
+  let missing = 0;
+  for (let i = 0; i < todo.length; i += THREAD_BATCH) {
+    const chunk = todo.slice(i, i + THREAD_BATCH);
+    const data = await getJson<any>(threadsUrl([`productInfo.merchProduct.styleColor(${chunk.join(",")})`], 0, THREAD_BATCH, "TR"), { proxy: true, retries: 2 });
+    const got = new Set<string>();
+    for (const t of data?.objects ?? []) for (const r of mapThread(t, "TR")) { byId.set(r.externalId, r); got.add(r.externalId); }
+    missing += chunk.filter((c) => !got.has(c)).length;
+  }
+  if (missing > codes.size * 0.01) throw new Error(`nike: ${missing} of ${codes.size} wall colourways had no thread`);
+  return [...byId.values()];
+}
+
 export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
   if (!NIKE_MARKETS[country]) return [];
+  if (country === "TR") return listNikeTrFull();
   const byId = new Map<string, ProductRecord>();
   const filters = ["productInfo.merchPrice.discounted(true)", "productInfo.merchProduct.status(ACTIVE)"];
   for (let page = 0; page < MAX_PAGES; page++) {

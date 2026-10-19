@@ -86,8 +86,14 @@ export function mapHit(h: any): ProductRecord | null {
 /**
  * Breadth-first over category names: query `*`, then every category the
  * results' facets name, then any new ones those reveal. Hits are unioned by
- * SKU. The seed failing throws (so a block reads as an error, not as "Rossmann
- * sells nothing"); any later query failing costs only its own slice.
+ * SKU.
+ *
+ * FULL CATALOGUE, so every gap THROWS (2026-10-19): the run's sweep marks every
+ * SKU it did not see as sold out, so a failed query (after getJson's retries),
+ * a category that comes back at the index's 1,000-row ceiling (its slice would
+ * be cut — only the `*` seed is allowed to be), or names still queued at the
+ * query cap all fail the run instead of shipping a partial catalogue. Measured
+ * 10-19: 253 queries, 8,839 SKUs, only `*` at the ceiling, ~22 s.
  */
 export async function crawl(
   search: (query: string) => Promise<any>,
@@ -110,11 +116,22 @@ export async function crawl(
   };
   absorb(await search("*"));
   let queries = 1;
-  while (queue.length && queries < maxQueries) {
+  while (queue.length) {
+    if (queries >= maxQueries) throw new Error(`rossmann: ${queue.length} categories still queued at the ${maxQueries}-query cap`);
     const wave = queue.splice(0, Math.min(width, maxQueries - queries));
     queries += wave.length;
+    const replies = await Promise.all(
+      wave.map((q) =>
+        search(q).catch((e) => {
+          throw new Error(`rossmann: query "${q}" failed (${e?.message ?? e})`);
+        }),
+      ),
+    );
     // In wave order, so the queue (and the result) does not depend on timing.
-    for (const j of await Promise.all(wave.map((q) => search(q).catch(() => null)))) absorb(j);
+    replies.forEach((j, i) => {
+      if ((j?.res ?? []).length >= ROWS) throw new Error(`rossmann: "${wave[i]}" hit the ${ROWS}-row ceiling; its slice would be cut`);
+      absorb(j);
+    });
   }
   return { hits, queries };
 }

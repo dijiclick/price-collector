@@ -1,6 +1,6 @@
 import { cleanGallery, type ProductRecord, type ProductVariants, type SizeVariant } from "../types";
-import { getJson } from "../http";
 import { toMinor } from "../normalize";
+import { akinonRecords, walkAkinonListing } from "./_akinon";
 
 /**
  * SuperStep (superstep.com.tr) — a multi-brand sneaker/streetwear retailer on
@@ -18,10 +18,20 @@ import { toMinor } from "../normalize";
  * size Akinon picks as the listing representative can change between runs, so
  * the stable id is the colour: `integration_model_renk` ("IE5836.-",
  * model + colour code), falling back to `base_code`.
+ *
+ * FULL CATALOGUE (2026-10-19): the whole `/list/` tree — 16,683 rows on 10-19,
+ * one per colour, a superset of `/indirim/` 9,399 — walked by the shared Akinon
+ * full walk (250 a page; past Akinon's 10,000-row window it walks price
+ * ascending then descending and proves the halves meet). ~70 pages of ~0.5 MB,
+ * 3 in flight, ~40 s. Full price rows have `listPrice: null`; the reduced rows
+ * map exactly as before. A failed page, a page cap, a walk >1% short of the
+ * listing's own `total_count`, or a product cap THROWS — the run's sweep would
+ * mark anything unseen as sold out.
  */
 const SITE = "https://www.superstep.com.tr";
-const PAGE_SIZE = 100;
-const MAX_PAGES = Number(process.env.SUPERSTEP_MAX_PAGES ?? 20); // 2,000 products
+const LIST_PATH = "/list/";
+const MAX_PAGES = Number(process.env.SUPERSTEP_MAX_PAGES ?? 100); // 25,000 rows
+const MAX_PRODUCTS = Number(process.env.SUPERSTEP_MAX_PRODUCTS ?? 25000);
 
 const kw = (p: any, key: string): string | null => {
   const v = p?.attributes_kwargs?.[key]?.label ?? p?.attributes?.[key];
@@ -107,16 +117,10 @@ export function mapProduct(p: any): ProductRecord | null {
 export const brand = "superstep";
 
 export async function listProducts(): Promise<ProductRecord[]> {
-  const byId = new Map<string, ProductRecord>();
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const url = `${SITE}/indirim/?format=json&sorter=number&page_size=${PAGE_SIZE}&page=${page}`;
-    const data = await getJson<any>(url, { proxy: true }).catch(() => null);
-    const list: any[] = data?.products ?? [];
-    for (const p of list) {
-      const r = mapProduct(p);
-      if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
-    }
-    if (list.length === 0 || page >= (data?.pagination?.num_pages ?? 1)) break;
-  }
-  return [...byId.values()];
+  const walk = await walkAkinonListing(SITE, LIST_PATH, { maxPages: MAX_PAGES, concurrency: 3 });
+  const total = Number(walk.first?.pagination?.total_count ?? 0);
+  const records = akinonRecords(walk.rows, mapProduct);
+  if (!total || records.length < total * 0.99) throw new Error(`superstep: walked ${records.length} of ${total} colours`);
+  if (records.length > MAX_PRODUCTS) throw new Error(`superstep: ${records.length} products, over the cap of ${MAX_PRODUCTS}`);
+  return records;
 }

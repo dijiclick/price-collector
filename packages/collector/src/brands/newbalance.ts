@@ -16,10 +16,19 @@ import { toMinor } from "../normalize";
  *
  * Measured 2026-10-10: 284 discounted products, 12 per page (the backend
  * ignores a larger page size), so ~24 page requests.
+ *
+ * FULL CATALOGUE (2026-10-19): the search page with no query (`arama`) lists
+ * the whole range — 774 products, a superset of `indirim` 291, `kadin` 522 and
+ * `erkek` 369 (all checked) — and only in-stock ones. 65 pages, ~10 s. Full
+ * price rows have `listPrice: null`. A failed page, a page cap, or a walk >1%
+ * short of the backend's own `totalItems` THROWS: the run's sweep would mark
+ * anything unseen as sold out.
  */
 const SITE = "https://www.newbalance.com.tr";
 const IMG = "https://newbalance.sm.mncdn.com/";
-const MAX_PAGES = Number(process.env.NEWBALANCE_MAX_PAGES ?? 170); // 2,040 products
+const MAX_PAGES = Number(process.env.NEWBALANCE_MAX_PAGES ?? 250); // 3,000 products
+const PAUSE_MS = Number(process.env.NEWBALANCE_PAUSE_MS ?? 100);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** `buildId` out of a Next page's `__NEXT_DATA__`. */
 export function buildIdOf(html: string): string | null {
@@ -112,10 +121,16 @@ export async function listProducts(): Promise<ProductRecord[]> {
   if (!buildId) throw new Error("newbalance: no Next buildId on the home page");
 
   const byId = new Map<string, ProductRecord>();
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const url = `${SITE}/_next/data/${buildId}/indirim.json?slug=indirim&page=${page}`;
-    const data = await getJson<any>(url, { proxy: true }).catch(() => null);
+  let total = 0;
+  for (let page = 1; ; page++) {
+    if (page > MAX_PAGES) throw new Error(`newbalance: over ${MAX_PAGES} pages — raise NEWBALANCE_MAX_PAGES`);
+    if (page > 1) await sleep(PAUSE_MS);
+    const url = `${SITE}/_next/data/${buildId}/arama.json?page=${page}`;
+    const data = await getJson<any>(url, { proxy: true, retries: 2 }).catch((e) => {
+      throw new Error(`newbalance: page ${page} failed (${e?.message ?? e})`);
+    });
     const res = data?.pageProps?.data?.response;
+    total = Number(res?.totalItems ?? 0);
     const list: any[] = res?.products ?? [];
     for (const p of list) {
       const r = mapProduct(p);
@@ -123,5 +138,6 @@ export async function listProducts(): Promise<ProductRecord[]> {
     }
     if (list.length === 0 || page >= Number(res?.totalPages ?? 1)) break;
   }
+  if (!total || byId.size < total * 0.99) throw new Error(`newbalance: walked ${byId.size} of ${total} products`);
   return [...byId.values()];
 }

@@ -16,19 +16,31 @@
  * Prices are already kuruş (integers). WMTM held 517 colours / 26 pages on
  * 2026-10-12; each page is ~0.5 MB, the run ~13 MB — free datacenter egress.
  * The collection lists only colours with some stock; sold-out sizes still show.
+ *
+ * FULL CATALOGUE (2026-10-19). Every in-stock colour, discounted or not (full
+ * price = `listPrice: null`): the three department trees `kadin` 597, `erkek`
+ * 344, `aksesuar` 186 (1,126 distinct) PLUS We Made Too Much 597 — 136 WMTM
+ * colours sit in no department tree, so the collection is walked too (1,262
+ * distinct). The route returns no count, so each tree's own category page is
+ * read once for its "Cinsiyet" (saleGroup) facet, whose counts add up to the
+ * tree's size (checked on all four); a walk >1% short of that, a failed page,
+ * or a page cap THROWS — the run's sweep would mark anything unseen as sold
+ * out. ~90 pages + 4 pages, ~2 min.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
-import { getJson } from "../http";
+import { getJson, getText } from "../http";
 
 export const brand = "lululemon";
 
 const SITE = "https://www.lululemon.com.tr";
 const API = `${SITE}/api/products`;
 const COLLECTION = "we-made-too-much";
+/** WMTM first, so a colour in both keeps the collection's row (identical anyway). */
+const TREES = [COLLECTION, "kadin", "erkek", "aksesuar"];
 const PAGE_SIZE = 20; // fixed by the route
-const MAX_PAGES = 75; // 1,500 / 20
+const MAX_PAGES = Number(process.env.LULULEMON_TR_MAX_PAGES ?? 100); // per tree: 2,000
 const PAUSE_MS = 400;
-const CAP = 1500;
+const CAP = Number(process.env.LULULEMON_TR_MAX_PRODUCTS ?? 6000);
 
 /** "6.495,00 TL" → 649500 (kuruş). Null when it doesn't parse. */
 export function kurusFromLabel(label: unknown): number | null {
@@ -39,7 +51,7 @@ export function kurusFromLabel(label: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-/** Map one `/api/products` row (one colour of one style). Pure; null unless reduced. */
+/** Map one `/api/products` row (one colour of one style). Pure; full price → `listPrice: null`. */
 export function mapLululemonTr(p: any): ProductRecord | null {
   const a = p?.attributes ?? {};
   if (!p?.id || !p?.variantGroupId || !a.productName || !a.slug) return null;
@@ -58,7 +70,7 @@ export function mapLululemonTr(p: any): ProductRecord | null {
     .filter((x): x is { now: number; was: number } => x.now != null && Number.isFinite(x.was) && x.was > 0)
     .sort((x, y) => x.now - y.now);
   if (priced.length) ({ now: price, was } = priced[0]);
-  if (!(Number.isFinite(price) && price > 0 && Number.isFinite(was) && price < was)) return null;
+  if (!(Number.isFinite(price) && price > 0)) return null;
   if (p?.prices?.currency && p.prices.currency !== "TRY") return null;
 
   const sizes: SizeVariant[] = [];
@@ -97,7 +109,7 @@ export function mapLululemonTr(p: any): ProductRecord | null {
     imageUrl: photos[0] ?? null,
     images: cleanGallery(photos, photos[0] ?? null),
     price,
-    listPrice: was,
+    listPrice: Number.isFinite(was) && was > price ? was : null,
     currency: "TRY",
     inStock,
     barcodes: null,
@@ -116,30 +128,67 @@ export function mapLululemonTr(p: any): ProductRecord | null {
  */
 const SORT = "createdAt_desc";
 
-export function requestBody(page: number): string {
-  return JSON.stringify({ type: "categories", categories: [COLLECTION], searchParams: { sort: SORT }, page });
+export function requestBody(page: number, category = COLLECTION): string {
+  return JSON.stringify({ type: "categories", categories: [category], searchParams: { sort: SORT }, page });
+}
+
+/**
+ * A tree's size from its own category page: the "Cinsiyet" (saleGroup)
+ * facet's counts (Women 570 + Men|Women 16 + …) add up to every colour in it.
+ * Read from the rendered filter accordion ("Women ( 570 )"), which sits in the
+ * first ~60 KB; the same facet in the page's RSC data is the fallback. Null
+ * when neither is there. Pure.
+ */
+export function treeSizeOf(html: string): number | null {
+  const sum = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) : null);
+  const at = html.indexOf('id="accordion-text-saleGroup"');
+  if (at >= 0) {
+    const end = html.indexOf('id="accordion-text-', at + 10);
+    const text = html.slice(at, end > at ? end : at + 6000).replace(/<[^>]+>/g, " ");
+    const n = sum([...text.matchAll(/\(\s*(\d+)\s*\)/g)].map((m) => Number(m[1])));
+    if (n) return n;
+  }
+  const t = html.replace(/\\"/g, '"');
+  const rsc = t.indexOf('"filterId":"saleGroup"');
+  if (rsc < 0) return null;
+  const seg = t.slice(rsc, rsc + 8000).split('"totalCount"')[0];
+  return sum([...seg.matchAll(/"value":"[^"]*","label":"[^"]*","count":(\d+)/g)].map((m) => Number(m[1])));
+}
+
+async function walkTree(category: string, byId: Map<string, ProductRecord>): Promise<void> {
+  const html = await getText(`${SITE}/tr-tr/c/${category}`, { country: "TR", retries: 2 });
+  const expected = treeSizeOf(html);
+  if (!expected) throw new Error(`lululemon/TR: no saleGroup facet on /c/${category}`);
+  const seen = new Set<string>();
+  for (let n = 1; ; n++) {
+    if (n > MAX_PAGES) throw new Error(`lululemon/TR: ${category} over ${MAX_PAGES} pages`);
+    await new Promise((r) => setTimeout(r, PAUSE_MS));
+    const d = await getJson<any>(API, {
+      method: "POST",
+      body: requestBody(n, category),
+      headers: { "Content-Type": "application/json", Origin: SITE, Referer: `${SITE}/tr-tr/c/${category}` },
+      country: "TR",
+      retries: 2,
+    });
+    const rows: any[] = Array.isArray(d?.products) ? d.products : [];
+    if (n === 1 && !rows.length) throw new Error(`lululemon/TR: empty first page of ${category} ${JSON.stringify(d).slice(0, 200)}`);
+    for (const p of rows) {
+      const r = mapLululemonTr(p);
+      if (!r) continue;
+      seen.add(r.externalId);
+      if (!byId.has(r.externalId)) byId.set(r.externalId, r);
+    }
+    if (rows.length < PAGE_SIZE) break;
+  }
+  if (seen.size < expected * 0.99) throw new Error(`lululemon/TR: ${category} walked ${seen.size} of ${expected} colours`);
 }
 
 export async function listLululemonTr(): Promise<ProductRecord[]> {
   const byId = new Map<string, ProductRecord>();
-  for (let n = 1; n <= MAX_PAGES && byId.size < CAP * 1.2; n++) {
-    if (n > 1) await new Promise((r) => setTimeout(r, PAUSE_MS));
-    const d = await getJson<any>(API, {
-      method: "POST",
-      body: requestBody(n),
-      headers: { "Content-Type": "application/json", Origin: SITE, Referer: `${SITE}/tr-tr/c/${COLLECTION}` },
-      country: "TR",
-    });
-    const rows: any[] = Array.isArray(d?.products) ? d.products : [];
-    if (n === 1 && !rows.length) throw new Error(`lululemon/TR: empty first page ${JSON.stringify(d).slice(0, 200)}`);
-    for (const p of rows) {
-      const r = mapLululemonTr(p);
-      if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
-    }
-    if (rows.length < PAGE_SIZE) break;
-  }
+  for (const t of TREES) await walkTree(t, byId);
+  if (byId.size > CAP) throw new Error(`lululemon/TR: ${byId.size} colours, over the cap of ${CAP}`);
   const all = [...byId.values()];
-  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
+  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)];
 }
 
 export const listProducts = listLululemonTr;

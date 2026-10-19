@@ -20,8 +20,20 @@ import { toMinor } from "../normalize";
  *   previous run found, so coverage accumulates — same scheme as Koton).
  */
 const SITE = "https://tr.puma.com";
-const LIST = `${SITE}/outlet.html`;
-const MAX_PAGES = Number(process.env.PUMA_MAX_PAGES ?? 56); // 2,016 products
+/**
+ * FULL CATALOGUE (2026-10-19). The outlet alone was the deals; the whole range
+ * is the outlet plus the three department trees (measured 10-19: outlet 1,551,
+ * kadın 686, erkek 903, çocuk 183 → 2,883 distinct colours; a "puma" site
+ * search adds only 8 more, and itself misses 267 outlet rows, so it is not
+ * the root). 96 pages of 36. `?product_list_limit` is ignored. Each tree's
+ * header carries its own count ("page-products-count"); a walk that comes back
+ * >1% short of it, an error page, or a page cap THROWS — the run's sweep would
+ * mark anything unseen as sold out.
+ */
+const TREES = ["outlet", "kadin", "erkek", "cocuk"];
+const MAX_PAGES = Number(process.env.PUMA_MAX_PAGES ?? 120); // per tree: 4,320 products
+const PAUSE_MS = Number(process.env.PUMA_PAUSE_MS ?? 150);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const DETAIL_LIMIT = Number(process.env.PUMA_DETAIL_LIMIT ?? 400);
 const AJAX = { "X-Requested-With": "XMLHttpRequest" };
 
@@ -69,6 +81,12 @@ export function parseCards(html: string): PumaCard[] {
     });
   }
   return out;
+}
+
+/** The tree's own product count out of the ajax `header` fragment ("1551 ÜRÜN"). */
+export function totalOf(header: unknown): number | null {
+  const m = String(header ?? "").match(/page-products-count">\s*([\d.]+)/);
+  return m ? Number(m[1].replace(/\./g, "")) : null;
 }
 
 /** The ga4 item list the ajax listing returns beside the HTML, keyed by sku. */
@@ -222,15 +240,44 @@ async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise
 
 export const brand = "puma";
 
+async function walkTree(tree: string): Promise<{ cards: PumaCard[]; ga4: Map<string, any> }> {
+  let total: number | null = null;
+  const cards: PumaCard[] = [];
+  const ga4 = new Map<string, any>();
+  const seen = new Set<string>();
+  for (let page = 1; ; page++) {
+    if (page > MAX_PAGES) throw new Error(`puma: ${tree} over ${MAX_PAGES} pages — raise PUMA_MAX_PAGES`);
+    if (page > 1) await sleep(PAUSE_MS);
+    // ?p=1 redirects to the bare url; ask for the bare one.
+    const data = await getJson<any>(`${SITE}/${tree}.html?${page > 1 ? `p=${page}&` : ""}ajax=1`, { headers: AJAX, proxy: true, retries: 2 }).catch((e) => {
+      throw new Error(`puma: ${tree} page ${page} failed (${e?.message ?? e})`);
+    });
+    if (total == null) total = totalOf(data?.header);
+    const got = parseCards(String(data?.content ?? ""));
+    if (got.length === 0) break;
+    for (const [k, v] of parseGa4(data?.ga4_view_item_list)) ga4.set(k, v);
+    for (const c of got) {
+      seen.add(c.sku);
+      cards.push(c);
+    }
+    if (total != null && seen.size >= total) break;
+  }
+  if (!total || seen.size < total * 0.99) throw new Error(`puma: ${tree} walked ${seen.size} of ${total ?? "?"} products`);
+  return { cards, ga4 };
+}
+
 export async function listProducts(): Promise<ProductRecord[]> {
   const byId = new Map<string, ProductRecord>();
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const data = await getJson<any>(`${LIST}?p=${page}&ajax=1`, { headers: AJAX, proxy: true }).catch(() => null);
-    const cards = parseCards(String(data?.content ?? ""));
-    if (cards.length === 0) break;
-    const ga4 = parseGa4(data?.ga4_view_item_list);
-    for (const c of cards) if (!byId.has(c.sku)) byId.set(c.sku, mapCard(c, ga4.get(c.sku)));
-  }
+  // Two lanes (outlet ‖ the departments), each serial with its pause.
+  const lanes = await Promise.all([
+    walkTree(TREES[0]).then((r) => [r]),
+    (async () => {
+      const out: { cards: PumaCard[]; ga4: Map<string, any> }[] = [];
+      for (const t of TREES.slice(1)) out.push(await walkTree(t));
+      return out;
+    })(),
+  ]);
+  for (const { cards, ga4 } of lanes.flat()) for (const c of cards) if (!byId.has(c.sku)) byId.set(c.sku, mapCard(c, ga4.get(c.sku)));
 
   // Detail pass: one product page per STYLE fills every listed colour of it.
   const byStyle = new Map<string, ProductRecord[]>();

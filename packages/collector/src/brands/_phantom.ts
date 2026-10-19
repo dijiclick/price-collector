@@ -25,8 +25,8 @@
  * Yargıcı's `tum-urunler` tree is the whole range (4,219 rows, a superset of
  * `outlet` 2,226 + `kadin` 915 + `erkek` 105; 17 pages, ~30 s). Hotiç's three
  * departments are its whole range (1,957 rows, all struck on 10-19 — the old
- * 1,500 cap was cutting ~450 of them; 10 pages, ~10 s). Columbia keeps the
- * deals-only walk at its old limits.
+ * 1,500 cap was cutting ~450 of them; 10 pages, ~10 s). Columbia's
+ * `tum-urunler` is its whole range (1,517 rows on 10-19, 7 pages).
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -46,10 +46,11 @@ export const PHANTOM_SHOPS: Record<string, PhantomShop> = {
   yargici: { brand: "yargici", site: "https://www.yargici.com", slugs: ["tum-urunler"], fullCatalogue: true },
   // No outlet tree on Hotiç; the three departments are the whole range.
   hotic: { brand: "hotic", site: "https://www.hotic.com.tr", slugs: ["kadin-ayakkabi", "erkek-ayakkabi", "cantaaksesuar"], fullCatalogue: true },
-  // Columbia Turkey (2026-10-12): the department trees hold every marked-down
-  // row (751 on 10-12, the union of the seasonal "indirim" slugs) and outlive
-  // the season names. 17 pages; answers a GitHub runner (probe run 38235646734).
-  columbia: { brand: "columbia", site: "https://www.columbia.com.tr", slugs: ["kadin", "erkek", "cocuk"] },
+  // Columbia Turkey (2026-10-12; full catalogue 2026-10-19): `tum-urunler` is
+  // the whole range — 1,517 rows on 10-19, a superset of kadin 700, erkek 845,
+  // cocuk 91, aksesuar 141, unisex 119, ekipman 27 and indirim 315 (all
+  // checked). 7 pages of 250, ~13 s; answers a GitHub runner (probe run 38235646734).
+  columbia: { brand: "columbia", site: "https://www.columbia.com.tr", slugs: ["tum-urunler"], fullCatalogue: true },
 };
 
 const PAGE_SIZE = 100;
