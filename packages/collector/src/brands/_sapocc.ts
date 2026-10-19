@@ -28,6 +28,12 @@ export interface OccSite {
   web: string;
   /** Category code of the outlet/sale tree (`312` Vakko, `203` Vakkorama). */
   saleCategory: string;
+  /**
+   * Search query that matches the WHOLE catalogue (listCatalogue): the root
+   * category facet (`:new-coming:allCategories:3` Vakko) — an empty query
+   * with no category answers 0 on most of these sites.
+   */
+  catalogueQuery?: string;
 }
 
 const PAGE_SIZE = 100;
@@ -89,18 +95,23 @@ function leafCategory(cats: unknown): string | null {
   return null;
 }
 
-/** Map one search hit. Only DISCOUNTED items (strike > price) are returned. */
+/**
+ * Map one search hit. Only DISCOUNTED items (strike > price) are returned,
+ * unless `fullPrice` asks for every item — then an unreduced one comes back
+ * with `listPrice: null`.
+ */
 export function mapOccProduct(
   site: Pick<OccSite, "brand" | "web">,
   p: any,
   gender: ProductRecord["gender"] = null,
+  opts: { fullPrice?: boolean } = {},
 ): ProductRecord | null {
   const code = typeof p?.code === "string" ? p.code : "";
   const name = String(p?.name ?? "").trim();
   const price = Number(p?.price?.value);
   if (!code || !name || !Number.isFinite(price) || price <= 0) return null;
   const strike = strikeOf(p, price);
-  if (strike == null) return null;
+  if (strike == null && !opts.fullPrice) return null;
 
   const gallery = (Array.isArray(p.galleryImages) ? p.galleryImages : []).map(occImage);
   const primary = (Array.isArray(p.images) ? p.images : []).find((i: any) => i?.imageType === "PRIMARY");
@@ -122,7 +133,7 @@ export function mapOccProduct(
     imageUrl,
     images: cleanGallery(gallery, imageUrl),
     price: toMinor(price),
-    listPrice: toMinor(strike),
+    listPrice: strike == null ? null : toMinor(strike),
     currency: "TRY",
     inStock,
     // The EAN of every size — what a shopper scans off the tag.
@@ -136,10 +147,16 @@ export function mapOccProduct(
   };
 }
 
-export function searchUrl(site: Pick<OccSite, "api">, query: string, page: number, pageSize = PAGE_SIZE): string {
+export function searchUrl(
+  site: Pick<OccSite, "api">,
+  query: string,
+  page: number,
+  pageSize = PAGE_SIZE,
+  fields = "FULL",
+): string {
   const q = new URLSearchParams({
     query,
-    fields: "FULL",
+    fields,
     lang: "tr",
     curr: "TRY",
     pageSize: String(pageSize),
@@ -221,4 +238,91 @@ export function makeOccAdapter(
     }
     return [...byId.values()].slice(0, max);
   };
+}
+
+/**
+ * FULL CATALOGUE (2026-10-19). `site.catalogueQuery` (the root category) is
+ * paged at 1,000 hits a request — the OCC search takes it, ~2 s a page — so
+ * Vakko's whole shop (20,846 items: 12k outlet + 8.7k new season) is ~21
+ * requests. Search hits are the in-stock assortment with price, strike price
+ * and per-size stock, so a reduced hit keeps its strike price exactly as the
+ * outlet walk read it and an unreduced one is a full-price row (`listPrice`
+ * null).
+ *
+ * Gender: the root query's gender facet is then walked for product codes only
+ * (`fields=products(code),pagination`, ~40 KB per 1,000), so every row gets
+ * the same exact section the outlet walk gave it; items outside the facet
+ * (Unisex, untagged) fall back to their category names as before.
+ *
+ * The collector delists whatever a run does not return, so a refused page, a
+ * request budget overrun, a product cap, or a walk that comes back short of
+ * the search's own `totalResults` (stock moving mid-walk is allowed 1%) fails
+ * the run instead of returning part of the shop.
+ */
+export interface OccCatalogueOpts {
+  /** Hit → record; default the shared mapper with full-price rows kept. */
+  map?: (p: any, gender: ProductRecord["gender"]) => ProductRecord | null;
+  maxProducts?: number;
+  maxRequests?: number;
+  pauseMs?: number;
+}
+
+export const CATALOGUE_PAGE = 1000;
+/** Rows the walk may fall short of `totalResults` (stock moving mid-walk). */
+const SHORTFALL = 0.01;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export async function listOccCatalogue(site: OccSite, opts: OccCatalogueOpts = {}): Promise<ProductRecord[]> {
+  const root = site.catalogueQuery;
+  if (!root) throw new Error(`${site.brand}: no catalogue query`);
+  const map = opts.map ?? ((p: any, g: ProductRecord["gender"]) => mapOccProduct(site, p, g, { fullPrice: true }));
+  const maxProducts = opts.maxProducts ?? 60_000;
+  const maxRequests = opts.maxRequests ?? 150;
+  const pauseMs = opts.pauseMs ?? 300;
+  let requests = 0;
+  const get = async (query: string, page: number, fields: string) => {
+    if (requests >= maxRequests) throw new Error(`${site.brand}: over ${maxRequests} requests — raise the request budget`);
+    if (requests > 0) await sleep(pauseMs);
+    requests++;
+    const d = await getJson<any>(searchUrl(site, query, page, CATALOGUE_PAGE, fields), { retries: 2 }).catch(() => null);
+    if (!d || !Array.isArray(d.products) || !d.pagination) {
+      throw new Error(`${site.brand}: OCC search refused (${query}, page ${page}) — partial walk refused`);
+    }
+    return d;
+  };
+
+  // 1. The whole catalogue, full hits.
+  const hits = new Map<string, any>();
+  const first = await get(root, 0, "FULL");
+  const total = Number(first.pagination.totalResults) || 0;
+  const pages = Number(first.pagination.totalPages) || 0;
+  if (total <= 0) throw new Error(`${site.brand}: catalogue search returned no results`);
+  for (let page = 0; page < pages; page++) {
+    const d = page === 0 ? first : await get(root, page, "FULL");
+    for (const p of d.products) if (typeof p?.code === "string" && !hits.has(p.code)) hits.set(p.code, p);
+  }
+  if (hits.size < total * (1 - SHORTFALL)) {
+    throw new Error(`${site.brand}: ${hits.size} of ${total} catalogue hits — partial walk refused`);
+  }
+
+  // 2. Exact section per code from the gender facet (codes only).
+  const genderOf = new Map<string, ProductRecord["gender"]>();
+  for (const s of genderStreams(first)) {
+    if (!s.gender) continue;
+    for (let page = 0; ; page++) {
+      const d = await get(s.query, page, "products(code),pagination");
+      for (const p of d.products) if (typeof p?.code === "string" && !genderOf.has(p.code)) genderOf.set(p.code, s.gender);
+      if (page + 1 >= (Number(d.pagination.totalPages) || 0)) break;
+    }
+  }
+
+  const all: ProductRecord[] = [];
+  for (const [code, p] of hits) {
+    const r = map(p, genderOf.get(code) ?? null);
+    if (r) all.push(r);
+  }
+  // A cap that cut rows would let the delist sweep mark them sold out: refuse instead.
+  if (all.length > maxProducts) throw new Error(`${site.brand}: ${all.length} products, over the cap of ${maxProducts}`);
+  if (process.env.OCC_DEBUG) console.error(`${site.brand}: ${requests} requests, ${all.length} of ${total} hits`);
+  return [...all.filter((r) => r.listPrice != null), ...all.filter((r) => r.listPrice == null)];
 }

@@ -15,6 +15,13 @@ import { listRnd, rndLimitsFromEnv, type RndShop } from "./_rnd";
  * cards carry no section, so it is walked once per `?g=` value; Levi's sells
  * no kids' line in Turkey. ~7 pages, then the quick-view pass for sizes
  * (category, colour and section ride along in its dataLayer push).
+ *
+ * STAYS SALE-ONLY (checked 2026-10-19): no listing holds the whole shop.
+ * `/tum-urunler` counts 1,124, but the ~90 category listings linked from the
+ * home page add 213 more products (13 of 15 sampled in stock, 20 of them in
+ * `/indirim`), and the categories are curated sets, not a tree (a parent
+ * misses its children's products). A full-price walk could not be shown
+ * complete, and the delist sweep would mark whatever it missed sold out.
  */
 export const SHOP: RndShop = {
   brand: "levis",

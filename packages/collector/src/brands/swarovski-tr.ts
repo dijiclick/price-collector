@@ -24,6 +24,16 @@
  * Stock: the "Available online" facet (`/productHasStockFlag/1`) is read
  * first, as for the other markets; rows outside it are out of stock. No sizes
  * on the tiles.
+ *
+ * FULL CATALOGUE since 2026-10-19 (listProducts): the in-stock facets of the
+ * outlet (523 on 2026-10-19) and of the `Kategoriler` root (1,208 of 1,400 —
+ * the four top categories sum to 1,402, so 1,400 is not a cap) are walked,
+ * ~29 pages of 64, and every tile is kept: outlet markdowns with their strike
+ * price exactly as before, the rest as full-price rows (`listPrice` null).
+ * Rows outside both facets are out of stock, which the collector's delist
+ * sweep records. A page Baqend never serves, a walk short of a facet's own
+ * count (1% allowed) or a cap fails the run instead of returning part of the
+ * shop. `listOutlet` keeps the old outlet-only walk.
  */
 import { cleanGallery, type ProductRecord } from "../types";
 import { getText } from "../http";
@@ -42,6 +52,9 @@ const FALLBACK_BUILD: SpeedKitBuild = { bqcv: "22a0a3a5", bqsk: "2.22.5" };
 const PAGE = 64;
 const MAX_PAGES = Number(process.env.SWAROVSKI_TR_MAX_PAGES ?? 15);
 const CAP = Number(process.env.SWAROVSKI_TR_MAX_PRODUCTS ?? 1500);
+/** Catalogue walk: ~19 pages today; room for the shop to double. */
+const CATALOGUE_MAX_PAGES = Number(process.env.SWAROVSKI_TR_CATALOGUE_MAX_PAGES ?? 60);
+const CATALOGUE_CAP = Number(process.env.SWAROVSKI_TR_CATALOGUE_MAX_PRODUCTS ?? 4000);
 const TIMEOUT = 30_000;
 const PAUSE_MS = 400;
 const IMAGE_WIDTH = "w_800";
@@ -61,8 +74,9 @@ export function trMoney(s: string | undefined): number {
 export const trResultCount = (html: string): number =>
   Number(html.match(/([\d.]+)\s+Sonuç/)?.[1]?.replace(/\./g, "") ?? 0);
 
-export function trListingUrl(page: number, build: SpeedKitBuild, inStock = false, bust?: string): string {
-  const path = `/${LOCALE}/c-swa-root/Kategoriler/f/fg-shopby/fl-outlet${inStock ? "/productHasStockFlag/1" : ""}`;
+export function trListingUrl(page: number, build: SpeedKitBuild, inStock = false, bust?: string, whole = false): string {
+  const facets = `${whole ? "" : "/fg-shopby/fl-outlet"}${inStock ? "/productHasStockFlag/1" : ""}`;
+  const path = `/${LOCALE}/c-swa-root/Kategoriler${facets ? `/f${facets}` : ""}`;
   const qs = `sort=relevance&page=${page}&showFragmentOnly=true${bust ? `&mdcb=${bust}` : ""}&bqcv=${build.bqcv}&bqsk=${build.bqsk}`;
   return `${BAQEND}/v1/asset/${SITE}${path}?${qs}`;
 }
@@ -70,8 +84,12 @@ export function trListingUrl(page: number, build: SpeedKitBuild, inStock = false
 const text = (s: string | undefined): string => decodeEntities(String(s ?? "")).replace(/\s+/g, " ").trim();
 const bigger = (u: string) => u.replace(/,w_\d+\//, `,${IMAGE_WIDTH}/`).replace(/dpr_[\d.]+/, "dpr_1.0");
 
-/** One tr-TR outlet listing page → marked-down records (inStock filled in by the caller). Pure. */
-export function parseTrPage(html: string): ProductRecord[] {
+/**
+ * One tr-TR listing page → marked-down records (inStock filled in by the
+ * caller). Pure. With `fullPrice`, unreduced tiles come back too, as
+ * full-price rows (`listPrice` null).
+ */
+export function parseTrPage(html: string, opts: { fullPrice?: boolean } = {}): ProductRecord[] {
   const out: ProductRecord[] = [];
   for (const tile of html.split(SPLIT).slice(1)) {
     const id = tile.match(/data-gtm-product-variant="(\d+)"/)?.[1];
@@ -81,7 +99,9 @@ export function parseTrPage(html: string): ProductRecord[] {
     const gtm = parseFloat(tile.match(/data-gtm-product-price="([\d.]+)"/)?.[1] ?? "");
     const price = Number.isFinite(gtm) && gtm > 0 ? gtm : trMoney(tile.match(/price-current[^"]*">([^<]*)</)?.[1]);
     const was = trMoney(tile.match(/price-old[^"]*">([^<]*)</)?.[1]);
-    if (!(price > 0) || !(was > price) || price < was * 0.1) continue;
+    if (!(price > 0)) continue;
+    const reduced = was > price && price >= was * 0.1;
+    if (!reduced && !opts.fullPrice) continue;
     const title = text(tile.match(/information__title[^"]*">([^<]*)</)?.[1]);
     const subtitle = text(tile.match(/information__subtitle[^"]*">([^<]*)</)?.[1]);
     const imgs = [...tile.matchAll(/<img[^>]*?\ssrc="(https:\/\/asset\.swarovski\.com\/images\/[^"]+)"/g)].map((m) =>
@@ -97,7 +117,7 @@ export function parseTrPage(html: string): ProductRecord[] {
       imageUrl: imgs[0] ?? null,
       images: cleanGallery(imgs, imgs[0] ?? null),
       price: toMinor(price),
-      listPrice: toMinor(was),
+      listPrice: reduced ? toMinor(was) : null,
       currency: "TRY",
       inStock: true,
       category: null,
@@ -121,9 +141,9 @@ async function speedKitBuild(): Promise<SpeedKitBuild> {
   return FALLBACK_BUILD;
 }
 
-function fetchListing(page: number, build: SpeedKitBuild, inStock: boolean) {
+function fetchListing(page: number, build: SpeedKitBuild, inStock: boolean, whole = false) {
   const headers = { Origin: SITE, Referer: `${SITE}/`, Accept: "text/html" };
-  return withFreshCopies((bust) => getText(trListingUrl(page, build, inStock, bust), { headers, timeoutMs: TIMEOUT }));
+  return withFreshCopies((bust) => getText(trListingUrl(page, build, inStock, bust, whole), { headers, timeoutMs: TIMEOUT }));
 }
 
 async function readListing(build: SpeedKitBuild, inStock: boolean) {
@@ -154,7 +174,51 @@ async function readListing(build: SpeedKitBuild, inStock: boolean) {
 
 const off = (r: ProductRecord) => (r.listPrice! - r.price) / r.listPrice!;
 
+/** Every tile of one listing's in-stock facet; throws rather than return part of it. */
+async function walkInStock(build: SpeedKitBuild, whole: boolean): Promise<ProductRecord[]> {
+  const what = whole ? "catalogue" : "outlet";
+  const rows: ProductRecord[] = [];
+  const ids = new Set<string>();
+  let pages = 1;
+  let total = 0;
+  for (let page = 0; page < pages; page++) {
+    if (page > 0) await sleep(PAUSE_MS);
+    const html = await fetchListing(page, build, true, whole);
+    if (html == null) throw new Error(`swarovski/TR: ${what} page ${page} never served (build ${build.bqcv}/${build.bqsk}) — partial walk refused`);
+    if (page === 0) {
+      total = trResultCount(html);
+      if (total <= 0) throw new Error(`swarovski/TR: no result count on the ${what} (build ${build.bqcv}/${build.bqsk})`);
+      pages = Math.ceil(total / PAGE);
+      if (pages > CATALOGUE_MAX_PAGES) throw new Error(`swarovski/TR: ${pages} ${what} pages, over ${CATALOGUE_MAX_PAGES}`);
+    }
+    for (const r of parseTrPage(html, { fullPrice: true })) {
+      if (ids.has(r.externalId)) continue;
+      ids.add(r.externalId);
+      rows.push(r);
+    }
+  }
+  if (ids.size < total * 0.99) throw new Error(`swarovski/TR: ${ids.size} of ${total} in-stock ${what} tiles — partial walk refused`);
+  return rows;
+}
+
+/**
+ * The whole in-stock shop: the outlet's in-stock facet (its markdowns, as
+ * before) plus the `Kategoriler` root's — the root does NOT list the outlet
+ * (519 of 520 stored outlet rows are absent from it), so both are walked.
+ * An id in both keeps its outlet row.
+ */
 export async function listProducts(): Promise<ProductRecord[]> {
+  const build = await speedKitBuild();
+  const byId = new Map<string, ProductRecord>();
+  for (const r of await walkInStock(build, false)) byId.set(r.externalId, r);
+  for (const r of await walkInStock(build, true)) if (!byId.has(r.externalId)) byId.set(r.externalId, r);
+  if (byId.size > CATALOGUE_CAP) throw new Error(`swarovski/TR: ${byId.size} products, over the cap of ${CATALOGUE_CAP}`);
+  const all = [...byId.values()];
+  return [...all.filter((r) => r.listPrice != null).sort((a, z) => off(z) - off(a)), ...all.filter((r) => r.listPrice == null)];
+}
+
+/** The outlet only (the walk before 2026-10-19): marked-down tiles, in-stock facet first. */
+export async function listOutlet(): Promise<ProductRecord[]> {
   const build = await speedKitBuild();
   let stocked = await readListing(build, true).catch((err) => {
     console.warn(`swarovski/TR: in-stock facet failed (${(err as Error).message})`);

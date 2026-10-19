@@ -1,6 +1,5 @@
 import type { ProductRecord } from "../types";
-import { getJson } from "../http";
-import { mapOccProduct, searchUrl, type OccSite } from "./_sapocc";
+import { listOccCatalogue, mapOccProduct, type OccSite } from "./_sapocc";
 
 /**
  * ADL TR (women's wear) — SAP Commerce OCC v2, site `adl`, the same platform
@@ -20,25 +19,27 @@ import { mapOccProduct, searchUrl, type OccSite } from "./_sapocc";
  * CATEGORY. The shared mapper takes the last category, which on ADL is a
  * campaign bucket ("Büyük Yaz İndirimi Elbise"); the product type is the last
  * real breadcrumb ("Kategoriler > Elbise > Günlük Elbise").
+ *
+ * FULL CATALOGUE since 2026-10-19: ADL has no single root category, but here
+ * the plain `:new-coming` query (no category) does match the whole shop —
+ * 2,314 items on 2026-10-19, the Outlet's 1,228 among them — so it is walked
+ * at 1,000 a page (3 requests; _sapocc.ts listOccCatalogue). Unreduced items
+ * are full-price rows (`listPrice` null).
  */
 export const SITE: OccSite = {
   brand: "adl",
   api: "https://api.adl.com.tr/occ/v2/adl",
   web: "https://www.adl.com.tr",
   saleCategory: "0004",
+  catalogueQuery: ":new-coming",
 };
 
 export const brand = SITE.brand;
 
-const MAX_PRODUCTS = Number(process.env.ADL_MAX_PRODUCTS ?? 2000);
-const MAX_PAGES = Number(process.env.ADL_MAX_PAGES ?? 25);
-const PAUSE_MS = Number(process.env.ADL_PAUSE_MS ?? 400);
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Map one search hit. Pure; null unless the item is reduced. */
-export function mapAdl(p: any): ProductRecord | null {
+/** Map one search hit. Pure; null unless the item is reduced, or `fullPrice` asks for every item. */
+export function mapAdl(p: any, opts: { fullPrice?: boolean } = {}): ProductRecord | null {
   const strike = p?.firstStrikePrice ?? p?.originalPrice;
-  const r = mapOccProduct(SITE, { ...p, firstStrikePrice: strike }, "kadin");
+  const r = mapOccProduct(SITE, { ...p, firstStrikePrice: strike }, "kadin", opts);
   if (!r) return null;
   const crumbs: any[] = Array.isArray(p.breadcrumbs) ? p.breadcrumbs : [];
   const leaf = [...crumbs].reverse().find((b) => b?.categoryCode && typeof b.name === "string" && b.name.trim());
@@ -48,22 +49,9 @@ export function mapAdl(p: any): ProductRecord | null {
 }
 
 export async function listProducts(): Promise<ProductRecord[]> {
-  const query = `:new-coming:allCategories:${SITE.saleCategory}`;
-  const byId = new Map<string, ProductRecord>();
-  let pages = 1;
-  for (let page = 0; page < Math.min(pages, MAX_PAGES) && byId.size < MAX_PRODUCTS; page++) {
-    if (page > 0) await sleep(PAUSE_MS);
-    const data = await getJson<any>(searchUrl(SITE, query, page), { retries: 1 }).catch((e) => {
-      if (page === 0) throw e;
-      return null;
-    });
-    if (!data) break;
-    pages = Number(data?.pagination?.totalPages) || 0;
-    for (const p of data?.products ?? []) {
-      const r = mapAdl(p);
-      if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
-    }
-  }
-  const all = [...byId.values()];
-  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, MAX_PRODUCTS);
+  return listOccCatalogue(SITE, {
+    map: (p) => mapAdl(p, { fullPrice: true }),
+    maxProducts: Number(process.env.ADL_MAX_PRODUCTS ?? 15_000),
+    maxRequests: Number(process.env.ADL_MAX_REQUESTS ?? 30),
+  });
 }

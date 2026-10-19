@@ -41,6 +41,11 @@ export interface RndShop {
   listings: RndListing[];
   /** Quick-view partial for one product id (sizes with stock). */
   detailPath: (id: string) => string;
+  /**
+   * Listings that together hold the WHOLE catalogue (listRndCatalogue), e.g.
+   * `/tum-urunler`, or one per section where the cards name none (Levi's).
+   */
+  catalogue?: RndListing[];
 }
 
 export interface RndLimits {
@@ -323,6 +328,105 @@ export async function listRnd(shop: RndShop, limits: RndLimits): Promise<Product
   }
   if (process.env.RND_DEBUG) console.error(`${shop.brand}: ${pages} pages, ${records.length} deals, ${Math.round((Date.now() - started) / 1000)} s`);
   return [...records.filter((r) => r.inStock), ...records.filter((r) => !r.inStock)];
+}
+
+/**
+ * A listing's exact product count: the "N Ürün" label (Vans, Timberland),
+ * else — at one card a page (`?ps=1`) — its pager's last page number (Levi's
+ * prints no count, but its pager links the last page). Null when neither is there.
+ */
+export function rndTotal(html: string): number | null {
+  // "Gösteriliyor 2000 Ürün" (Vans), "1256 Ürün" (Timberland); the page's own
+  // "1 Ürün" label sits next to it, so the largest is the listing's count.
+  const labels = [...html.matchAll(/(\d[\d.]*)\s*Ürün\s*</g)].map((m) => Number(m[1].replace(/\./g, "")));
+  if (labels.length) return Math.max(...labels);
+  const pages = [...html.matchAll(/[?&](?:amp;)?p=(\d+)/g)].map((m) => Number(m[1]));
+  if (pages.length) return Math.max(...pages);
+  return null;
+}
+
+/** Cards per catalogue page (`?ps=`): the server takes ~35–65 ms a card, so 200 is ~7–13 s. */
+export const CATALOGUE_PS = 200;
+
+const catalogueUrl = (shop: RndShop, path: string, ps: number, n: number) =>
+  `${shop.site}${path}${path.includes("?") ? "&" : "?"}ps=${ps}${n > 1 ? `&p=${n}` : ""}`;
+
+/**
+ * FULL CATALOGUE (2026-10-19): every listing in `shop.catalogue` is paged to
+ * its end at 200 cards a page (`?ps=200`; 48 is only the default) and EVERY
+ * card is kept — reduced cards with the strike price exactly as the sale walk
+ * read it, the rest as full-price rows (`listPrice` null). The listing's own
+ * count (rndTotal, read off a one-card page) is the completeness check. Then
+ * the same rotating quick-view pass for sizes, reduced rows first, inside the
+ * wall-clock budget.
+ *
+ * The collector delists whatever a run does not return, so a page refused
+ * twice, a page budget overrun, a cap, a listing whose count cannot be read,
+ * or a walk short of that count (1% allowed for stock moving mid-walk) fails
+ * the run instead of returning part of the shop.
+ */
+export async function listRndCatalogue(shop: RndShop, limits: RndLimits): Promise<ProductRecord[]> {
+  const started = Date.now();
+  const listings = shop.catalogue ?? [];
+  if (!listings.length) throw new Error(`${shop.brand}: no catalogue listings`);
+  const byId = new Map<string, ProductRecord>();
+  let pages = 0;
+  const fetchPage = async (url: string) => {
+    if (pages >= limits.maxPages) throw new Error(`${shop.brand}: over ${limits.maxPages} listing pages — raise MAX_PAGES`);
+    if (pages > 0) await sleep(PAUSE_MS);
+    pages++;
+    return getText(url, { timeoutMs: 60_000 }).catch(async () => {
+      await sleep(PAUSE_MS * 4);
+      return getText(url, { timeoutMs: 90_000 }).catch((err) => {
+        throw new Error(`${shop.brand}: ${url} failed twice (${(err as Error).message}) — partial walk refused`);
+      });
+    });
+  };
+  for (const l of listings) {
+    const total = rndTotal(await fetchPage(catalogueUrl(shop, l.path, 1, 1)));
+    if (total == null) throw new Error(`${shop.brand}: no product count on ${l.path}`);
+    const seen = new Set<string>();
+    for (let n = 1; n <= Math.ceil(total / CATALOGUE_PS); n++) {
+      const cards = rndCards(await fetchPage(catalogueUrl(shop, l.path, CATALOGUE_PS, n)));
+      for (const c of cards) {
+        seen.add(c.id);
+        if (byId.has(c.id)) continue;
+        const r = mapRndCard(shop, c.id, c.html, l.gender ?? null);
+        if (r) byId.set(c.id, r);
+      }
+      if (cards.length < CATALOGUE_PS) break;
+    }
+    if (seen.size < total * 0.99) throw new Error(`${shop.brand}: ${l.path} gave ${seen.size} of ${total} cards — partial walk refused`);
+  }
+  const records = [...byId.values()];
+  if (records.length > limits.maxProducts) throw new Error(`${shop.brand}: ${records.length} products, over the cap of ${limits.maxProducts}`);
+  const listed = Date.now() - started;
+
+  const shuffle = <T>(a: T[]) => {
+    for (let j = a.length - 1; j > 0; j--) {
+      const k = Math.floor(Math.random() * (j + 1));
+      [a[j], a[k]] = [a[k], a[j]];
+    }
+    return a;
+  };
+  const sample = [...shuffle(records.filter((r) => r.listPrice != null)), ...shuffle(records.filter((r) => r.listPrice == null))];
+  let failures = 0;
+  let details = 0;
+  for (const r of sample.slice(0, limits.detailLimit)) {
+    if (Date.now() - started > limits.budgetMs || failures >= 5) break;
+    await sleep(PAUSE_MS);
+    const html = await getText(`${shop.site}${shop.detailPath(r.externalId)}`, { timeoutMs: 20_000 }).catch(() => null);
+    if (!html) {
+      failures++;
+      continue;
+    }
+    details++;
+    applyRndDetail(r, html);
+  }
+  if (process.env.RND_DEBUG) {
+    console.error(`${shop.brand}: ${pages} pages in ${Math.round(listed / 1000)} s, ${records.length} products, ${details} quick-views, ${Math.round((Date.now() - started) / 1000)} s`);
+  }
+  return [...records.filter((r) => r.listPrice != null), ...records.filter((r) => r.listPrice == null)];
 }
 
 /** Limits from env with a per-brand prefix (`VANS_TR_DETAIL_LIMIT`, …). */

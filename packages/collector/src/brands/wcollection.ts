@@ -1,5 +1,5 @@
 import type { ProductRecord } from "../types";
-import { makeOccAdapter, type OccSite } from "./_sapocc";
+import { listOccCatalogue, type OccSite } from "./_sapocc";
 
 /**
  * W Collection TR (Vakko group) — SAP Commerce OCC v2 on the group's own API
@@ -12,18 +12,24 @@ import { makeOccAdapter, type OccSite } from "./_sapocc";
  * shared in proportion. `api.wcollection.com.tr` answers a GitHub runner with
  * 200 (probe run 39124308073). Per-size stock, EANs and the gallery come with
  * each search hit.
+ *
+ * FULL CATALOGUE since 2026-10-19: the root category `1` (4,893 items, the
+ * outlet among them) is walked at 1,000 a page, ~11 requests, and every row
+ * keeps the gender facet's section; see _sapocc.ts listOccCatalogue.
  */
 export const SITE: OccSite = {
   brand: "wcollection",
   api: "https://api.wcollection.com.tr/occ/v2/wsite",
   web: "https://www.wcollection.com.tr",
   saleCategory: "103",
+  catalogueQuery: ":new-coming:allCategories:1",
 };
 
 export const brand = SITE.brand;
 
-const list = makeOccAdapter(SITE, { maxProducts: Number(process.env.WCOLLECTION_MAX_PRODUCTS ?? 1500) });
-
 export async function listProducts(): Promise<ProductRecord[]> {
-  return list();
+  return listOccCatalogue(SITE, {
+    maxProducts: Number(process.env.WCOLLECTION_MAX_PRODUCTS ?? 20_000),
+    maxRequests: Number(process.env.WCOLLECTION_MAX_REQUESTS ?? 60),
+  });
 }

@@ -25,6 +25,11 @@ export interface GroupShop {
   imageBase: string;
   /** Sale listing path, e.g. `outlet`. */
   salePath: string;
+  /**
+   * Listing paths that together hold the WHOLE catalogue (listGroupCatalogue),
+   * e.g. İpekyol's `koleksiyon` (new season) + `outlet`.
+   */
+  cataloguePaths?: string[];
 }
 
 export interface GroupLimits {
@@ -155,6 +160,84 @@ export async function listGroup(shop: GroupShop, limits: GroupLimits): Promise<P
     r.inStock = sizes.some((s) => s.availability !== "out_of_stock");
   });
   return records;
+}
+
+/**
+ * FULL CATALOGUE (2026-10-19): every listing in `shop.cataloguePaths` is paged
+ * to its end (20 rows a page — the `_next/data` route takes no page size) and
+ * EVERY row is kept: reduced rows with their strike price exactly as the sale
+ * walk read them, the rest as full-price rows (`listPrice` null). Then the
+ * same bounded PDP pass fills sizes for rows whose listing lacked them,
+ * reduced rows first.
+ *
+ * The collector delists whatever a run does not return, so a refused page,
+ * a page budget overrun, a cap, or a listing that comes back short of its own
+ * `totalItems` (1% allowed for stock moving mid-walk) fails the run instead.
+ */
+export async function listGroupCatalogue(
+  shop: GroupShop,
+  limits: GroupLimits & { pauseMs?: number },
+): Promise<ProductRecord[]> {
+  const paths = shop.cataloguePaths ?? [];
+  if (!paths.length) throw new Error(`${shop.brand}: no catalogue paths`);
+  const buildId = buildIdFromHtml(await getText(`${shop.site}/`));
+  if (!buildId) throw new Error(`${shop.brand}: no Next.js buildId on the home page`);
+  const data = (path: string) => `${shop.site}/_next/data/${buildId}/${path}.json`;
+  const pause = limits.pauseMs ?? 150;
+  let pages = 0;
+  const page = async (path: string, n: number) => {
+    if (pages >= limits.maxPages) throw new Error(`${shop.brand}: over ${limits.maxPages} listing pages — raise MAX_PAGES`);
+    pages++;
+    await new Promise((r) => setTimeout(r, pause));
+    const body = await getJson<any>(`${data(path)}${n > 1 ? `?page=${n}` : ""}`, { retries: 2 }).catch(() => null);
+    const res = body?.pageProps?.data?.response;
+    if (!res || !Array.isArray(res.products)) throw new Error(`${shop.brand}: ${path} page ${n} refused — partial walk refused`);
+    return res;
+  };
+
+  const byId = new Map<string, ProductRecord>();
+  for (const path of paths) {
+    const seen = new Set<string>();
+    const take = (res: any) => {
+      for (const p of res.products) {
+        if (p?.id != null) seen.add(String(p.id));
+        const r = mapGroupProduct(shop, p);
+        if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
+      }
+    };
+    const first = await page(path, 1);
+    take(first);
+    const total = Number(first.totalItems) || 0;
+    const count = Number(first.totalPages) || 1;
+    await pool(Array.from({ length: Math.max(0, count - 1) }, (_, i) => i + 2), CONCURRENCY, async (n) => take(await page(path, n)));
+    if (seen.size < total * 0.99) throw new Error(`${shop.brand}: ${path} gave ${seen.size} of ${total} rows — partial walk refused`);
+  }
+  if (byId.size > limits.maxProducts) throw new Error(`${shop.brand}: ${byId.size} products, over the cap of ${limits.maxProducts}`);
+
+  const records = [...byId.values()];
+  const shuffle = <T>(a: T[]) => {
+    for (let j = a.length - 1; j > 0; j--) {
+      const k = Math.floor(Math.random() * (j + 1));
+      [a[j], a[k]] = [a[k], a[j]];
+    }
+    return a;
+  };
+  const todo = [
+    ...shuffle(records.filter((r) => !r.variants && r.listPrice != null)),
+    ...shuffle(records.filter((r) => !r.variants && r.listPrice == null)),
+  ];
+  await pool(todo.slice(0, limits.detailLimit), CONCURRENCY, async (r) => {
+    const route = r.url.slice(`${shop.site}/urun/`.length);
+    const body = await getJson<any>(data(`urun/${route}`), { retries: 1 }).catch(() => null);
+    const p = body?.pageProps?.data?.response?.product;
+    if (!p) return;
+    const sizes = groupSizes(p);
+    if (!sizes.length) return;
+    r.variants = { colors: r.colorName ? [r.colorName] : [], sizes };
+    r.inStock = sizes.some((s) => s.availability !== "out_of_stock");
+  });
+  if (process.env.GROUP_DEBUG) console.error(`${shop.brand}: ${pages} pages, ${records.length} rows, ${todo.length} without sizes`);
+  return [...records.filter((r) => r.listPrice != null), ...records.filter((r) => r.listPrice == null)];
 }
 
 export function groupLimitsFromEnv(prefix: string, d: GroupLimits): GroupLimits {
