@@ -3,14 +3,16 @@ import { getJson } from "../http";
 import { toMinor } from "../normalize";
 
 // Boyner — big Turkish multi-brand store. Its mobile listing API (same host the
-// app uses) is public — no auth, just an app-style UA. OrderOption=Sale ranks by
-// discount, so we page the top-discount products per category.
+// app uses) is public — no auth, just an app-style UA. Every page of each
+// category is walked, so this is the FULL in-stock catalogue of those
+// categories (2026-10-19): discounted rows as before, full-price rows with
+// `listPrice: null`.
 const API = "https://mpcore-listingsearch-prod.boyner.com.tr/api/v2/product/search";
 const SITE = "https://www.boyner.com.tr";
 const CATEGORIES = [1, 4]; // Kadın (women), Kozmetik (beauty)
 // CategoryID is the section: 1 is the women's tree; 4 (beauty) carries no gender.
 const CATEGORY_GENDER: Record<number, ProductRecord["gender"]> = { 1: "kadin", 4: null };
-const MAX_PAGES = Number(process.env.BOYNER_MAX_PAGES ?? 3000);
+const MAX_PAGES = Number(process.env.BOYNER_MAX_PAGES ?? 6000); // per category; women is ~3,560 today
 const HEADERS = { "User-Agent": "okhttp/4.12.0" }; // mimic the app client
 
 const LETTER_SIZES = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL", "4XL", "5XL"];
@@ -86,7 +88,11 @@ export function boynerPrice(p: any): { price: number; oldPrice: number } {
 
 export function mapProduct(p: any, gender: ProductRecord["gender"]): ProductRecord | null {
   const id = p?.ID != null ? String(p.ID) : "";
-  const { price, oldPrice } = boynerPrice(p);
+  const { price, oldPrice: was } = boynerPrice(p);
+  // `DiscountRate` is the shop's own "this is reduced" flag, and the gate the
+  // sale-only crawl used: without it there is no was-price (a basket campaign
+  // on an unreduced item is just its price), so a deal is never inferred.
+  const oldPrice = Number(p?.DiscountRate) > 0 ? was : NaN;
   if (!id || !Number.isFinite(price) || price <= 0) return null;
   const uri: string | undefined = p?.FriendlyURI;
   const sizes = pickSizes(p);
@@ -125,8 +131,11 @@ export const brand = "boyner";
  * That single `break` was the real limiter; raising MAX_PAGES 60x changed
  * nothing while it was there.
  *
- * Page count is fixed at 24 per request (no page-size override exists) and there
- * is no discounted-only filter, so full coverage means ~3600 requests. That
+ * Page count is fixed at 24 per request (no page-size override exists:
+ * PageSize/Size/Take/Limit all ignored, rechecked 2026-10-19), so full coverage
+ * means ~3,900 requests (measured 2026-10-19: 93.7k products, 6.5k reduced,
+ * 52 s from the Mac) — the same walk the sale-only crawl already made; only the
+ * discount filter is gone. That
  * needs a wide pool to fit the 240s budget. Measured on one connection: 24
  * workers 224s (too close to the ceiling to risk), 32 workers 190s, 48 workers
  * 115s — all returning the same product count, so nothing is being throttled
@@ -142,29 +151,56 @@ export async function listProducts(): Promise<ProductRecord[]> {
       headers: HEADERS,
     }).catch(() => null);
 
+  let seen = new Set<string>();
   const absorb = (data: any, gender: ProductRecord["gender"]) => {
     for (const p of data?.Result?.ProductList ?? []) {
-      if (Number(p?.DiscountRate) > 0) {
-        const rec = mapProduct(p, gender);
-        if (rec && rec.listPrice) byId.set(rec.externalId, rec);
-      }
+      if (p?.ID != null) seen.add(String(p.ID));
+      const rec = mapProduct(p, gender);
+      if (rec) byId.set(rec.externalId, rec);
     }
   };
 
   for (const cat of CATEGORIES) {
     const gender = CATEGORY_GENDER[cat] ?? null;
     // Page 1 reports TotalPageCount, which is what bounds the crawl.
+    seen = new Set();
     const first = await fetchPage(cat, 1);
-    if (!first) continue;
+    if (!first?.Result) throw new Error(`boyner: category ${cat} page 1 failed — partial catalogue refused`);
     absorb(first, gender);
-    const pages = Math.min(Number(first?.Result?.TotalPageCount ?? 1), MAX_PAGES);
+    const total = Number(first.Result.TotalItemCount ?? 0);
+    const pages = Number(first.Result.TotalPageCount ?? 1);
+    if (pages > MAX_PAGES) throw new Error(`boyner: category ${cat} has ${pages} pages, over the cap of ${MAX_PAGES}`);
 
     let next = 2;
+    const failed: number[] = [];
     await Promise.all(
       Array.from({ length: Math.min(PAGE_CONCURRENCY, Math.max(0, pages - 1)) }, async () => {
-        while (next <= pages) absorb(await fetchPage(cat, next++), gender);
+        while (next <= pages) {
+          const n = next++;
+          const d = await fetchPage(cat, n);
+          if (d?.Result) absorb(d, gender);
+          else failed.push(n);
+        }
       }),
     );
+    // A lost page is 24 rows the collector would mark sold out: one more try
+    // each (a few at a time, after a pause — Cloudflare answers a burst with
+    // 429 for a while), then refuse a partial catalogue.
+    if (failed.length) await new Promise((r) => setTimeout(r, 10_000));
+    const retry = failed.splice(0);
+    await Promise.all(
+      Array.from({ length: Math.min(4, retry.length) }, async () => {
+        for (let n = retry.shift(); n != null; n = retry.shift()) {
+          const d = await fetchPage(cat, n);
+          if (d?.Result) absorb(d, gender);
+          else failed.push(n);
+        }
+      }),
+    );
+    if (failed.length) throw new Error(`boyner: ${failed.length} listing pages of category ${cat} failed — partial catalogue refused`);
+    // Paging a live index can shift rows between pages mid-walk; more than 1%
+    // short of the shop's own count means the collector would sell out real stock.
+    if (seen.size < total * 0.99) throw new Error(`boyner: category ${cat} walk saw ${seen.size} of ${total} products — partial catalogue refused`);
   }
   return [...byId.values()];
 }

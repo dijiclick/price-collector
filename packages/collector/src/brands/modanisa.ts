@@ -7,14 +7,18 @@ import { toMinor } from "../normalize";
  * product is a third-party brand. Routes, measured 2026-10-10:
  *
  * - LISTING: the search/listing BFF the site's Nuxt fragment calls,
- *   `searchlisting-web-bff.modanisa.com/products?slug=<list slug>`. It wants the
- *   storefront headers below (400 without them) and caps `perPage` at 64. It
- *   reports prices only as DISPLAY strings: `campaignPriceValue` /
- *   `secondaryPrice` is the shelf price, and a `primaryPrice` with display
- *   "striped" is the struck-through original. There is no discount filter or
- *   sort, and most of even the Outlet list (~9.8k items) has no strikethrough —
- *   Modanisa's outlet is "cheap", not "marked down" — so the walk keeps only the
- *   struck-through rows (~6%).
+ *   `searchlisting-web-bff.modanisa.com/products`. It wants the storefront
+ *   headers below (400/500 without them) and caps `perPage` at 64. It reports
+ *   prices only as DISPLAY strings: `campaignPriceValue` / `secondaryPrice` is
+ *   the shelf price, and a `primaryPrice` with display "striped" is the
+ *   struck-through original.
+ * - FULL CATALOGUE (2026-10-19): with no `slug` the BFF lists the whole Turkish
+ *   catalogue (totalCount ~72.6k, ~1,136 pages of 64), and the walk keeps every
+ *   row — struck-through ones as deals, the rest with `listPrice: null`. The
+ *   old walk read only the Outlet list and kept only struck-through rows, which
+ *   had fallen to ~1 in 64 (16 rows on 10-19): Modanisa's outlet is "cheap", not
+ *   "marked down", and its reductions are basket campaigns, which are not
+ *   markdowns of the product.
  * - SIZES: `/api/product_variants.php`, the tiny HTML fragment the product page
  *   loads its size boxes from; an out-of-stock size carries `disabled`.
  *
@@ -23,11 +27,13 @@ import { toMinor } from "../normalize";
  */
 const SITE = "https://www.modanisa.com";
 const BFF = "https://searchlisting-web-bff.modanisa.com/products";
-const SLUGS = (process.env.MODANISA_LISTS ?? "outlet-12.list").split(",").map((s) => s.trim()).filter(Boolean);
 const PER_PAGE = 64;
-const MAX_PAGES = Number(process.env.MODANISA_MAX_PAGES ?? 160); // per list
-const MAX_PRODUCTS = Number(process.env.MODANISA_MAX_PRODUCTS ?? 2000);
+/** The walk THROWS past this (a capped walk would sell out the rest); ~1,136 today. */
+const MAX_PAGES = Number(process.env.MODANISA_MAX_PAGES ?? 2500);
+const CONCURRENCY = Number(process.env.MODANISA_CONCURRENCY ?? 6);
 const DETAIL_LIMIT = Number(process.env.MODANISA_DETAIL_LIMIT ?? 700);
+/** Wall clock for the whole adapter; the sizes pass stops when it runs out. */
+const BUDGET_MS = Number(process.env.MODANISA_BUDGET_MS ?? 200_000);
 
 export const BFF_HEADERS: Record<string, string> = {
   Accept: "application/json",
@@ -120,25 +126,57 @@ async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise
 export const brand = "modanisa";
 
 export async function listProducts(): Promise<ProductRecord[]> {
+  const started = Date.now();
   const byId = new Map<string, ProductRecord>();
-  outer: for (const slug of SLUGS) {
-    for (let page = 1; page <= MAX_PAGES; page++) {
-      const url = `${BFF}?slug=${encodeURIComponent(slug)}&page=${page}&perPage=${PER_PAGE}`;
-      const data = await getJson<any>(url, { headers: BFF_HEADERS, proxy: true }).catch(() => null);
-      const items: any[] = data?.items ?? [];
-      for (const it of items) {
-        const r = mapItem(it);
-        if (r && r.listPrice != null) byId.set(r.externalId, r);
-        if (byId.size >= MAX_PRODUCTS) break outer;
-      }
-      if (items.length < PER_PAGE || !data?.metadata?.links?.next) break;
+  const seen = new Set<string>();
+  // Direct only: ~80 MB a run is not something to send through the metered
+  // residential proxy, and Turkey never uses it.
+  const fetchPage = (page: number) =>
+    getJson<any>(`${BFF}?page=${page}&perPage=${PER_PAGE}`, { headers: BFF_HEADERS }).catch(() => null);
+  const absorb = (data: any) => {
+    for (const it of data?.items ?? []) {
+      if (it?.id != null) seen.add(String(it.id));
+      const r = mapItem(it);
+      if (r) byId.set(r.externalId, r);
     }
-  }
+  };
 
+  const first = await fetchPage(1);
+  const total = Number(first?.metadata?.totalCount ?? 0);
+  if (!first?.items || !(total > 0)) throw new Error("modanisa: listing page 1 failed — partial catalogue refused");
+  absorb(first);
+  const pages = Math.ceil(total / PER_PAGE);
+  if (pages > MAX_PAGES) throw new Error(`modanisa: catalogue has ${pages} pages, over the cap of ${MAX_PAGES}`);
+
+  const failed: number[] = [];
+  const walk = (queue: number[], workers: number) =>
+    pool(queue, workers, async (n) => {
+      const d = await fetchPage(n);
+      if (d?.items) absorb(d);
+      else failed.push(n);
+    });
+  await walk(Array.from({ length: pages - 1 }, (_, i) => i + 2), CONCURRENCY);
+  await walk(failed.splice(0), 2); // one more try each, then refuse
+  if (failed.length) throw new Error(`modanisa: ${failed.length} listing pages failed — partial catalogue refused`);
+  // Paging a live listing shifts rows between pages mid-walk; more than 1%
+  // short of the shop's own count would sell out real stock.
+  if (seen.size < total * 0.99) throw new Error(`modanisa: walk saw ${seen.size} of ${total} products — partial catalogue refused`);
+
+  // Sizes: deals first, then a random slice of full price; the upsert keeps
+  // what earlier runs found, so coverage rotates.
   const records = [...byId.values()];
-  await pool(records.slice(0, DETAIL_LIMIT), 3, async (r) => {
+  const shuffle = <T>(a: T[]) => {
+    for (let j = a.length - 1; j > 0; j--) {
+      const k = Math.floor(Math.random() * (j + 1));
+      [a[j], a[k]] = [a[k], a[j]];
+    }
+    return a;
+  };
+  const queue = [...shuffle(records.filter((r) => r.listPrice != null)), ...shuffle(records.filter((r) => r.listPrice == null))];
+  await pool(queue.slice(0, DETAIL_LIMIT), 3, async (r) => {
+    if (Date.now() - started > BUDGET_MS) return;
     const slug = r.url.slice(SITE.length + 1).replace(/\.html$/, "");
-    const html = await getText(variantsUrl(r.externalId, slug), { headers: { "X-Requested-With": "XMLHttpRequest" } }).catch(() => "");
+    const html = await getText(variantsUrl(r.externalId, slug), { headers: { "X-Requested-With": "XMLHttpRequest" }, timeoutMs: 20_000 }).catch(() => "");
     const sizes = parseVariantHtml(html);
     if (sizes.length === 0) return;
     r.variants = { colors: r.variants?.colors ?? [], sizes };

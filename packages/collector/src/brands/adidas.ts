@@ -171,12 +171,28 @@ function pricesOf(p: any): { price: number; was: number } | null {
   return { price: sale, was };
 }
 
-/** Map one listing product. Pure; null unless it is genuinely reduced. */
-export function mapAdidas(p: any, country: CountryCode): ProductRecord | null {
+/**
+ * The shelf price of an unreduced product: its ORIGINAL line (a member/club
+ * line is never read, as above). Only the Turkish full-catalogue walk uses it.
+ */
+function fullPriceOf(p: any): number | null {
+  const info: any[] = Array.isArray(p?.pricing?.info) ? p.pricing.info : [];
+  const was = Number(info.find((i) => i?.type === "ORIGINAL")?.value ?? p?.original_price);
+  return Number.isFinite(was) && was > 0 ? was : null;
+}
+
+/**
+ * Map one listing product. Pure. Null unless it is genuinely reduced — or, with
+ * `full` (Turkey's full catalogue), an unreduced product at its ORIGINAL price
+ * with `listPrice: null`. Reduced rows are mapped identically either way.
+ */
+export function mapAdidas(p: any, country: CountryCode, full = false): ProductRecord | null {
   const m = ADIDAS_MARKETS[country];
   if (!m || !p?.product_id || !p?.product_name) return null;
-  const pr = pricesOf(p);
-  if (!pr) return null;
+  const sale = pricesOf(p);
+  const shelf = sale ? null : full ? fullPriceOf(p) : null;
+  if (!sale && shelf == null) return null;
+  const pr = sale ?? { price: shelf!, was: null };
   const id = String(p.product_id);
   const img: string | null = p?._embedded?.thumbnail_image?.href ?? null;
   const color = typeof p.color === "string" && p.color.trim() ? p.color.trim() : null;
@@ -189,7 +205,7 @@ export function mapAdidas(p: any, country: CountryCode): ProductRecord | null {
     imageUrl: img,
     images: cleanGallery([img], img),
     price: toMinor(pr.price),
-    listPrice: toMinor(pr.was),
+    listPrice: pr.was != null ? toMinor(pr.was) : null,
     currency: typeof p.display_currency === "string" ? p.display_currency : COUNTRIES[country].currency,
     // The listing only shows products the shop can sell; the stock pass refines it.
     inStock: true,
@@ -233,6 +249,7 @@ async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise
 
 export async function listAdidas(country: CountryCode): Promise<ProductRecord[]> {
   if (!ADIDAS_MARKETS[country]) return [];
+  if (country === "TR") return listAdidasTrCatalogue();
   const headers = appHeaders(country);
   const byId = new Map<string, ProductRecord>();
   /** Every gender list each id appeared on; settled after every pass (`settleGender`). */
@@ -306,3 +323,116 @@ export async function listAdidas(country: CountryCode): Promise<ProductRecord[]>
 }
 
 export const listProducts = listAdidas;
+
+/**
+ * TURKEY: the FULL in-stock catalogue (2026-10-19), reduced rows exactly as the
+ * outlet walk maps them, the rest at their ORIGINAL price with `listPrice: null`.
+ *
+ * `all` is not a collection (collection_match false) but the app's search for
+ * it lists the whole Turkish shop: its total equals the sum of its own
+ * Ürün Kategorisi counts (7,585 = 4,134 giyim + 2,816 ayakkabı + 635 aksesuar
+ * on 10-19), and that equality is checked every run, so a reshaped search
+ * cannot pass for the catalogue. One plain pass over it is the completeness
+ * walk (~160 pages of 48); the gender lists (~200 pages) and the accessories
+ * list (~14) only label what it found, as the outlet sweeps do. Any failed
+ * page throws (getJson), and so does a walk more than 1% short of the total.
+ * ~390 requests, at most two in flight: about 3 minutes from Turkey, on the
+ * Hetzner box like every adidas market (Akamai refuses GitHub's runners).
+ */
+const TR_FULL = "all";
+const TR_MAX_PAGES = Number(process.env.ADIDAS_TR_MAX_PAGES ?? 400);
+
+export async function listAdidasTrCatalogue(): Promise<ProductRecord[]> {
+  const country: CountryCode = "TR";
+  const headers = appHeaders(country);
+  const url = (start: number, refinement?: string) => {
+    const base = `${API}/gw/prd/search/url/${TR_FULL}?start=${start}`;
+    return refinement ? `${base}&refinements=${encodeURIComponent(refinement)}` : base;
+  };
+  const byId = new Map<string, ProductRecord>();
+  const gendersOf = new Map<string, Set<NonNullable<ProductRecord["gender"]> | "unisex">>();
+  const accessories = new Set<string>();
+
+  /** Every page of one list; returns the ids it listed. Throws on any failed page. */
+  const walk = async (refinement: string | undefined, first?: any): Promise<string[]> => {
+    const ids: string[] = [];
+    let total = Infinity;
+    for (let page = 0; page * PAGE_SIZE < total; page++) {
+      if (page >= TR_MAX_PAGES) throw new Error(`adidas/TR: ${refinement ?? TR_FULL} is over ${TR_MAX_PAGES} pages — partial catalogue refused`);
+      const data = page === 0 && first ? first : await getJson<any>(url(page * PAGE_SIZE, refinement), { headers, country });
+      total = Number(data?.total ?? 0);
+      const products: any[] = data?._embedded?.products ?? [];
+      for (const p of products) {
+        if (p?.product_id) ids.push(String(p.product_id));
+        if (refinement) continue; // the labelling passes add no products
+        const r = mapAdidas(p, country, true);
+        if (r) byId.set(r.externalId, r);
+      }
+      if (products.length === 0 || !data?._links?.next) break;
+    }
+    return ids;
+  };
+
+  const first = await getJson<any>(url(0), { headers, country });
+  const total = Number(first?.total ?? 0);
+  const refinements: any[] = Array.isArray(first?.refinements) ? first.refinements : [];
+  const division = refinements.find((r) => /^division/.test(String(r?.refinement_id ?? "")));
+  const divisionSum = (division?.values ?? []).reduce((n: number, v: any) => n + (Number(v?.count) || 0), 0);
+  if (!(total > 0) || divisionSum !== total) {
+    throw new Error(`adidas/TR: "${TR_FULL}" lists ${total}, its categories ${divisionSum} — no longer the whole catalogue`);
+  }
+  const seen = new Set(await walk(undefined, first));
+  if (seen.size < total * 0.99) throw new Error(`adidas/TR: walk saw ${seen.size} of ${total} products — partial catalogue refused`);
+
+  // Labels from adidas's own filters (see Sweep / settleGender).
+  const gender = refinements.find((r) => /age_gender|gender/.test(String(r?.refinement_id ?? "")));
+  const valueOf = (v: any): string | null => {
+    const m = String(v?.action?.path ?? "").match(/refinements=([^&]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  };
+  const labels: { ref: string; apply: (id: string) => void }[] = [];
+  for (const v of gender?.values ?? []) {
+    const key = String(v?.non_localized_value ?? "");
+    const ref = valueOf(v);
+    if (!ref || !(key in GENDER_OF)) continue;
+    labels.push({
+      ref,
+      apply: (id) => {
+        const set = gendersOf.get(id) ?? new Set();
+        set.add(GENDER_OF[key] ?? "unisex");
+        gendersOf.set(id, set);
+      },
+    });
+  }
+  const acc = (division?.values ?? []).find((v: any) => v?.non_localized_value === "accessories");
+  const accRef = acc ? valueOf(acc) : null;
+  if (accRef) labels.push({ ref: accRef, apply: (id) => accessories.add(id) });
+  // Two lists at a time (each one serial): ~3 minutes in all instead of ~5.
+  await pool(labels, 2, async (l) => {
+    for (const id of await walk(l.ref)) l.apply(id);
+  });
+  for (const [id, r] of byId) {
+    const g = gendersOf.get(id);
+    if (g) r.gender = settleGender(g);
+    if (accessories.has(id)) r.category = "Aksesuar";
+  }
+
+  // Stock pass: a random subset each run, deals first; the upsert keeps earlier runs' sizes.
+  const shuffle = <T>(a: T[]) => {
+    for (let j = a.length - 1; j > 0; j--) {
+      const k = Math.floor(Math.random() * (j + 1));
+      [a[j], a[k]] = [a[k], a[j]];
+    }
+    return a;
+  };
+  const all = [...byId.values()];
+  const queue = [...shuffle(all.filter((r) => r.listPrice != null)), ...shuffle(all.filter((r) => r.listPrice == null))];
+  await pool(queue.slice(0, STOCK_LIMIT), 4, async (r) => {
+    const stock = await getJson<any>(`${API}/gw/stc/inline/products/${r.externalId}/stock`, { headers, country, retries: 1 }).catch(() => null);
+    const sizes = sizesOf(stock);
+    if (!sizes.length) return;
+    r.variants = { colors: r.colorName ? [r.colorName] : [], sizes };
+    r.inStock = sizes.some((s) => s.availability !== "out_of_stock");
+  });
+  return all;
+}
