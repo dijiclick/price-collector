@@ -59,10 +59,17 @@ export const HOME_SECTION_RE =
   "(ev dekor|dekorasyon|mobilya|mutfak|sofra|atistirmalik|gida|takviye|kitap|dergi|havlu set|nevresim|yatak ortusu|battaniye|throw|mum &|oda kokusu|oda & araba|aydinlatma|banyo aksesuar|catal|bardak|kirtasiye|oyuncak|ev tekstil|^hali$)";
 export const HOME_NAME_RE =
   "(\\mtabak\\M|\\mkase\\M|carsaf|nevresim|yastik kilifi|vazo|mumluk|\\mtava\\M|tencere|\\mkupa\\M|bardak|paspas|protein bar|sakiz|biblo|sehpa|sandalye|abajur|\\mtablo\\M|cerceve|bed linen|duvet cover|pillowcase|cushion cover|place mat|serving board|candle holder|storage basket|table lamp|sengesett|putetrekk|lysestake|oppbevaring|bordlampe|bettwäsche|kissenbezug|vorhang|kerzenhalter|tischlampe|\\mball\\M|bälle)";
+// Furniture, bedding and kitchenware nouns no garment, shoe, bag or cosmetic
+// is ever called — so they exclude a row whatever its type (2026-10-18: a
+// Beymen "Mesh … Bahçe Sehpası" was typed underwear by "mesh", and "Pankek
+// Tavası" carried the Turkish ending the old \\mtava\\M missed).
+export const HOME_STRONG_RE =
+  "(\\msehpa|\\mtava(si|lar|lari)?\\M|\\mtencere|nevresim|yastik kilifi|\\mvazo|mumluk|\\mabajur|\\msandalye|\\mtabure|koltuk takim|carsaf|\\mpaspas|\\mbiblo|\\mtepsi|\\mtabak(lar|lari)?\\M|\\mfincan|catal bicak|\\mbed linen|duvet cover|pillowcase|cushion cover|\\mplace ?mats?\\M|serving board|candle holder|table lamp|sengesett|putetrekk|bettwäsche|kissenbezug)";
 export const HOME_URL_RE = "^https?://[^/]+/([a-z]{2}(-[a-z]{2})?/)?home/";
 export const notHomeGoods = (a: string) => `NOT (
        (${foldSql(`${a}.category`)} ~ '${HOME_SECTION_RE}' AND ${a}.product_type IS DISTINCT FROM 'ayakkabi')
     OR (${a}.product_type IS NULL AND ${foldSql(`${a}.name`)} ~ '${HOME_NAME_RE}')
+    OR ${foldSql(`${a}.name`)} ~ '${HOME_STRONG_RE}'
     OR coalesce(${a}.url, '') ~* '${HOME_URL_RE}')`;
 
 /** Rows a feed row needs; the order is the INSERT's column list. */
