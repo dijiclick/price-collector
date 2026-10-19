@@ -261,3 +261,174 @@ export function limitsFromEnv(prefix: string, d: AkinonLimits): AkinonLimits {
     detailLimit: n("DETAIL_LIMIT", d.detailLimit),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Full-catalogue walk (2026-10-19): every listed product, reduced AND full
+// price, for brands whose search should reach the whole shop. The feed still
+// shows only the reduced rows (listPrice set); full-price rows carry
+// `listPrice: null`. Lacoste, Damas, MAC and Koton do not use this.
+// ---------------------------------------------------------------------------
+
+/**
+ * The listing search stops at row 10,000 (Elasticsearch's result window, see
+ * koton.ts): page 41 of 250 comes back empty on every Akinon shop measured
+ * (FashFed 2026-10-19). A listing past it is walked twice, by price ascending
+ * and descending (every Akinon shop offers the `price` / `-price` sorters),
+ * which reaches up to twice the window.
+ */
+export const RESULT_WINDOW = 10_000;
+/** Akinon caps page_size at 250 (koton.ts); the biggest page is the cheapest walk. */
+export const FULL_PAGE_SIZE = 250;
+
+export interface AkinonWalk {
+  /** Every row of every page, in page order (a row can repeat if the listing shifts mid-walk). */
+  rows: any[];
+  /** Page 1 of the unsorted listing (facets, pagination). */
+  first: any;
+  requests: number;
+}
+
+/** Tunables of a full walk. */
+export interface AkinonCatalogueLimits extends AkinonLimits {
+  /** Wall-clock budget for the whole adapter; the PDP (sizes) pass stops when it runs out. */
+  budgetMs?: number;
+  /** Requests in flight at once (listing pages and PDPs). */
+  concurrency?: number;
+}
+
+const withQuery = (path: string, q: string) => (q ? `${path}${path.includes("?") ? "&" : "?"}${q}` : path);
+
+/**
+ * True when a price-ascending walk whose dearest row is `ascMax` and a
+ * price-descending walk whose cheapest row is `descMin` together cover the
+ * listing: the ascending walk holds every row cheaper than `ascMax`, the
+ * descending one every row dearer than `descMin`, so `descMin < ascMax` leaves
+ * no row out, however ties at either boundary were ordered.
+ */
+export function sortedHalvesCover(ascMax: number, descMin: number): boolean {
+  return Number.isFinite(ascMax) && Number.isFinite(descMin) && descMin < ascMax;
+}
+
+/**
+ * Every row of one Akinon listing (`path` may carry filters), 250 per page.
+ *
+ * Fails loudly rather than returning part of the listing: a page that still
+ * fails after retries, a listing over `maxPages`, or one past twice the result
+ * window throws, because the collector marks every product it did not see as
+ * out of stock — a silent half-walk would sell out half the shop.
+ */
+export async function walkAkinonListing(
+  site: string,
+  path: string,
+  opts: { maxPages: number; concurrency?: number },
+): Promise<AkinonWalk> {
+  const concurrency = opts.concurrency ?? CONCURRENCY;
+  let requests = 0;
+  const get = async (p: string, n: number) => {
+    requests++;
+    return getJson<any>(`${site}${withQuery(p, `format=json&page_size=${FULL_PAGE_SIZE}&page=${n}`)}`);
+  };
+  const pagesOf = (body: any) => Math.max(1, Number(body?.pagination?.num_pages ?? 1) || 1);
+
+  /** Pages 2..n of `p` after `firstBody`, rows in page order. */
+  const rest = async (p: string, firstBody: any, n: number): Promise<any[]> => {
+    const bodies: any[][] = [firstBody?.products ?? []];
+    await pool(Array.from({ length: Math.max(0, n - 1) }, (_, i) => i + 2), concurrency, async (k) => {
+      bodies[k - 1] = (await get(p, k))?.products ?? [];
+    });
+    return bodies.flat();
+  };
+
+  const first = await get(path, 1);
+  const total = Number(first?.pagination?.total_count ?? 0);
+  const windowPages = Math.ceil(RESULT_WINDOW / FULL_PAGE_SIZE);
+
+  if (total <= RESULT_WINDOW) {
+    const n = pagesOf(first);
+    if (n > opts.maxPages) throw new Error(`akinon: ${site}${path} has ${n} pages, over the cap of ${opts.maxPages}`);
+    return { rows: await rest(path, first, n), first, requests };
+  }
+
+  // Past the window: price ascending up to the window, then descending for the
+  // remainder plus two pages of overlap, and prove the halves meet.
+  const descPages = Math.ceil((total - RESULT_WINDOW) / FULL_PAGE_SIZE) + 2;
+  if (total > 2 * RESULT_WINDOW - 2 * FULL_PAGE_SIZE || windowPages + descPages > opts.maxPages) {
+    throw new Error(`akinon: ${site}${path} lists ${total} rows, more than a sorted walk can reach (cap ${opts.maxPages} pages)`);
+  }
+  const ascPath = withQuery(path, "sorter=price");
+  const descPath = withQuery(path, "sorter=-price");
+  const [ascFirst, descFirst] = [await get(ascPath, 1), await get(descPath, 1)];
+  const asc = await rest(ascPath, ascFirst, Math.min(windowPages, pagesOf(ascFirst)));
+  const desc = await rest(descPath, descFirst, Math.min(descPages, pagesOf(descFirst)));
+  const prices = (rows: any[]) => rows.map((r) => parseFloat(r?.price)).filter(Number.isFinite);
+  if (!sortedHalvesCover(Math.max(...prices(asc)), Math.min(...prices(desc)))) {
+    throw new Error(`akinon: ${site}${path} price-sorted halves do not meet; the walk would miss rows`);
+  }
+  return { rows: [...asc, ...desc], first, requests };
+}
+
+/**
+ * Fill sizes for records whose listing row did not embed them, one PDP each:
+ * the reduced ones first, then full price, each shuffled so coverage rotates
+ * across runs (the upsert keeps earlier variants). Bounded by `limit` and by
+ * the wall clock. Returns the requests made.
+ */
+export async function fillAkinonSizes(
+  records: ProductRecord[],
+  site: string,
+  limit: number,
+  fetchVariants: (url: string) => Promise<ProductVariants | null>,
+  opts: { deadline: number; concurrency?: number },
+): Promise<number> {
+  const shuffle = <T>(a: T[]) => {
+    for (let j = a.length - 1; j > 0; j--) {
+      const k = Math.floor(Math.random() * (j + 1));
+      [a[j], a[k]] = [a[k], a[j]];
+    }
+    return a;
+  };
+  const missing = records.filter((r) => !r.variants && r.url.startsWith(site) && r.url !== site);
+  const queue = [
+    ...shuffle(missing.filter((r) => r.listPrice != null)),
+    ...shuffle(missing.filter((r) => r.listPrice == null)),
+  ].slice(0, limit);
+  let requests = 0;
+  await pool(queue, opts.concurrency ?? CONCURRENCY, async (r) => {
+    if (Date.now() > opts.deadline) return;
+    requests++;
+    const v = await fetchVariants(r.url);
+    if (!v) return;
+    r.variants = v;
+    r.inStock = v.sizes.some((s) => s.availability !== "out_of_stock");
+  });
+  return requests;
+}
+
+/** Map walked rows into records, one per colour (the last row of an id wins, as in listAkinon). */
+export function akinonRecords(rows: any[], map: (p: any) => ProductRecord | null): ProductRecord[] {
+  const byId = new Map<string, ProductRecord>();
+  for (const p of rows) {
+    const r = map(p);
+    if (r) byId.set(r.externalId, r);
+  }
+  return [...byId.values()];
+}
+
+/**
+ * The whole catalogue of `shop.listPath` (normally `/list/`): reduced rows
+ * exactly as listAkinon maps them, plus every full-price row with
+ * `listPrice: null`. Throws instead of returning a partial catalogue.
+ */
+export async function listAkinonCatalogue(shop: AkinonShop, limits: AkinonCatalogueLimits): Promise<ProductRecord[]> {
+  const started = Date.now();
+  const walk = await walkAkinonListing(shop.site, shop.listPath, { maxPages: limits.maxPages, concurrency: limits.concurrency });
+  const records = akinonRecords(walk.rows, (p) => mapAkinonProduct(shop, p));
+  if (records.length > limits.maxProducts) {
+    throw new Error(`akinon: ${shop.brand} catalogue has ${records.length} products, over the cap of ${limits.maxProducts}`);
+  }
+  await fillAkinonSizes(records, shop.site, limits.detailLimit, (url) => fetchPdpVariants(shop, url), {
+    deadline: started + (limits.budgetMs ?? 200_000),
+    concurrency: limits.concurrency,
+  });
+  return records;
+}

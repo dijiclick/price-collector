@@ -1,11 +1,12 @@
 import type { ProductRecord } from "../types";
-import { listAkinon, limitsFromEnv, type AkinonShop } from "./_akinon";
+import { listAkinonCatalogue, limitsFromEnv, type AkinonShop } from "./_akinon";
 
 /**
- * Pierre Cardin Turkey — Akinon (see _akinon.ts). No sale category; about
- * half of the ~7,400-row `/list/` catalogue is reduced, so the walk stops once
- * 2,000 discounted rows are in hand. Listing rows embed per-size stock in
- * `extra_data.variants`, so no PDP calls are needed.
+ * Pierre Cardin Turkey — Akinon (see _akinon.ts). The whole `/list/`
+ * catalogue is returned, reduced and full price (7,540 rows = 31 pages of 250,
+ * 2026-10-19). Listing rows embed per-size stock in `extra_data.variants`, so
+ * no PDP calls are needed. Past 10,000 rows the walk switches to the two
+ * price-sorted halves (see walkAkinonListing).
  */
 export const SHOP: AkinonShop = {
   brand: "pierrecardin",
@@ -21,5 +22,5 @@ export const SHOP: AkinonShop = {
 export const brand = SHOP.brand;
 
 export async function listProducts(): Promise<ProductRecord[]> {
-  return listAkinon(SHOP, limitsFromEnv("PIERRECARDIN", { maxProducts: 2000, maxPages: 80, detailLimit: 300 }));
+  return listAkinonCatalogue(SHOP, limitsFromEnv("PIERRECARDIN", { maxProducts: 20_000, maxPages: 82, detailLimit: 300 }));
 }

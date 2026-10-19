@@ -1,10 +1,10 @@
 import type { ProductRecord } from "../types";
-import { listAkinon, limitsFromEnv, type AkinonShop } from "./_akinon";
+import { listAkinonCatalogue, limitsFromEnv, type AkinonShop } from "./_akinon";
 
 /**
  * Flormar Turkey — Akinon (see _akinon.ts). No usable sale category
- * (`/kampanyalar/` is a CMS page), and the whole `/list/` catalogue is only
- * ~1,280 rows (13 pages), so it is walked and the reduced rows kept. A row is
+ * (`/kampanyalar/` is a CMS page); the whole `/list/` catalogue is returned,
+ * reduced and full price (1,221 rows = 5 pages of 250, 2026-10-19). A row is
  * one SHADE (`ent_product_color_code`); there is no size group, so stock is the
  * row's own `in_stock` and no PDP calls are made.
  */
@@ -22,5 +22,5 @@ export const SHOP: AkinonShop = {
 export const brand = SHOP.brand;
 
 export async function listProducts(): Promise<ProductRecord[]> {
-  return listAkinon(SHOP, limitsFromEnv("FLORMAR", { maxProducts: 1500, maxPages: 20, detailLimit: 0 }));
+  return listAkinonCatalogue(SHOP, limitsFromEnv("FLORMAR", { maxProducts: 5_000, maxPages: 20, detailLimit: 0 }));
 }

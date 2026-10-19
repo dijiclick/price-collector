@@ -16,7 +16,18 @@
  */
 import type { ProductRecord, ProductVariants } from "../types";
 import { getJson } from "../http";
-import { akinonSizes, mapAkinonProduct, pool, type AkinonLimits, type AkinonShop } from "./_akinon";
+import {
+  RESULT_WINDOW,
+  akinonRecords,
+  akinonSizes,
+  fillAkinonSizes,
+  mapAkinonProduct,
+  pool,
+  walkAkinonListing,
+  type AkinonCatalogueLimits,
+  type AkinonLimits,
+  type AkinonShop,
+} from "./_akinon";
 
 export interface AkinonStore {
   shop: AkinonShop;
@@ -177,4 +188,74 @@ async function fetchVariants(store: AkinonStore, url: string): Promise<ProductVa
   if (!sizes.length) return null;
   const colours: any[] = groups.find((g) => g?.attribute_key === store.shop.colorKey)?.options ?? [];
   return { colors: [...new Set(colours.map((o) => String(o?.label ?? "").trim()).filter(Boolean))], sizes };
+}
+
+/**
+ * The store's non-excluded brands packed into include filters
+ * (`attributes_<attr>=v1&…`), each listing at most `maxRows` rows by the facet's
+ * counts and at most MAX_QUERY characters, so every filtered listing stays
+ * inside the result window and a sane URL. `[""]` when nothing listed is
+ * excluded (walk unfiltered); null when the listing has no brand facet.
+ */
+export function includeChunks(
+  store: AkinonStore,
+  facets: any[] | null | undefined,
+  excluded: Set<string>,
+  maxRows = RESULT_WINDOW - 1_000,
+): string[] | null {
+  const f = (facets ?? []).find((x) => x?.key === store.brandAttr);
+  const choices: any[] = f?.data?.choices ?? [];
+  if (!choices.length) return null;
+  const keep = choices.filter((c) => c?.label && c?.value != null && !excluded.has(foldBrand(String(c.label))));
+  if (keep.length === choices.length) return [""];
+  const key = f.search_key || `attributes_${store.brandAttr}`;
+  // Biggest first, so the big brands each start a chunk and the small ones fill gaps.
+  keep.sort((a, b) => Number(b.quantity ?? 0) - Number(a.quantity ?? 0));
+  const chunks: string[][] = [];
+  const rows: number[] = [];
+  for (const c of keep) {
+    const part = `${key}=${encodeURIComponent(String(c.value))}`;
+    const q = Number(c.quantity ?? 0);
+    const i = chunks.findIndex((ch, j) => rows[j] + q <= maxRows && ch.join("&").length + part.length + 1 <= MAX_QUERY);
+    if (i >= 0) {
+      chunks[i].push(part);
+      rows[i] += q;
+    } else {
+      chunks.push([part]);
+      rows.push(q);
+    }
+  }
+  return chunks.map((ch) => ch.join("&"));
+}
+
+/**
+ * The store's whole catalogue (`shop.listPath`, normally `/list/`) minus the
+ * excluded brands: reduced rows exactly as listAkinonStore maps them, plus
+ * every full-price row with `listPrice: null`. The walk is narrowed
+ * server-side to the kept brands, in chunks that each fit the result window;
+ * the client-side exclusion still applies. Throws instead of returning a
+ * partial catalogue (see walkAkinonListing).
+ */
+export async function listAkinonStoreCatalogue(store: AkinonStore, limits: AkinonCatalogueLimits): Promise<ProductRecord[]> {
+  const started = Date.now();
+  const { shop } = store;
+  const excluded = new Set(store.exclude.map(foldBrand));
+  const head = await getJson<any>(`${shop.site}${shop.listPath}${shop.listPath.includes("?") ? "&" : "?"}format=json&page_size=1`);
+  const chunks = includeChunks(store, head?.facets, excluded) ?? [""];
+
+  const rows: any[] = [];
+  for (const q of chunks) {
+    const path = q ? `${shop.listPath}${shop.listPath.includes("?") ? "&" : "?"}${q}` : shop.listPath;
+    const walk = await walkAkinonListing(shop.site, path, { maxPages: limits.maxPages, concurrency: limits.concurrency });
+    rows.push(...walk.rows);
+  }
+  const records = akinonRecords(rows, (p) => mapStoreProduct(store, p, excluded));
+  if (records.length > limits.maxProducts) {
+    throw new Error(`akinon store: ${shop.brand} catalogue has ${records.length} products, over the cap of ${limits.maxProducts}`);
+  }
+  await fillAkinonSizes(records, shop.site, limits.detailLimit, (url) => fetchVariants(store, url), {
+    deadline: started + (limits.budgetMs ?? 200_000),
+    concurrency: limits.concurrency,
+  });
+  return records;
 }

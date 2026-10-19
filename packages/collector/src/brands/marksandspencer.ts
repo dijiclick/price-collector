@@ -1,17 +1,19 @@
 import type { ProductRecord } from "../types";
-import { listAkinon, limitsFromEnv, type AkinonShop } from "./_akinon";
+import { listAkinonCatalogue, limitsFromEnv, type AkinonShop } from "./_akinon";
 
 /**
- * Marks & Spencer Turkey — Akinon (see _akinon.ts). `/tum-indirim/` is the
- * sale category (~4,000 rows, every one reduced, 2026-10-10). Listing rows
- * embed per-size stock in `extra_data.variants`; `filter_size1` is the
- * Turkish size label (`3-4 Yaş`) where the option label is the ERP one (`3-4 Y`).
- * Pages are heavy (~4 MB per 100), hence the 2,000 cap at 20 pages.
+ * Marks & Spencer Turkey — Akinon (see _akinon.ts). The whole `/list/`
+ * catalogue is returned, reduced and full price (8,499 rows = 34 pages of 250,
+ * ~9 MB each, ~40 s, 2026-10-19; the `/tum-indirim/` sale category's 4,303
+ * rows are in it at the same prices). Listing rows embed per-size stock in
+ * `extra_data.variants`; `filter_size1` is the Turkish size label (`3-4 Yaş`)
+ * where the option label is the ERP one (`3-4 Y`). Past 10,000 rows the walk
+ * switches to the two price-sorted halves (see walkAkinonListing).
  */
 export const SHOP: AkinonShop = {
   brand: "marksandspencer",
   site: "https://www.marksandspencer.com.tr",
-  listPath: "/tum-indirim/",
+  listPath: "/list/",
   sizeKey: "integration_size",
   sizeLabelAttr: "filter_size1",
   colorKey: "integration_color",
@@ -23,5 +25,5 @@ export const SHOP: AkinonShop = {
 export const brand = SHOP.brand;
 
 export async function listProducts(): Promise<ProductRecord[]> {
-  return listAkinon(SHOP, limitsFromEnv("MARKSANDSPENCER", { maxProducts: 2000, maxPages: 40, detailLimit: 300 }));
+  return listAkinonCatalogue(SHOP, limitsFromEnv("MARKSANDSPENCER", { maxProducts: 20_000, maxPages: 82, detailLimit: 300 }));
 }

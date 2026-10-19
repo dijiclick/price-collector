@@ -1,14 +1,15 @@
 import type { ProductRecord } from "../types";
 import { limitsFromEnv } from "./_akinon";
-import { DIRECT_BRANDS, NON_FASHION, listAkinonStore, type AkinonStore } from "./_akinonstore";
+import { DIRECT_BRANDS, NON_FASHION, listAkinonStoreCatalogue, type AkinonStore } from "./_akinonstore";
 
 /**
- * Sportive — multi-brand sports retailer on Akinon. `/outlet/` is the sale
- * category (~3,500 rows, all reduced, 2026-10-11), mostly Nike and Puma, which
- * we collect directly; the walk is narrowed server-side to the other brands
- * (adidas, Hoka, Skechers, Columbia, The North Face, Sportive's own label…),
- * ~1,600 rows in 16 pages. Listing rows carry colours only, so sizes come from
- * a bounded, rotating PDP pass. Apparel PDPs group sizes as `integration_beden`,
+ * Sportive — multi-brand sports retailer on Akinon. The whole `/list/`
+ * catalogue is returned, reduced and full price, minus the brands we collect
+ * directly (mostly Nike and Puma): 6,766 rows, narrowed server-side to the
+ * other brands (adidas, Hoka, Skechers, Columbia, The North Face, Sportive's
+ * own label…), ~2,900 rows in 12 pages of 250 (2026-10-19). Listing rows carry
+ * colours only, so sizes come from a bounded, rotating PDP pass, reduced rows
+ * first. Apparel PDPs group sizes as `integration_beden`,
  * adidas shoes as `filterable_beden`; shoe option labels under the former are
  * US codes (`8.5`), so the shopper size is read from `filterable_beden` (`42`).
  */
@@ -16,7 +17,7 @@ export const STORE: AkinonStore = {
   shop: {
     brand: "sportive",
     site: "https://www.sportive.com.tr",
-    listPath: "/outlet/",
+    listPath: "/list/",
     sizeKey: "integration_beden",
     sizeLabelAttr: "filterable_beden",
     colorKey: "integration_renk",
@@ -33,5 +34,5 @@ export const STORE: AkinonStore = {
 export const brand = STORE.shop.brand;
 
 export async function listProducts(): Promise<ProductRecord[]> {
-  return listAkinonStore(STORE, limitsFromEnv("SPORTIVE", { maxProducts: 1500, maxPages: 25, detailLimit: 30 }));
+  return listAkinonStoreCatalogue(STORE, limitsFromEnv("SPORTIVE", { maxProducts: 10_000, maxPages: 40, detailLimit: 30 }));
 }
