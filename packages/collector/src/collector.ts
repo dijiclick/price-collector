@@ -3,7 +3,7 @@ import { DEFAULT_COUNTRY, minPriceFor } from "../../../lib/countries";
 import { refreshFeedCache } from "../../../lib/feed-cache";
 import { hostGroup } from "./hosts";
 import type { BrandAdapter, SizeVariant } from "./types";
-import { diff, diffSizes } from "./differ";
+import { diff, diffSizes, isBackfill } from "./differ";
 import {
   connect,
   migrate,
@@ -260,6 +260,11 @@ async function collectBrand(
         res.count++;
       }
       await insertSnapshots(db, snapRows);
+      const newCount = eventRows.filter((r) => r.e.type === "new_product").length;
+      if (isBackfill(newCount, products.length)) {
+        console.log(`  ${adapter.brand}: backfill, ${newCount} new_product events not recorded`);
+        for (let i = eventRows.length - 1; i >= 0; i--) if (eventRows[i].e.type === "new_product") eventRows.splice(i, 1);
+      }
       await insertEvents(db, eventRows);
       res.events = eventRows.length;
 

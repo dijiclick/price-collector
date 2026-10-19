@@ -18,6 +18,17 @@ export function diffSizes(prev: SizeVariant[] | null, curr: SizeVariant[]): stri
 }
 
 /**
+ * A run where most of what we return is "new" is a backfill — a brand switched
+ * to its full catalogue, or was just added — not new stock. Those rows would
+ * otherwise reach "N new for your search" pushes and the new-in counts as
+ * if the shop had just released them. A real season drop is a few percent of
+ * a catalogue per run (Zara ~4%), far under the bar.
+ */
+export function isBackfill(newCount: number, productCount: number): boolean {
+  return newCount >= 300 && newCount > productCount * 0.3;
+}
+
+/**
  * Detect price/stock events between the previous snapshot and the current one.
  * `prev` is null the first time we ever see a product.
  * Pure function — no I/O.
