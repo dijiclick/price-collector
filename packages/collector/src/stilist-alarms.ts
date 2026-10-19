@@ -8,7 +8,9 @@
  *
  *   "Asistan alarmı: 3 yeni eşleşme" / "Siyah deri bot, 2.000 TL altı — Zara Deri bot ₺1.890"
  *
- * Tapping it opens Stilist on that alarm (href /asistan?alarm=<id>). At most
+ * Tapping it opens the product the message names (href /product/<id>) — the
+ * owner (2026-10-19): a push that names one item and its price must land on
+ * that item, not on a search page. At most
  * one push per alarm per 6 hours, never in the device's quiet hours, and the
  * check window only moves forward when the alarm was looked at, so a quiet
  * night's matches go out in the morning instead of being lost.
@@ -187,7 +189,7 @@ export async function pushStilistAlarms(db: Db, opts: { now?: Date; send?: Alarm
         continue;
       }
       const msg = a.implicit ? interestMessage(a.lang, a.summary, rows[0].n, rows[0]) : alarmMessage(a.lang, a.summary, rows[0].n, rows[0]);
-      const outcome = await send(a.token, { title: msg.title, body: msg.body, kind: "news", href: `/asistan?alarm=${a.id}`, sound: "coin", coinChannel: hasCoinChannel(a.prefs) });
+      const outcome = await send(a.token, { title: msg.title, body: msg.body, kind: "news", href: `/product/${rows[0].id}`, sound: "coin", coinChannel: hasCoinChannel(a.prefs) });
       if (outcome === "dead") {
         await db.query(`DELETE FROM stilist_alarms WHERE token = $1`, [a.token]);
       } else if (outcome === "ok") {
