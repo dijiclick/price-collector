@@ -26,6 +26,14 @@
  * promo pages found no strike price at all, so those return 0 until the next
  * sale starts and then fill by themselves. Falconeri is the exception — see
  * its market table.
+ *
+ * FULL CATALOGUE (Falconeri Turkey only, 2026-10-19). That market returns every
+ * hit of its walk, discounted or not (full price = `listPrice: null`), because
+ * the run's sweep marks every unseen product out of stock. FAL_Women + FAL_Men
+ * are the whole range (928 colours; the site root adds one soap), 11 pages,
+ * ~25 s. Its page budget is raised so a full sale tree in January cannot crowd
+ * the range out, and any failed page fails the run (a gap would be swept as
+ * sold out). Every other brand and market keeps the deals-only walk.
  */
 import crypto from "node:crypto";
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
@@ -48,6 +56,8 @@ export interface GroupMarket {
   path: string;
   /** Sale category ids (searching a parent includes its children). */
   saleCgids: string[];
+  /** Return every hit of the walk (full price too), not only marked-down ones. SCAPI only. */
+  fullCatalogue?: boolean;
 }
 
 export interface GroupBrand {
@@ -79,7 +89,8 @@ export const GROUP: Record<string, GroupBrand> = {
       // (Ultrasoft cashmere 189,90 → 179,90 TL / 268 → 249 CHF on 2026-10-11,
       // ~26 colours per market), so after the sale tree the whole Women + Men
       // catalogue is walked too (~1.2k colours, ~13 pages).
-      TR: { siteId: "falconeri-tr", locale: "tr-TR", path: "tr", saleCgids: ["FAL_Sale_TR", "FAL_Women_Sale_TR", "FAL_Women", "FAL_Men"] },
+      // Turkey returns the whole range (full price too) — see FULL CATALOGUE above.
+      TR: { siteId: "falconeri-tr", locale: "tr-TR", path: "tr", saleCgids: ["FAL_Sale_TR", "FAL_Women_Sale_TR", "FAL_Women", "FAL_Men"], fullCatalogue: true },
       CH: { siteId: "falconeri-ch", locale: "de-CH", path: "ch", saleCgids: ["FAL_Sale_CH", "FAL_Women_Sale_CH", "FAL_Women", "FAL_Men"] },
     },
   },
@@ -98,6 +109,9 @@ const MAX_PRODUCTS = Number(process.env.CALZEDONIA_MAX_PRODUCTS ?? 1500);
 /** SCAPI pages of 100 (~25 KB a hit; 200 times out at the gateway). ~10 s each. */
 const SCAPI_PAGE = 100;
 const SCAPI_MAX_PAGES = Number(process.env.CALZEDONIA_SCAPI_MAX_PAGES ?? 18);
+/** Full-catalogue markets: page budget and row cap far above Falconeri TR's 928 colours (2026-10-19). */
+const FULL_SCAPI_MAX_PAGES = Number(process.env.CALZEDONIA_FULL_SCAPI_MAX_PAGES ?? 60);
+const FULL_MAX_PRODUCTS = Number(process.env.CALZEDONIA_FULL_MAX_PRODUCTS ?? 6000);
 const SFRA_PAGE = 200;
 const SFRA_MAX_PAGES = Number(process.env.CALZEDONIA_SFRA_MAX_PAGES ?? 10);
 const SFRA_DETAIL_LIMIT = Number(process.env.CALZEDONIA_DETAIL_LIMIT ?? 35);
@@ -206,9 +220,13 @@ async function listScapi(b: GroupBrand, country: CountryCode, m: GroupMarket): P
   const c = b.scapi!;
   const token = await guestToken(b, m);
   const out = new Map<string, ProductRecord>();
+  const full = m.fullCatalogue === true;
+  const maxPages = full ? FULL_SCAPI_MAX_PAGES : SCAPI_MAX_PAGES;
   let pages = 0;
   for (const cgid of m.saleCgids) {
-    for (let offset = 0; pages < SCAPI_MAX_PAGES; offset += SCAPI_PAGE) {
+    for (let offset = 0; pages < maxPages || full; offset += SCAPI_PAGE) {
+      // A full-catalogue walk cut by the page budget would be swept as sold out: refuse instead.
+      if (pages >= maxPages) throw new Error(`${b.brand}/${country}: over ${maxPages} search pages — raise CALZEDONIA_FULL_SCAPI_MAX_PAGES`);
       if (pages > 0) await sleep(PAUSE_MS);
       pages++;
       const q = new URLSearchParams({
@@ -224,12 +242,15 @@ async function listScapi(b: GroupBrand, country: CountryCode, m: GroupMarket): P
       });
       const j = await getJson<any>(
         `https://${c.shortCode}.api.commercecloud.salesforce.com/search/shopper-search/v1/organizations/${c.organizationId}/product-search?${q}`,
-        { headers: { Authorization: `Bearer ${token}` }, retries: 1, country },
-      ).catch(() => null);
+        { headers: { Authorization: `Bearer ${token}` }, retries: full ? 2 : 1, country },
+      ).catch((e) => {
+        if (full) throw new Error(`${b.brand}/${country}: ${cgid} offset ${offset} failed (${e?.message ?? e})`);
+        return null;
+      });
       const hits: any[] = j?.hits ?? [];
       for (const h of hits) {
         const r = mapScapiHit(b, country, m, h);
-        if (r && r.listPrice != null && !out.has(r.externalId)) out.set(r.externalId, r);
+        if (r && (full || r.listPrice != null) && !out.has(r.externalId)) out.set(r.externalId, r);
       }
       if (!hits.length || offset + SCAPI_PAGE >= Number(j?.total ?? 0)) break;
     }
@@ -372,5 +393,6 @@ export async function listCalzedoniaGroup(slug: string, country: CountryCode): P
   const m = b.markets[country];
   if (!m) return [];
   const rows = b.engine === "scapi" ? await listScapi(b, country, m) : await listSfra(b, country, m);
-  return [...rows.filter((r) => r.inStock), ...rows.filter((r) => !r.inStock)].slice(0, MAX_PRODUCTS);
+  if (m.fullCatalogue && rows.length > FULL_MAX_PRODUCTS) throw new Error(`${slug}/${country}: ${rows.length} products, over the cap of ${FULL_MAX_PRODUCTS}`);
+  return [...rows.filter((r) => r.inStock), ...rows.filter((r) => !r.inStock)].slice(0, m.fullCatalogue ? FULL_MAX_PRODUCTS : MAX_PRODUCTS);
 }

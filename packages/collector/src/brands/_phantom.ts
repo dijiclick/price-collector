@@ -18,6 +18,15 @@
  * IDENTITY. `variantId` is whichever size the row happened to select, so it is
  * not stable. `erpCode` (`25KKPL5017V_059` = model + colour) is; `productId`
  * is shared across colours and is the groupKey. The PDP is `/<slug>`.
+ *
+ * FULL CATALOGUE (Yargıcı, Hotiç — 2026-10-19). Those shops return every row,
+ * discounted or not (full price = `listPrice: null`), because the run's sweep
+ * marks every unseen product out of stock. The route honours pageSize 250.
+ * Yargıcı's `tum-urunler` tree is the whole range (4,219 rows, a superset of
+ * `outlet` 2,226 + `kadin` 915 + `erkek` 105; 17 pages, ~30 s). Hotiç's three
+ * departments are its whole range (1,957 rows, all struck on 10-19 — the old
+ * 1,500 cap was cutting ~450 of them; 10 pages, ~10 s). Columbia keeps the
+ * deals-only walk at its old limits.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -29,12 +38,14 @@ export interface PhantomShop {
   site: string;
   /** Listing slugs to walk, in priority order (an outlet, or the whole range when everything is marked down). */
   slugs: string[];
+  /** Return every row of the slugs (not only marked-down ones), 250 a page, without the deals-only caps. */
+  fullCatalogue?: boolean;
 }
 
 export const PHANTOM_SHOPS: Record<string, PhantomShop> = {
-  yargici: { brand: "yargici", site: "https://www.yargici.com", slugs: ["outlet"] },
-  // No outlet tree on Hotiç; the whole range carries strike prices, so walk the three departments.
-  hotic: { brand: "hotic", site: "https://www.hotic.com.tr", slugs: ["kadin-ayakkabi", "erkek-ayakkabi", "cantaaksesuar"] },
+  yargici: { brand: "yargici", site: "https://www.yargici.com", slugs: ["tum-urunler"], fullCatalogue: true },
+  // No outlet tree on Hotiç; the three departments are the whole range.
+  hotic: { brand: "hotic", site: "https://www.hotic.com.tr", slugs: ["kadin-ayakkabi", "erkek-ayakkabi", "cantaaksesuar"], fullCatalogue: true },
   // Columbia Turkey (2026-10-12): the department trees hold every marked-down
   // row (751 on 10-12, the union of the seasonal "indirim" slugs) and outlive
   // the season names. 17 pages; answers a GitHub runner (probe run 38235646734).
@@ -45,6 +56,10 @@ const PAGE_SIZE = 100;
 const MAX_PRODUCTS = Number(process.env.PHANTOM_MAX_PRODUCTS ?? 1500);
 const MAX_PAGES = Number(process.env.PHANTOM_MAX_PAGES ?? 30);
 const PAUSE_MS = Number(process.env.PHANTOM_PAUSE_MS ?? 500);
+/** Full-catalogue shops: 250 a page, and caps far above the measured ranges (Yargıcı 4,219 on 2026-10-19). */
+const FULL_PAGE_SIZE = 250;
+const FULL_MAX_PRODUCTS = Number(process.env.PHANTOM_FULL_MAX_PRODUCTS ?? 15000);
+const FULL_MAX_PAGES = Number(process.env.PHANTOM_FULL_MAX_PAGES ?? 80);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const fold = (s: string) =>
@@ -121,41 +136,50 @@ export function filterBody(slug: string, pageIndex: number, pageSize = PAGE_SIZE
 
 export async function listPhantom(shop: PhantomShop, country: CountryCode = "TR"): Promise<ProductRecord[]> {
   if (country !== "TR") return [];
+  const full = shop.fullCatalogue === true;
+  const pageSize = full ? FULL_PAGE_SIZE : PAGE_SIZE;
+  const maxPages = full ? FULL_MAX_PAGES : MAX_PAGES;
+  const maxProducts = full ? FULL_MAX_PRODUCTS : MAX_PRODUCTS;
   const byId = new Map<string, ProductRecord>();
   const perSlug: ProductRecord[][] = [];
   let requests = 0;
   for (const slug of shop.slugs) {
     const mine: ProductRecord[] = [];
     perSlug.push(mine);
-    for (let pg = 0; requests < MAX_PAGES; pg++) {
+    for (let pg = 0; requests < maxPages || full; pg++) {
+      // A full-catalogue walk cut by the page budget would be swept as sold out: refuse instead.
+      if (requests >= maxPages) throw new Error(`${shop.brand}: over ${maxPages} pages — raise PHANTOM_FULL_MAX_PAGES`);
       if (requests > 0) await sleep(PAUSE_MS);
       requests++;
       const j = await getJson<any>(`${shop.site}/api/elasticSearch/elasticSearchPostFilter`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(filterBody(slug, pg)),
-        retries: 1,
+        body: JSON.stringify(filterBody(slug, pg, pageSize)),
+        retries: full ? 2 : 1,
       }).catch((e) => {
+        // A full-catalogue run must see every page: a gap would be swept as sold out.
+        if (full) throw new Error(`${shop.brand}: ${slug} page ${pg} failed (${e?.message ?? e})`);
         if (byId.size === 0 && requests === 1) throw e;
         return null;
       });
       const rows: any[] = j?.products?.data ?? [];
       for (const p of rows) {
         const r = mapPhantom(shop, p);
-        if (r && r.listPrice != null && !byId.has(r.externalId)) {
+        if (r && (full || r.listPrice != null) && !byId.has(r.externalId)) {
           byId.set(r.externalId, r);
           mine.push(r);
         }
       }
       if (!rows.length || !j?.products?.hasNextPage) break;
-      if (byId.size >= MAX_PRODUCTS * 1.3) break;
+      if (!full && byId.size >= maxProducts * 1.3) break;
     }
   }
-  if (process.env.PHANTOM_DEBUG) console.error(`${shop.brand}: ${requests} requests, ${byId.size} deals`);
+  if (process.env.PHANTOM_DEBUG) console.error(`${shop.brand}: ${requests} requests, ${byId.size} rows`);
   // Round-robin across the walked slugs so the cap never goes all to the first department.
   const all: ProductRecord[] = [];
   for (let i = 0; perSlug.some((l) => i < l.length); i++) for (const l of perSlug) if (i < l.length) all.push(l[i]);
-  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, MAX_PRODUCTS);
+  if (full && all.length > maxProducts) throw new Error(`${shop.brand}: ${all.length} products, over the cap of ${maxProducts}`);
+  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, maxProducts);
 }
 
 /** Registry entry point: `listPhantomBrand("yargici", "TR")`. */

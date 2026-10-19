@@ -9,10 +9,19 @@ import { toMinor } from "../normalize";
  * directly (probe run 39124158963, 2026-10-18). Magento's `/graphql` does NOT:
  * Cloudflare 403s it from the runner (GET and POST), though it answers the Mac.
  *
- * `order=discount_rate&direction=desc` sorts the whole in-stock catalogue
- * (~14.8k rows) by markdown, so the walk reads only the reduced head and stops
- * at the first page with no reduction: ~2,300 rows in ~39 pages of 60 (the
- * proxy caps `size` at 60), 2026-10-18. The index carries in-stock rows only.
+ * Until 2026-10-19 the walk sorted by `discount_rate` and stopped at the first
+ * page without a reduction (~2,300 rows, ~39 pages).
+ *
+ * FULL CATALOGUE (2026-10-19): the walk reads the whole index — 14,825 rows,
+ * all `is_in_stock`, in 248 pages of 60 (the proxy caps `size` at 60; `from`
+ * pages past 10,000 fine). In the proxy's default order (no `order`) every
+ * row came back exactly once; the discount order ties on ~12,500 unreduced
+ * rows, so it is kept out of deep paging. Serial at the 400 ms pause that was
+ * ~225 s here, too close to the 4-minute budget, so pages go three at a time
+ * (102 s here at two; a runner took 1.9 s a page on the old sorted walk, so
+ * three keeps it near 3 minutes there at worst). Reduced rows keep their strike price, the rest are full-price
+ * rows. A page that fails after its retries fails the run: a partial walk
+ * would let the delist sweep mark the rest sold out.
  *
  * Prices: `price` is the list price, `special_price` the shelf price (the same
  * pair Magento's GraphQL returns as regular/final — checked on 8 SKUs).
@@ -22,9 +31,12 @@ import { toMinor } from "../normalize";
 export const SITE = "https://www.saatvesaat.com.tr";
 export const IMAGE_PREFIX = "https://cdn.saatvesaat.com.tr/mnresize/740/-/media/catalog/product";
 const PAGE_SIZE = 60; // the proxy's own maximum
-const MAX_PRODUCTS = Number(process.env.SAATVESAAT_MAX_PRODUCTS ?? 2500);
-const MAX_PAGES = Number(process.env.SAATVESAAT_MAX_PAGES ?? 45);
+const MAX_PRODUCTS = Number(process.env.SAATVESAAT_MAX_PRODUCTS ?? 25_000);
+/** 248 pages today; room for the catalogue to grow by half. */
+const MAX_PAGES = Number(process.env.SAATVESAAT_MAX_PAGES ?? 380);
 const PAUSE_MS = Number(process.env.SAATVESAAT_PAUSE_MS ?? 400);
+/** Pages in flight at once. */
+const CONCURRENCY = 3;
 
 export const brand = "saatvesaat";
 
@@ -105,8 +117,8 @@ export function mapSaatvesaat(s: any): ProductRecord | null {
   };
 }
 
-export const pageUrl = (from: number) =>
-  `${SITE}/elastic.php?categoryId=2&order=discount_rate&direction=desc&from=${from}&size=${PAGE_SIZE}`;
+/** The proxy's default order: the one that pages without repeats (see header). */
+export const pageUrl = (from: number) => `${SITE}/elastic.php?categoryId=2&from=${from}&size=${PAGE_SIZE}`;
 
 export const HEADERS = { "X-Requested-With": "XMLHttpRequest", Accept: "application/json" };
 
@@ -122,24 +134,25 @@ async function page(from: number): Promise<any[] | null> {
 
 export async function listProducts(): Promise<ProductRecord[]> {
   const byId = new Map<string, ProductRecord>();
-  for (let n = 0; n < MAX_PAGES && byId.size < MAX_PRODUCTS; n++) {
+  for (let n = 0; n < MAX_PAGES; n += CONCURRENCY) {
     if (n > 0) await sleep(PAUSE_MS);
-    const rows = await page(n * PAGE_SIZE);
-    if (rows === null) {
-      if (byId.size === 0) throw new Error(`saatvesaat: elastic.php page ${n + 1} refused`);
-      break;
-    }
-    let reduced = 0;
-    for (const s of rows) {
-      const r = mapSaatvesaat(s);
-      if (r && r.listPrice != null) {
-        reduced++;
-        byId.set(r.externalId, r);
+    const wave = Array.from({ length: CONCURRENCY }, (_, i) => n + i).filter((k) => k < MAX_PAGES);
+    const pages = await Promise.all(wave.map((k) => page(k * PAGE_SIZE)));
+    let end = false;
+    for (const [i, rows] of pages.entries()) {
+      if (rows === null) throw new Error(`saatvesaat: elastic.php page ${wave[i] + 1} refused`);
+      for (const s of rows) {
+        const r = mapSaatvesaat(s);
+        if (r) byId.set(r.externalId, r);
       }
+      if (rows.length < PAGE_SIZE) end = true;
     }
-    // Sorted by markdown: the first page without one is the end of the sale.
-    if (rows.length < PAGE_SIZE || reduced === 0) break;
+    if (end) break;
+    if (n + CONCURRENCY >= MAX_PAGES) throw new Error(`saatvesaat: more than ${MAX_PAGES} pages — raise SAATVESAAT_MAX_PAGES`);
   }
   const all = [...byId.values()];
-  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, MAX_PRODUCTS);
+  // A cap that cut rows would let the delist sweep mark them sold out: refuse instead.
+  if (all.length > MAX_PRODUCTS) throw new Error(`saatvesaat: ${all.length} products, over the cap of ${MAX_PRODUCTS}`);
+  const rank = (r: ProductRecord) => (r.listPrice != null ? 0 : 2) + (r.inStock ? 0 : 1);
+  return all.sort((a, b) => rank(a) - rank(b));
 }

@@ -16,6 +16,13 @@
  *
  * PRICES (gross TRY): `basePrice` is the strikethrough, `salesPrice` the
  * charged price (`discountPrice` equals it on every row seen).
+ *
+ * FULL CATALOGUE (2026-10-19): the same request WITHOUT the outlet's
+ * product-type filter (`aggregationFilters`, `typeIds` and its type `sort`)
+ * is the whole in-stock shop — 1,601 products in 17 pages of 100 (the route's
+ * cap), all with stock, no repeats across pages, every outlet product among
+ * them; ~820 carry a markdown (the outlet holds ~680 of those). Reduced rows
+ * keep their strike price, the rest are full-price rows (`listPrice` null).
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson, getText } from "../http";
@@ -27,8 +34,9 @@ export const SITE = "https://www.suwen.com.tr";
 const CDN = "https://suwen.mncdn.com";
 const OUTLET_PATH = "/c/outlet-indirimleri";
 const PAGE_SIZE = 100;
-const MAX_PRODUCTS = Number(process.env.SUWEN_MAX_PRODUCTS ?? 1500);
-const MAX_PAGES = Number(process.env.SUWEN_MAX_PAGES ?? 25);
+const MAX_PRODUCTS = Number(process.env.SUWEN_MAX_PRODUCTS ?? 5000);
+/** 17 pages today; room for the shop to double. */
+const MAX_PAGES = Number(process.env.SUWEN_MAX_PAGES ?? 40);
 const PAUSE_MS = 500;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -125,30 +133,38 @@ export function requestFromHtml(html: string): Record<string, any> | null {
   }
 }
 
+/** The outlet's request with its product-type filter removed: the whole shop. Pure. */
+export function wholeShopRequest(req: Record<string, any>): Record<string, any> {
+  const { aggregationFilters: _a, typeIds: _t, sort: _s, pageSize: _p, currentPage: _c, ...rest } = req;
+  return { ...rest, includes: [...new Set([...(req.includes ?? []), ...EXTRA_INCLUDES])] };
+}
+
 export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
   if (country !== "TR") return [];
-  const req = requestFromHtml(await getText(`${SITE}${OUTLET_PATH}`));
-  if (!req) throw new Error("suwen: outlet page carried no search request");
-  const includes = [...new Set([...(req.includes ?? []), ...EXTRA_INCLUDES])];
+  const outlet = requestFromHtml(await getText(`${SITE}${OUTLET_PATH}`));
+  if (!outlet) throw new Error("suwen: outlet page carried no search request");
+  const req = wholeShopRequest(outlet);
   const byId = new Map<string, ProductRecord>();
   for (let page = 1; page <= MAX_PAGES; page++) {
     await sleep(PAUSE_MS);
     const j = await getJson<any>(`${SITE}/api/search-products`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...req, includes, pageSize: PAGE_SIZE, currentPage: page }),
-      retries: 1,
-    }).catch((e) => {
-      if (page === 1) throw e;
-      return null;
+      body: JSON.stringify({ ...req, pageSize: PAGE_SIZE, currentPage: page }),
+      retries: 2,
     });
+    // (A failed page throws: a partial walk would let the delist sweep mark the rest sold out.)
     const rows: any[] = j?.products ?? [];
     for (const p of rows) {
       const r = mapSuwen(p);
-      if (r && r.listPrice != null && !byId.has(r.externalId)) byId.set(r.externalId, r);
+      if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
     }
     if (!rows.length || page >= Number(j?.totalPages ?? 0)) break;
+    if (page === MAX_PAGES) throw new Error(`suwen: more than ${MAX_PAGES} pages — raise SUWEN_MAX_PAGES`);
   }
   const all = [...byId.values()];
-  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, MAX_PRODUCTS);
+  // A cap that cut rows would let the delist sweep mark them sold out: refuse instead.
+  if (all.length > MAX_PRODUCTS) throw new Error(`suwen: ${all.length} products, over the cap of ${MAX_PRODUCTS}`);
+  const rank = (r: ProductRecord) => (r.listPrice != null ? 0 : 2) + (r.inStock ? 0 : 1);
+  return all.sort((a, b) => rank(a) - rank(b));
 }

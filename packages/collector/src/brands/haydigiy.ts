@@ -13,10 +13,20 @@
  * shop-wide size discount can price ONE size lower still
  * (`discounted_variants`); the card price is kept, as the shop shows it.
  *
- * Sources, in order, within a ~55-page budget: İNDİRİMLİ ÜRÜNLER (c=70),
- * SEZON SONU İNDİRİMLERİ (c=261), SERİ SONU İNDİRİMLERİ (c=209, 1.5k items,
- * only part of them reduced — ~300 deals per run on 2026-10-11). Only reduced
- * docs are kept.
+ * Until 2026-10-19 the walk read three sale categories (c=70, 261, 209) and
+ * kept the reduced docs (~420).
+ *
+ * FULL CATALOGUE (2026-10-19): with no `c` the route lists the whole in-stock
+ * shop — 5,656 docs in 284 pages of 20 (every one `has_stock`; ~490 reduced,
+ * so the sale categories' deals are all among them). Two things matter:
+ *   - ORDER. The default (popularity) order shifts while you page: 5,675 rows
+ *     held only 5,419 distinct docs. `sorting=5` (newest first) returned
+ *     5,656 rows, all distinct.
+ *   - TIME. 284 pages at ~0.2 s + the 400 ms pause is ~3 min serial, too
+ *     close to the 4-minute budget, so pages go two at a time (~1.5 min).
+ * Reduced docs keep their strike price, the rest are full-price rows. A page
+ * that fails after its retries fails the run: a partial walk would let the
+ * delist sweep mark the rest sold out.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -26,10 +36,16 @@ import type { CountryCode } from "../../../../lib/countries";
 export const brand = "haydigiy";
 export const SITE = "https://haydigiy.com";
 const API = "https://connect.haydigiy.com/api/search-products";
-export const SALE_CATEGORIES = [70, 261, 209];
-const MAX_PAGES = Number(process.env.HAYDIGIY_MAX_PAGES ?? 55);
-const MAX_PRODUCTS = Number(process.env.HAYDIGIY_MAX_PRODUCTS ?? 1500);
+/** Newest first: the one order seen to page without repeats (see header). */
+export const SORTING = 5;
+/** 284 pages today; room for the shop to grow by half. */
+const MAX_PAGES = Number(process.env.HAYDIGIY_MAX_PAGES ?? 430);
+const MAX_PRODUCTS = Number(process.env.HAYDIGIY_MAX_PRODUCTS ?? 9000);
+/** Pages in flight at once. */
+const CONCURRENCY = 2;
 const PAUSE_MS = 400;
+
+export const pageUrl = (page: number) => `${API}?page=${page}&sorting=${SORTING}`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const fold = (s: string) =>
@@ -98,23 +114,45 @@ export async function listProducts(country: CountryCode = "TR"): Promise<Product
   if (country !== "TR") return [];
   const byId = new Map<string, ProductRecord>();
   let requests = 0;
-  for (const c of SALE_CATEGORIES) {
-    for (let page = 1; requests < MAX_PAGES; page++) {
-      if (requests > 0) await sleep(PAUSE_MS);
-      requests++;
-      const j = await getJson<any>(`${API}?page=${page}&c=${c}`, { retries: 1 }).catch((e) => {
-        if (requests === 1) throw e;
-        return null;
-      });
+  let last = MAX_PAGES;
+  let total = 0;
+  for (let page = 1; page <= Math.min(last, MAX_PAGES); page += CONCURRENCY) {
+    if (page > 1) await sleep(PAUSE_MS);
+    const wave = Array.from({ length: CONCURRENCY }, (_, i) => page + i).filter((n) => n <= Math.min(last, MAX_PAGES));
+    const answers = await Promise.all(
+      wave.map((n) =>
+        getJson<any>(pageUrl(n), { retries: 2 }).catch((e) => {
+          throw new Error(`haydigiy: page ${n} failed (${e instanceof Error ? e.message : e})`);
+        }),
+      ),
+    );
+    requests += wave.length;
+    let empty = false;
+    for (const j of answers) {
       const rows: any[] = j?.data ?? [];
+      if (!rows.length) empty = true;
+      const t = Number(j?.total);
+      if (Number.isFinite(t) && t > 0) total = t;
+      const lp = Number(j?.last_page);
+      if (Number.isFinite(lp) && lp > 0) last = lp;
       for (const p of rows) {
         const r = mapHaydigiy(p);
-        if (r && r.listPrice != null && !byId.has(r.externalId)) byId.set(r.externalId, r);
+        if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
       }
-      if (!rows.length || page >= Number(j?.last_page ?? 0)) break;
     }
+    // `last_page` comes from the hit count before grouping (5,697 hits, 5,656
+    // docs), so the walk usually ends on an empty page. One far short of the
+    // count is a glitch, not the end.
+    if (empty) {
+      if (byId.size < total * 0.95) throw new Error(`haydigiy: empty page after ${byId.size} of ${total} products`);
+      break;
+    }
+    if (page + CONCURRENCY > MAX_PAGES && last > MAX_PAGES) throw new Error(`haydigiy: more than ${MAX_PAGES} pages — raise HAYDIGIY_MAX_PAGES`);
   }
-  if (process.env.HAYDIGIY_DEBUG) console.error(`haydigiy: ${requests} requests, ${byId.size} deals`);
+  if (process.env.HAYDIGIY_DEBUG) console.error(`haydigiy: ${requests} requests, ${byId.size} products`);
   const all = [...byId.values()];
-  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, MAX_PRODUCTS);
+  // A cap that cut rows would let the delist sweep mark them sold out: refuse instead.
+  if (all.length > MAX_PRODUCTS) throw new Error(`haydigiy: ${all.length} products, over the cap of ${MAX_PRODUCTS}`);
+  const rank = (r: ProductRecord) => (r.listPrice != null ? 0 : 2) + (r.inStock ? 0 : 1);
+  return all.sort((a, b) => rank(a) - rank(b));
 }

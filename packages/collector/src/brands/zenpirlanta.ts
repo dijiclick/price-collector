@@ -23,6 +23,12 @@
  * `gold_karat` are RangeFilters ({min,max}). `limit` is capped at 50; `skip`
  * pages. The discounted set is 105 products in 3 requests (2026-10-18).
  *
+ * FULL CATALOGUE (2026-10-19): with `filters: {}` the same route lists every
+ * product it knows — 4,653 in 94 requests, ~55 s, no duplicate across pages
+ * (the order is stable), and every one of the 105 discounted rows among them.
+ * So the walk reads it all: reduced rows keep their rebuilt strike price, the
+ * rest are full-price rows (`listPrice` null).
+ *
  * PRICES. `price` is what the product page charges. The API's `originalPrice`
  * is always 0; the strike price the page prints is `price` grossed up by
  * `discountRate`, which the API ROUNDS to a whole percent: the page's
@@ -45,8 +51,11 @@ export const SITE = "https://www.zenpirlanta.com";
 export const ENDPOINT = "https://ecommerce-api-xgkluach6a-ew.a.run.app/api/chat/products";
 export const PAGE_SIZE = 50; // the API's cap
 
-const MAX_PAGES = Number(process.env.ZENPIRLANTA_MAX_PAGES ?? 30);
-const CAP = Number(process.env.ZENPIRLANTA_MAX_PRODUCTS ?? 1500);
+/** 94 pages today; room for the catalogue to double. */
+const MAX_PAGES = Number(process.env.ZENPIRLANTA_MAX_PAGES ?? 200);
+const CAP = Number(process.env.ZENPIRLANTA_MAX_PRODUCTS ?? 10_000);
+/** Every product, not only the discounted range. */
+export const FILTERS: Record<string, unknown> = {};
 const PAUSE_MS = Number(process.env.ZENPIRLANTA_PAUSE_MS ?? 300);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -103,11 +112,12 @@ export function mapZen(p: any): ProductRecord | null {
 export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
   if (country !== "TR") return [];
   const byId = new Map<string, ProductRecord>();
-  for (let page = 0; page < MAX_PAGES && byId.size < CAP; page++) {
+  for (let page = 0; ; page++) {
+    if (page >= MAX_PAGES) throw new Error(`zenpirlanta: more than ${MAX_PAGES} pages — raise ZENPIRLANTA_MAX_PAGES`);
     if (page > 0) await sleep(PAUSE_MS);
     const rows = await getJson<any[]>(ENDPOINT, {
       method: "POST",
-      body: zenBody({ discount_rate: { min: 1 } }, page * PAGE_SIZE),
+      body: zenBody(FILTERS, page * PAGE_SIZE),
       headers: ZEN_HEADERS,
       retries: 2,
     }).catch(() => null);
@@ -119,11 +129,14 @@ export async function listProducts(country: CountryCode = "TR"): Promise<Product
     let fresh = 0;
     for (const p of rows) {
       const r = mapZen(p);
-      if (!r || r.listPrice == null || byId.has(r.externalId)) continue;
+      if (!r || byId.has(r.externalId)) continue;
       byId.set(r.externalId, r);
       fresh++;
     }
     if (rows.length < PAGE_SIZE || fresh === 0) break;
   }
-  return [...byId.values()].slice(0, CAP);
+  const all = [...byId.values()];
+  // A cap that cut rows would let the delist sweep mark them sold out: refuse instead.
+  if (all.length > CAP) throw new Error(`zenpirlanta: ${all.length} products, over the cap of ${CAP}`);
+  return [...all.filter((r) => r.listPrice != null), ...all.filter((r) => r.listPrice == null)];
 }

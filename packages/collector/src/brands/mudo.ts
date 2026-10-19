@@ -7,8 +7,11 @@ import { toMinor } from "../normalize";
  * answers JSON with `?format=json`, and every product page does too.
  *
  * Mudo is half a homeware shop; only the two clothing roots are walked
- * (kadin-giyim includes bags, accessories and the outlet; ~1.9k products each).
- * Only discounted rows are kept.
+ * (kadin-giyim includes bags, accessories and the outlet). FULL CATALOGUE
+ * (2026-10-19): every row of both roots is kept — discounted rows with their
+ * retail price as listPrice, full-price rows with `listPrice: null` — so the
+ * collector's missing-product sweep sees the whole brand. 1,445 + 1,337 rows,
+ * 29 requests of 100 (measured 2026-10-19).
  *
  * Identity: a listing row is ONE SIZE of one colour (its pk, url and sku all
  * name the size), and which size represents the colour can change between
@@ -21,8 +24,9 @@ const CATS: { slug: string; gender: ProductRecord["gender"] }[] = [
   { slug: "erkek-giyim", gender: "erkek" },
 ];
 const PAGE_SIZE = 100;
-const MAX_PAGES = Number(process.env.MUDO_MAX_PAGES ?? 40);
-const MAX_PRODUCTS = Number(process.env.MUDO_MAX_PRODUCTS ?? 2000);
+// Headroom over the ~2.8k-row / 29-page catalogue: a cap must never cut it.
+const MAX_PAGES = Number(process.env.MUDO_MAX_PAGES ?? 200);
+const MAX_PRODUCTS = Number(process.env.MUDO_MAX_PRODUCTS ?? 20000);
 const DETAIL_LIMIT = Number(process.env.MUDO_DETAIL_LIMIT ?? 500);
 const CONCURRENCY = 3;
 
@@ -102,31 +106,40 @@ export const brand = "mudo";
 
 export async function listProducts(): Promise<ProductRecord[]> {
   const byId = new Map<string, ProductRecord>();
-  // ~80% of each root is discounted (≈3.1k in all, 2026-10-10): each section
-  // gets half the cap, and stops paging once it is full.
-  const perSection = Math.ceil(MAX_PRODUCTS / CATS.length);
   for (const { slug, gender } of CATS) {
-    let n = 0;
     const take = (list: any[]) => {
       for (const p of list) {
-        if (n >= perSection) return;
         const rec = mapProduct(p, gender);
-        if (!rec || rec.listPrice == null || byId.has(rec.externalId)) continue;
+        if (!rec || byId.has(rec.externalId)) continue;
         byId.set(rec.externalId, rec);
-        n++;
       }
     };
     const url = (page: number) => `${SITE}/${slug}/?format=json&page_size=${PAGE_SIZE}&page=${page}`;
     const first = await getJson<any>(url(1)).catch(() => null);
-    if (!first) continue;
+    if (!first) throw new Error(`mudo: ${slug} page 1 failed — partial catalogue refused`);
     take(first.products ?? []);
-    const last = Math.min(MAX_PAGES, Number(first.pagination?.num_pages ?? 1));
-    for (let page = 2; page <= last && n < perSection; page += CONCURRENCY) {
+    const last = Number(first.pagination?.num_pages ?? 1);
+    // A cap that cut pages would let the delist sweep mark their rows sold out: refuse instead.
+    if (last > MAX_PAGES) throw new Error(`mudo: ${slug} has ${last} pages, over the cap of ${MAX_PAGES}`);
+    // null = the page failed (after getJson's own retries).
+    const fetchList = (k: number): Promise<any[] | null> =>
+      getJson<any>(url(k)).then((d) => (Array.isArray(d?.products) ? d.products : null)).catch(() => null);
+    const failed: number[] = [];
+    for (let page = 2; page <= last; page += CONCURRENCY) {
       const batch = Array.from({ length: Math.min(CONCURRENCY, last - page + 1) }, (_, k) => page + k);
-      const lists = await Promise.all(batch.map((k) => getJson<any>(url(k)).then((d) => d?.products ?? []).catch(() => [])));
-      for (const list of lists) take(list);
+      const lists = await Promise.all(batch.map(fetchList));
+      lists.forEach((list, k) => (list ? take(list) : failed.push(batch[k])));
+    }
+    // A lost page is 100 rows the collector would mark sold out: one more try
+    // each, then refuse a partial catalogue rather than return it.
+    for (const k of failed) {
+      const list = await fetchList(k);
+      if (!list) throw new Error(`mudo: ${slug} page ${k} failed — partial catalogue refused`);
+      take(list);
     }
   }
+
+  if (byId.size > MAX_PRODUCTS) throw new Error(`mudo: ${byId.size} products, over the cap of ${MAX_PRODUCTS}`);
 
   // Per-size stock needs the product page (~60 KB JSON). Cover a rotating
   // random subset per run; the upsert keeps earlier captures.

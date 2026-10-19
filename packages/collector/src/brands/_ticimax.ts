@@ -23,6 +23,16 @@
  * SIZES. The listing's `variantDetails` is empty on these themes, so sizes come
  * from `GetProductVariantDetail` (a colour → size tree with stock per leaf) for
  * a bounded, rotating subset of reduced in-stock items per run.
+ *
+ * FULL CATALOGUE (Desa, Elifstil, Note — 2026-10-19). Those shops return
+ * every in-stock card, discounted or not (full price = `listPrice: null`),
+ * because the run's sweep marks every unseen product out of stock. The route
+ * honours 250 a page (500 too; 250 is the safer ask), so Desa's 4,769 cards are
+ * 20 requests (~40 s), Elifstil 2, Note 4. `MinStockAmount: 1` is NOT an
+ * in-stock filter (it drops cards with exactly one left), so the walk is
+ * unfiltered and the card's own `inStock` decides. Out-of-stock full-price
+ * cards are dropped; discounted ones are kept exactly as before. Bath & Body
+ * Works keeps the deals-only walk above.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -37,13 +47,15 @@ export interface TicimaxShop {
   defaultGender: ProductRecord["gender"];
   /** Whether items carry sizes worth a detail call (not for cosmetics). */
   sizes: boolean;
+  /** Walk the whole catalogue and return full-price in-stock cards too. */
+  fullCatalogue?: boolean;
 }
 
 export const TICIMAX_SHOPS: Record<string, TicimaxShop> = {
   bathandbodyworks: { brand: "bathandbodyworks", site: "https://www.bathandbodyworks.com.tr", defaultGender: null, sizes: false },
-  desa: { brand: "desa", site: "https://www.desa.com.tr", defaultGender: null, sizes: true },
-  elifstil: { brand: "elifstil", site: "https://www.elifstil.com", defaultGender: "kadin", sizes: true },
-  noteshop: { brand: "noteshop", site: "https://www.noteshop.com.tr", defaultGender: null, sizes: false },
+  desa: { brand: "desa", site: "https://www.desa.com.tr", defaultGender: null, sizes: true, fullCatalogue: true },
+  elifstil: { brand: "elifstil", site: "https://www.elifstil.com", defaultGender: "kadin", sizes: true, fullCatalogue: true },
+  noteshop: { brand: "noteshop", site: "https://www.noteshop.com.tr", defaultGender: null, sizes: false, fullCatalogue: true },
 };
 
 const PAGE_SIZE = 100;
@@ -53,6 +65,10 @@ const FULL_WALK_MAX = Number(process.env.TICIMAX_FULL_WALK_MAX ?? 2500);
 /** Variant-tree calls per run; together with ≤ 25 listing pages this stays under ~60 requests. */
 const DETAIL_LIMIT = Number(process.env.TICIMAX_DETAIL_LIMIT ?? 30);
 const PAUSE_MS = Number(process.env.TICIMAX_PAUSE_MS ?? 400);
+/** Full-catalogue shops: page size, card cap (Desa 4,769 on 2026-10-19) and extra size calls for full-price cards. */
+const FULL_PAGE_SIZE = 250;
+const FULL_MAX_PRODUCTS = Number(process.env.TICIMAX_FULL_MAX_PRODUCTS ?? 12000);
+const FULL_DETAIL_LIMIT = Number(process.env.TICIMAX_FULL_DETAIL_LIMIT ?? 15);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -151,6 +167,42 @@ export function treeSizes(tree: any[] | null | undefined): SizeVariant[] {
   return out;
 }
 
+/** The whole catalogue, 250 cards a page. Any failed page fails the run (a partial walk would sweep live cards). */
+async function walkAll(shop: TicimaxShop, pause: () => Promise<void>, count: () => void): Promise<any[]> {
+  const filter = filterJson();
+  const rows: any[] = [];
+  let pages = 1;
+  for (let n = 1; n <= pages; n++) {
+    if (n > 1) await pause();
+    count();
+    const d = await getJson<any>(listUrl(shop.site, filter, n, FULL_PAGE_SIZE), { retries: 2 }).catch((e) => {
+      throw new Error(`${shop.brand}: product list page ${n} failed (${e?.message ?? e})`);
+    });
+    if (n === 1) {
+      pages = Math.ceil(Number(d?.totalProductCount ?? 0) / FULL_PAGE_SIZE);
+      // A cap that cut pages would let the delist sweep mark their cards sold out: refuse instead.
+      if (pages * FULL_PAGE_SIZE > FULL_MAX_PRODUCTS) throw new Error(`${shop.brand}: ${d?.totalProductCount} cards, over the cap of ${FULL_MAX_PRODUCTS}`);
+    }
+    const got: any[] = d?.products ?? [];
+    // An empty page before the last is a glitch, not the end: refuse the partial walk.
+    if (!got.length) {
+      if (n < pages || n === 1) throw new Error(`${shop.brand}: product list page ${n} of ${pages} came back empty`);
+      break;
+    }
+    rows.push(...got);
+  }
+  return rows;
+}
+
+const shuffle = <T>(xs: T[]): T[] => {
+  const a = [...xs];
+  for (let j = a.length - 1; j > 0; j--) {
+    const k = Math.floor(Math.random() * (j + 1));
+    [a[j], a[k]] = [a[k], a[j]];
+  }
+  return a;
+};
+
 export async function listTicimax(shop: TicimaxShop, country: CountryCode = "TR"): Promise<ProductRecord[]> {
   if (country !== "TR") return [];
   let requests = 0;
@@ -160,46 +212,58 @@ export async function listTicimax(shop: TicimaxShop, country: CountryCode = "TR"
     return getJson<any>(listUrl(shop.site, filter, n), { retries: 1 });
   };
 
-  // Probe the full catalogue's size with the first page of it.
-  const all = filterJson();
-  const first = await fetchPage(all, 1);
-  const total = Number(first?.totalProductCount ?? 0);
-  let filter = all;
-  let rows: any[] = [...(first?.products ?? [])];
-  let pages = Math.ceil(total / PAGE_SIZE);
-  if (total > FULL_WALK_MAX) {
-    filter = filterJson({ IsDiscountedProduct: 1 });
-    const d = await fetchPage(filter, 1);
-    rows = [...(d?.products ?? [])];
-    pages = Math.ceil(Number(d?.totalProductCount ?? 0) / PAGE_SIZE);
-  }
-  pages = Math.min(pages, Math.ceil(FULL_WALK_MAX / PAGE_SIZE));
-  for (let n = 2; n <= pages; n++) {
-    const d = await fetchPage(filter, n).catch(() => null);
-    const got: any[] = d?.products ?? [];
-    if (!got.length) break;
-    rows.push(...got);
+  let rows: any[];
+  if (shop.fullCatalogue) {
+    rows = await walkAll(shop, async () => { await sleep(PAUSE_MS); }, () => requests++);
+  } else {
+    // Probe the full catalogue's size with the first page of it.
+    const all = filterJson();
+    const first = await fetchPage(all, 1);
+    const total = Number(first?.totalProductCount ?? 0);
+    let filter = all;
+    rows = [...(first?.products ?? [])];
+    let pages = Math.ceil(total / PAGE_SIZE);
+    if (total > FULL_WALK_MAX) {
+      filter = filterJson({ IsDiscountedProduct: 1 });
+      const d = await fetchPage(filter, 1);
+      rows = [...(d?.products ?? [])];
+      pages = Math.ceil(Number(d?.totalProductCount ?? 0) / PAGE_SIZE);
+    }
+    pages = Math.min(pages, Math.ceil(FULL_WALK_MAX / PAGE_SIZE));
+    for (let n = 2; n <= pages; n++) {
+      const d = await fetchPage(filter, n).catch(() => null);
+      const got: any[] = d?.products ?? [];
+      if (!got.length) break;
+      rows.push(...got);
+    }
   }
 
   const byId = new Map<string, ProductRecord>();
   const raw = new Map<string, any>();
   for (const p of rows) {
     const r = mapTicimax(shop, p);
-    if (!r || r.listPrice == null || byId.has(r.externalId)) continue;
+    if (!r || byId.has(r.externalId)) continue;
+    // Deals-only shops keep reduced cards; full-catalogue shops also keep in-stock full-price ones.
+    if (r.listPrice == null && !(shop.fullCatalogue && r.inStock)) continue;
     byId.set(r.externalId, r);
     raw.set(r.externalId, p);
   }
-  const deals = [...byId.values()];
-  const records = [...deals.filter((r) => r.inStock), ...deals.filter((r) => !r.inStock)].slice(0, MAX_PRODUCTS);
+  const kept = [...byId.values()];
+  const deals = kept.filter((r) => r.listPrice != null);
+  const full = kept.filter((r) => r.listPrice == null);
+  const records = shop.fullCatalogue
+    ? [...deals.filter((r) => r.inStock), ...full, ...deals.filter((r) => !r.inStock)].slice(0, FULL_MAX_PRODUCTS)
+    : [...deals.filter((r) => r.inStock), ...deals.filter((r) => !r.inStock)].slice(0, MAX_PRODUCTS);
 
   if (shop.sizes) {
-    // A rotating subset per run: over a few runs every in-stock deal gets its sizes.
-    const want = records.filter((r) => r.inStock && raw.get(r.externalId)?.hasVariants !== false);
-    for (let j = want.length - 1; j > 0; j--) {
-      const k = Math.floor(Math.random() * (j + 1));
-      [want[j], want[k]] = [want[k], want[j]];
-    }
-    for (const r of want.slice(0, DETAIL_LIMIT)) {
+    // A rotating subset per run: over a few runs every in-stock deal gets its sizes
+    // (full-price cards get a smaller share on top).
+    const sized = (r: ProductRecord) => r.inStock && raw.get(r.externalId)?.hasVariants !== false;
+    const want = [
+      ...shuffle(records.filter((r) => r.listPrice != null && sized(r))).slice(0, DETAIL_LIMIT),
+      ...(shop.fullCatalogue ? shuffle(records.filter((r) => r.listPrice == null && sized(r))).slice(0, FULL_DETAIL_LIMIT) : []),
+    ];
+    for (const r of want) {
       await sleep(PAUSE_MS);
       requests++;
       const tree = await getJson<any[]>(`${shop.site}/api/product/GetProductVariantDetail?c=1&productId=${r.externalId}`, { retries: 0 }).catch(() => null);
@@ -209,7 +273,7 @@ export async function listTicimax(shop: TicimaxShop, country: CountryCode = "TR"
       r.inStock = sizes.some((s) => s.availability !== "out_of_stock");
     }
   }
-  if (process.env.TICIMAX_DEBUG) console.error(`${shop.brand}: ${requests} requests, ${rows.length} cards, ${records.length} deals`);
+  if (process.env.TICIMAX_DEBUG) console.error(`${shop.brand}: ${requests} requests, ${rows.length} cards, ${deals.length} deals, ${records.length} rows`);
   return records;
 }
 

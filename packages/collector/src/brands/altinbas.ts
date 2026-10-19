@@ -11,10 +11,24 @@
  *   {"status":"ACTIVE","search":"a","paging":{"index":N,"size":100},
  *    "filter":{"orderBy":"DESC","sortBy":"discount.rate"},"groupBy":"item_group_id",…}
  *
- * `paging.index` is 1-based (0 answers page 1 again). An empty query returns
- * nothing; "a" finds 9,158 of the groups, and every reduced row "e"/"i"/"altın"
- * found was already in it (957 reduced groups, 2026-10-18). Sorted by discount
- * rate, the walk stops at the first page without a reduced row (~11 requests).
+ * `paging.index` is 1-based (0 answers page 1 again); `size` is capped at 100.
+ * An empty query returns nothing; "a" finds every group (it matches the brand
+ * name "Altınbaş" on every row): walked in full, "e" (6,786 groups) and "o"
+ * (579) found nothing "a" had not.
+ *
+ * FULL CATALOGUE (2026-10-19): two passes, ~103 requests, ~90 s here.
+ *   1. The reduced head, discount-sorted, as before (~11 requests, ~960
+ *      deals). The sort also picks which variant stands for a `groupBy`
+ *      group: discount-sorted it is the most-reduced one, price-sorted the
+ *      cheapest (386 of 963 deal groups showed a different, smaller-carat
+ *      variant that way), so deals come from this pass, unchanged.
+ *   2. All of "a", price-sorted — 9,046 groups in 92 requests; groups the head
+ *      already holds are skipped, the rest are full-price rows. The sort
+ *      matters for deep paging: unsorted (relevance) and `code`-sorted pages
+ *      repeat and skip rows (8,779 and 8,803 distinct of 9,046), the discount
+ *      sort ties on every unreduced row, `price` ASC returned all 9,046 once.
+ * A page that fails after its retries fails the run: a partial walk would let
+ * the delist sweep mark the rest sold out.
  * Answers a runner with 200 (probe run 39124363303).
  *
  * Prices: `price` is what a shopper pays, `oldPrice` the crossed-out one.
@@ -37,20 +51,25 @@ export const SITE = "https://www.altinbas.com";
 export const ENDPOINT = "https://api.tr.primewidgets.com/products/searchv5/altinbas";
 const PAGE_SIZE = 100;
 const QUERY = "a";
-const MAX_PAGES = Number(process.env.ALTINBAS_MAX_PAGES ?? 40);
-const CAP = Number(process.env.ALTINBAS_MAX_PRODUCTS ?? 1500);
+/** 92 pages today; room for the catalogue to grow by half. */
+const MAX_PAGES = Number(process.env.ALTINBAS_MAX_PAGES ?? 140);
+const CAP = Number(process.env.ALTINBAS_MAX_PRODUCTS ?? 14_000);
+/** A stable order for deep paging (see header). */
+export const SORT = { orderBy: "ASC", sortBy: "price" };
+/** The deal order: most-reduced first, and the most-reduced variant stands for its group. */
+export const DEAL_SORT = { orderBy: "DESC", sortBy: "discount.rate" };
 const PAUSE_MS = Number(process.env.ALTINBAS_PAUSE_MS ?? 600);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const brand = "altinbas";
 
-export function altinbasBody(search: string, page: number, size = PAGE_SIZE, sorted = true): string {
+export function altinbasBody(search: string, page: number, size = PAGE_SIZE, sort: Record<string, string> | null = SORT): string {
   return JSON.stringify({
     status: "ACTIVE",
     search,
     price: {},
     paging: { index: page, size },
-    filter: sorted ? { orderBy: "DESC", sortBy: "discount.rate" } : {},
+    filter: sort ?? {},
     attributes: [],
     groupBy: "item_group_id",
   });
@@ -111,23 +130,28 @@ export function mapAltinbas(p: any): ProductRecord | null {
   };
 }
 
+async function search(page: number, sort: Record<string, string>): Promise<{ rows: any[]; totalPages: number }> {
+  const d = await getJson<any>(ENDPOINT, {
+    method: "POST",
+    body: altinbasBody(QUERY, page, PAGE_SIZE, sort),
+    headers: { "Content-Type": "application/json", Origin: SITE, Referer: `${SITE}/` },
+    retries: 2,
+  }).catch(() => null);
+  const res = d?.results?.products;
+  // Any failed page fails the run: a partial walk would let the delist sweep mark the rest sold out.
+  if (!res) throw new Error(`altinbas: PrimeWidgets search refused page ${page} (${sort.sortBy})`);
+  return { rows: res.data ?? [], totalPages: Number(res.totalPages ?? 0) };
+}
+
 export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
   if (country !== "TR") return [];
   const byId = new Map<string, ProductRecord>();
-  for (let page = 1; page <= MAX_PAGES && byId.size < CAP; page++) {
+  // 1. The reduced head, discount-sorted, exactly as before 2026-10-19: within
+  //    a group it surfaces the most-reduced variant, so a deal keeps its url,
+  //    price and strike price. Ends at the first page without a reduction.
+  for (let page = 1; page <= MAX_PAGES; page++) {
     if (page > 1) await sleep(PAUSE_MS);
-    const d = await getJson<any>(ENDPOINT, {
-      method: "POST",
-      body: altinbasBody(QUERY, page),
-      headers: { "Content-Type": "application/json", Origin: SITE, Referer: `${SITE}/` },
-      retries: 2,
-    }).catch(() => null);
-    const res = d?.results?.products;
-    if (!res) {
-      if (page === 1) throw new Error("altinbas: PrimeWidgets search refused");
-      break;
-    }
-    const rows: any[] = res.data ?? [];
+    const { rows, totalPages } = await search(page, DEAL_SORT);
     let reduced = 0;
     for (const p of rows) {
       const r = mapAltinbas(p);
@@ -135,8 +159,22 @@ export async function listProducts(country: CountryCode = "TR"): Promise<Product
       reduced++;
       if (!byId.has(r.externalId)) byId.set(r.externalId, r);
     }
-    // Sorted by discount rate: the first page without a reduced row is the end.
-    if (reduced === 0 || rows.length < PAGE_SIZE || page >= Number(res.totalPages ?? 0)) break;
+    if (reduced === 0 || rows.length < PAGE_SIZE || page >= totalPages) break;
   }
-  return [...byId.values()].slice(0, CAP);
+  // 2. Everything, price-sorted (the only stable order); groups the head
+  //    already holds keep their deal row.
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    await sleep(PAUSE_MS);
+    const { rows, totalPages } = await search(page, SORT);
+    for (const p of rows) {
+      const r = mapAltinbas(p);
+      if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
+    }
+    if (rows.length < PAGE_SIZE || page >= totalPages) break;
+    if (page === MAX_PAGES) throw new Error(`altinbas: more than ${MAX_PAGES} pages — raise ALTINBAS_MAX_PAGES`);
+  }
+  const all = [...byId.values()];
+  // A cap that cut rows would let the delist sweep mark them sold out: refuse instead.
+  if (all.length > CAP) throw new Error(`altinbas: ${all.length} products, over the cap of ${CAP}`);
+  return [...all.filter((r) => r.listPrice != null), ...all.filter((r) => r.listPrice == null)];
 }

@@ -8,15 +8,21 @@ import { toMinor } from "../normalize";
  * price, strike price and per-size stock (`VariantWithStockList`) per row, so
  * no PDP calls are needed. The page size is fixed at 24 whatever is asked.
  *
- * The sale is the "Network Outlet" tree, category 930 (3,900 rows, every one
- * reduced, 2026-10-10). The full-price lines carry `Discount: 0`.
+ * FULL CATALOGUE (2026-10-19). Category 682 is the store root: 5,898 rows,
+ * a superset of the outlet tree (930, 4,093 rows, every one reduced) and of
+ * every main-line tree (kadın/erkek giyim, ayakkabı, aksesuar — 3 rows sit
+ * only under the root). One walk returns everything in stock, discounted rows
+ * with their strike price and full-price rows with `listPrice: null`, so the
+ * collector's missing-product sweep sees the whole brand. The desktop UA gets
+ * 48 rows a page: 123 requests, ~11s at concurrency 3 (measured from the Mac).
  */
 export const SITE = "https://www.network.com.tr";
-const OUTLET_CATEGORY = 930;
+const ROOT_CATEGORY = 682;
 const PAGE_SIZE = 24;
 const CONCURRENCY = 3;
-const MAX_PRODUCTS = Number(process.env.NETWORK_MAX_PRODUCTS ?? 2000);
-const MAX_PAGES = Number(process.env.NETWORK_MAX_PAGES ?? 90);
+// Headroom over the 5,898-row / 123-page (295 at 20 a page) catalogue.
+const MAX_PRODUCTS = Number(process.env.NETWORK_MAX_PRODUCTS ?? 20000);
+const MAX_PAGES = Number(process.env.NETWORK_MAX_PAGES ?? 1000);
 
 export const brand = "network";
 
@@ -86,7 +92,7 @@ export function mapNetwork(p: any): ProductRecord | null {
 }
 
 const pageUrl = (n: number) =>
-  `${SITE}/product/GetFilteredProductJson?categoryID=${OUTLET_CATEGORY}&page=${n}` +
+  `${SITE}/product/GetFilteredProductJson?categoryID=${ROOT_CATEGORY}&page=${n}` +
   `&dropListingPageSize=${PAGE_SIZE}&orderOption=NewProducts`;
 const XHR = { "X-Requested-With": "XMLHttpRequest" };
 
@@ -95,20 +101,36 @@ export async function listProducts(): Promise<ProductRecord[]> {
   const take = (data: any) => {
     for (const p of data?.Result?.ProductListItems ?? []) {
       const r = mapNetwork(p);
-      if (r && r.listPrice != null && byId.size < MAX_PRODUCTS) byId.set(r.externalId, r);
+      if (r) byId.set(r.externalId, r);
     }
   };
   const first = await getJson<any>(pageUrl(1), { headers: XHR });
+  if (!first?.Result) throw new Error("network: first listing page carried no Result");
   take(first);
-  const total = Math.min(Number(first?.Result?.PaginationInfo?.TotalPageCount ?? 1), MAX_PAGES);
+  const total = Number(first?.Result?.PaginationInfo?.TotalPageCount ?? 1);
+  // A cap that cut pages would let the delist sweep mark their rows sold out: refuse instead.
+  if (total > MAX_PAGES) throw new Error(`network: ${total} pages, over the cap of ${MAX_PAGES}`);
   let next = 2;
+  const failed: number[] = [];
+  const page = (n: number) => getJson<any>(pageUrl(n), { headers: XHR }).catch(() => null);
   await Promise.all(
     Array.from({ length: CONCURRENCY }, async () => {
-      while (next <= total && byId.size < MAX_PRODUCTS) {
+      while (next <= total) {
         const n = next++;
-        take(await getJson<any>(pageUrl(n), { headers: XHR }).catch(() => null));
+        const d = await page(n);
+        if (d?.Result) take(d);
+        else failed.push(n);
       }
     }),
   );
+  // A lost page is 48 rows the collector would mark sold out: one more try
+  // each, then refuse a partial catalogue rather than return it.
+  for (const n of failed.splice(0)) {
+    const d = await page(n);
+    if (d?.Result) take(d);
+    else failed.push(n);
+  }
+  if (failed.length) throw new Error(`network: listing pages ${failed.join(",")} failed — partial catalogue refused`);
+  if (byId.size > MAX_PRODUCTS) throw new Error(`network: ${byId.size} products, over the cap of ${MAX_PRODUCTS}`);
   return [...byId.values()];
 }

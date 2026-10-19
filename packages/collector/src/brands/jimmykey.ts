@@ -14,10 +14,20 @@ import type { CountryCode } from "../../../../lib/countries";
  *   https://api.personaclick.com/search?shop_id=<id>&type=full_search
  *     &search_query=*&limit=200&page=N
  *
- * `search_query=*` is the whole catalogue (1,326 colourways, 7 pages of 200,
- * 2026-10-18), and the walk keeps the reduced ones (`oldprice_full >
- * price_full`; ~750 of them, most in the "%50'ye Varan İndirim" category 96).
- * Answers a GitHub runner with 200 (probe run 39124308073).
+ * `search_query=*` matches the whole catalogue, but PersonaClick returns ONE
+ * colourway per model (`group_id`), and which one depends on the sort: 1,412
+ * rows on 2026-10-19 while the `ColorID` facet counted 1,879 colourways.
+ *
+ * FULL CATALOGUE (2026-10-19): the walk reads the `ColorID` facet off the
+ * first page and then asks for each colour on its own
+ * (`filters={"ColorID":["108"]}`, price-sorted): within one colour a model has
+ * one colourway, so nothing is folded away — 1,879 of 1,879 in 83 requests,
+ * every row of the plain walk among them. Reduced rows (`oldprice_full >
+ * price_full`) keep their strike price, the rest are full-price rows
+ * (`listPrice` null). The collector delists whatever a run does not return, so
+ * a failed page, a truncated facet or a walk that falls short of the facet's
+ * count fails the run instead of handing back part of the catalogue. Answers a
+ * GitHub runner with 200 (probe run 39124308073).
  *
  * One row per colourway: `id` is `<model>-<colourId>` (`28786-108`), matching
  * the PDP url's last segment (`…_5ww105284/siyah/108`), and `group_id` is the
@@ -28,15 +38,27 @@ import type { CountryCode } from "../../../../lib/countries";
 export const SHOP_ID = "a2eecbc9a7b0414937fdb654375362";
 const SITE = "https://www.jimmykey.com";
 const PAGE_SIZE = 200;
-const MAX_PAGES = Number(process.env.JIMMYKEY_MAX_PAGES ?? 15);
-const CAP = Number(process.env.JIMMYKEY_MAX_PRODUCTS ?? 1500);
-const PAUSE_MS = Number(process.env.JIMMYKEY_PAUSE_MS ?? 800);
+/** Requests per run: 83 today (80 colours); headroom for the catalogue to double. */
+const MAX_REQUESTS = Number(process.env.JIMMYKEY_MAX_REQUESTS ?? 250);
+const CAP = Number(process.env.JIMMYKEY_MAX_PRODUCTS ?? 6000);
+const PAUSE_MS = Number(process.env.JIMMYKEY_PAUSE_MS ?? 600);
+/** Rows the walk may fall short of the facet count (stock moving mid-walk). */
+const SHORTFALL = 0.01;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const brand = "jimmykey";
 
-export const jimmykeyListUrl = (page: number) =>
-  `https://api.personaclick.com/search?shop_id=${SHOP_ID}&type=full_search&search_query=*&limit=${PAGE_SIZE}&page=${page}`;
+/** The whole catalogue, or one `ColorID` of it (price-sorted, a stable order to page). */
+export const jimmykeyListUrl = (page: number, colorId?: string) =>
+  `https://api.personaclick.com/search?shop_id=${SHOP_ID}&type=full_search&search_query=*&limit=${PAGE_SIZE}&page=${page}` +
+  (colorId != null ? `&filters=${encodeURIComponent(JSON.stringify({ ColorID: [colorId] }))}&sort_by=price&order=asc` : "");
+
+/** The `ColorID` facet: colour id → colourways, and the facet's own total. */
+export function colorFacet(d: any): { values: [string, number][]; count: number } | null {
+  const f = d?.filters?.ColorID;
+  if (!f || typeof f.values !== "object") return null;
+  return { values: Object.entries(f.values).map(([k, v]) => [k, Number(v)]), count: Number(f.count) };
+}
 
 const param = (p: any, key: string): string[] =>
   ((p?.params ?? []).find((x: any) => x?.key === key)?.values ?? []).map(String);
@@ -98,22 +120,35 @@ export function mapJimmyKey(p: any): ProductRecord | null {
 export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
   if (country !== "TR") return [];
   const byId = new Map<string, ProductRecord>();
-  let pages = MAX_PAGES;
-  for (let page = 1; page <= pages && byId.size < CAP; page++) {
-    if (page > 1) await sleep(PAUSE_MS);
-    const d = await getJson<any>(jimmykeyListUrl(page), { retries: 2 }).catch(() => null);
-    if (!d) {
-      if (page === 1) throw new Error("jimmykey: PersonaClick search refused");
-      break;
-    }
-    const rows: any[] = Array.isArray(d.products) ? d.products : [];
-    const total = Number(d.products_total);
-    if (Number.isFinite(total) && total > 0) pages = Math.min(MAX_PAGES, Math.ceil(total / PAGE_SIZE));
-    for (const p of rows) {
+  let requests = 0;
+  // A partial walk would let the delist sweep mark the unseen rows sold out:
+  // every failure below fails the run.
+  const get = async (page: number, colorId?: string) => {
+    if (requests >= MAX_REQUESTS) throw new Error(`jimmykey: over ${MAX_REQUESTS} requests — raise JIMMYKEY_MAX_REQUESTS`);
+    if (requests > 0) await sleep(PAUSE_MS);
+    requests++;
+    const d = await getJson<any>(jimmykeyListUrl(page, colorId), { retries: 2 }).catch(() => null);
+    if (!d || !Array.isArray(d.products)) throw new Error(`jimmykey: PersonaClick search refused (colour ${colorId ?? "all"}, page ${page})`);
+    for (const p of d.products) {
       const r = mapJimmyKey(p);
-      if (r && r.listPrice != null && !byId.has(r.externalId)) byId.set(r.externalId, r);
+      if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
     }
-    if (rows.length < PAGE_SIZE) break;
+    return d;
+  };
+  const facet = colorFacet(await get(1));
+  const sum = facet?.values.reduce((a, [, n]) => a + n, 0) ?? 0;
+  // A facet list cut short (PersonaClick caps long ones) would hide whole colours.
+  if (!facet || !sum || sum !== facet.count) throw new Error(`jimmykey: ColorID facet unusable (${sum} of ${facet?.count})`);
+  for (const [colorId] of facet.values) {
+    for (let page = 1; ; page++) {
+      const d = await get(page, colorId);
+      if (d.products.length < PAGE_SIZE) break;
+    }
   }
-  return [...byId.values()].slice(0, CAP);
+  if (byId.size < facet.count * (1 - SHORTFALL)) throw new Error(`jimmykey: ${byId.size} of ${facet.count} colourways — partial walk refused`);
+  if (process.env.JIMMYKEY_DEBUG) console.error(`jimmykey: ${requests} requests, ${byId.size} of ${facet.count} colourways`);
+  const all = [...byId.values()];
+  // A cap that cut rows would let the delist sweep mark them sold out: refuse instead.
+  if (all.length > CAP) throw new Error(`jimmykey: ${all.length} products, over the cap of ${CAP}`);
+  return [...all.filter((r) => r.listPrice != null), ...all.filter((r) => r.listPrice == null)];
 }

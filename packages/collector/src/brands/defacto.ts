@@ -9,20 +9,35 @@ import { browserText, decodeEntities, extractJsonAfter } from "../../../../lib/l
  * carries its product as JSON in `data-documents` — name, prices, colour,
  * category, stock and every size with its EAN-13 — 24 cards per `?page=N`.
  *
- * Sale lists: `/indirim/<section>-…` campaign pages. Their slugs are seasonal
- * ("…-sezon-sonu-firsatlari"), so each run reads the current slug off the
- * section's landing page and only falls back to the last known one.
+ * FULL CATALOGUE (2026-10-19): each section's "tümü" root — `/kadin-tumu`
+ * (11,306), `/erkek-tumu` (6,285), `/cocuk-tumu` (5,416) — 23k rows on ~960
+ * pages of 24 (no page-size override exists: the scroll XHR
+ * `/Catalog/PartialIndexScrollResult` is 24 too). Discounted rows come out of
+ * the same card JSON and the same `defactoPrice` as the `/indirim/…` sale
+ * lists did, so they are unchanged; full-price rows carry `listPrice: null`.
+ * Measured from the Mac 2026-10-19: 22,992 rows, 958 pages in 142s at
+ * concurrency 3, then the PDP pass; a runner answers a deep page in 0.6–1.2s
+ * (probe run 39298495016), so listing pages go 4 at a time and the PDP pass
+ * stops starting pages at 180s. A page that fails twice fails the run: a
+ * partial walk would let the delist sweep mark the rest sold out.
+ * (`findSalePath` is kept for the sale-list slug, no longer walked.)
  */
 const SITE = "https://www.defacto.com.tr";
-const SECTIONS: { landing: string; fallback: string; gender: ProductRecord["gender"]; pages: number }[] = [
-  { landing: "/kadin", fallback: "/indirim/kadin-sezon-sonu-firsatlari", gender: "kadin", pages: 40 },
-  { landing: "/erkek", fallback: "/indirim/erkek-sezon-sonu-firsatlari", gender: "erkek", pages: 34 },
-  { landing: "/cocuk", fallback: "/indirim/cocuk-sezon-sonu-firsatlari", gender: "cocuk", pages: 10 },
+const SECTIONS: { path: string; gender: ProductRecord["gender"] }[] = [
+  { path: "/kadin-tumu", gender: "kadin" },
+  { path: "/erkek-tumu", gender: "erkek" },
+  { path: "/cocuk-tumu", gender: "cocuk" },
 ];
-const PAGE_SCALE = Number(process.env.DEFACTO_PAGE_SCALE ?? 1);
-const MAX_PRODUCTS = Number(process.env.DEFACTO_MAX_PRODUCTS ?? 2000);
+const PAGE_SIZE = 24;
+// Headroom over the ~960-page / 23k-row catalogue: a cap must never cut it,
+// or the collector's sweep would mark the cut rows sold out.
+const MAX_PAGES = Number(process.env.DEFACTO_MAX_PAGES ?? 3000);
 const DETAIL_LIMIT = Number(process.env.DEFACTO_DETAIL_LIMIT ?? 250);
+/** No product page is STARTED after this (ms since the run began). */
+const DETAIL_DEADLINE_MS = Number(process.env.DEFACTO_DETAIL_DEADLINE_MS ?? 180_000);
 const CONCURRENCY = 3;
+/** Listing pages in flight (the PDP pass keeps CONCURRENCY). */
+const LIST_CONCURRENCY = Number(process.env.DEFACTO_LIST_CONCURRENCY ?? 4);
 const get = (url: string) => browserText(url, { timeoutMs: 30000 }).then((t) => t ?? "");
 
 const IMG = (file: string, w = 768) => `https://dfcdn.defacto.com.tr/${w}/${file}`;
@@ -162,29 +177,45 @@ async function pool<T>(items: T[], n: number, fn: (x: T) => Promise<void>) {
 
 export const brand = "defacto";
 
+/** Total row count a listing page reports (`#product-container data-count`). */
+export function listingCount(html: string): number {
+  return Number(html.match(/id=product-container data-count=(\d+)/)?.[1] ?? 0);
+}
+
 export async function listProducts(): Promise<ProductRecord[]> {
+  const t0 = Date.now();
   const byId = new Map<string, ProductRecord>();
-  for (const s of SECTIONS) {
-    if (byId.size >= MAX_PRODUCTS) break;
-    const section = s.landing.slice(1);
-    const landing = await get(`${SITE}${s.landing}`);
-    const path = findSalePath(landing, section) ?? s.fallback;
-    const cap = Math.max(1, Math.round(s.pages * PAGE_SCALE));
-    const first = await get(`${SITE}${path}`);
-    const total = Number(first.match(/id=product-container data-count=(\d+)/)?.[1] ?? 0);
-    const pages = Math.min(cap, Math.max(1, Math.ceil(total / 24)));
-    const htmls = [first];
-    await pool(Array.from({ length: pages - 1 }, (_, k) => k + 2), CONCURRENCY, async (n) => {
-      htmls.push(await get(`${SITE}${path}?page=${n}`));
-    });
-    for (const html of htmls) {
-      for (const { doc, gallery } of parseCards(html)) {
-        const rec = mapDocument(doc, gallery, s.gender);
-        if (rec && rec.listPrice != null && !byId.has(rec.externalId)) byId.set(rec.externalId, rec);
-      }
+  const take = (html: string, gender: ProductRecord["gender"]) => {
+    for (const { doc, gallery } of parseCards(html)) {
+      const rec = mapDocument(doc, gallery, gender);
+      if (rec && !byId.has(rec.externalId)) byId.set(rec.externalId, rec);
     }
+  };
+  for (const s of SECTIONS) {
+    const first = await get(`${SITE}${s.path}`);
+    const total = listingCount(first);
+    // A page without cards is a refusal or an error page, not an empty listing.
+    if (!total || !parseCards(first).length) throw new Error(`defacto: ${s.path} unreadable — partial catalogue refused`);
+    take(first, s.gender);
+    const pages = Math.ceil(total / PAGE_SIZE);
+    // A cap that cut pages would let the delist sweep mark their rows sold out: refuse instead.
+    if (pages > MAX_PAGES) throw new Error(`defacto: ${s.path} has ${pages} pages, over the cap of ${MAX_PAGES}`);
+    const failed: number[] = [];
+    const page = async (n: number) => {
+      const html = await get(`${SITE}${s.path}?page=${n}`);
+      if (parseCards(html).length) take(html, s.gender);
+      // A real listing page with no cards is the tail shrinking mid-walk.
+      else if (!listingCount(html)) failed.push(n);
+    };
+    await pool(Array.from({ length: pages - 1 }, (_, k) => k + 2), LIST_CONCURRENCY, page);
+    // A lost page is 24 rows the collector would mark sold out: one more try
+    // each, then refuse a partial catalogue rather than return it.
+    const retry = failed.splice(0);
+    for (const n of retry) await page(n);
+    if (failed.length) throw new Error(`defacto: ${s.path} pages ${failed.join(",")} failed — partial catalogue refused`);
   }
-  const records = [...byId.values()].slice(0, MAX_PRODUCTS);
+  const records = [...byId.values()];
+  const listedAt = Date.now();
 
   // Real per-size stock lives on the product page (~160 KB). Rotating subset.
   const pick = [...records];
@@ -192,12 +223,21 @@ export async function listProducts(): Promise<ProductRecord[]> {
     const k = Math.floor(Math.random() * (j + 1));
     [pick[j], pick[k]] = [pick[k], pick[j]];
   }
+  let details = 0;
   await pool(pick.slice(0, DETAIL_LIMIT), CONCURRENCY, async (r) => {
+    // The listing is the catalogue; per-size stock is an enrichment and must
+    // never push the brand past its time budget.
+    if (Date.now() - t0 > DETAIL_DEADLINE_MS) return;
+    details++;
     const html = await get(r.url);
     const sizes = html ? parsePdpSizes(html) : [];
     if (!sizes.length) return;
     r.variants = { colors: [], sizes };
     r.inStock = sizes.some((x) => x.availability !== "out_of_stock");
   });
+  console.log(
+    `defacto: ${records.length} rows in ${((listedAt - t0) / 1000).toFixed(0)}s, ` +
+      `${details} product pages in ${((Date.now() - listedAt) / 1000).toFixed(0)}s`,
+  );
   return records;
 }
