@@ -399,6 +399,13 @@ CREATE TABLE IF NOT EXISTS catalogue_items (LIKE feed_items INCLUDING DEFAULTS I
 CREATE INDEX IF NOT EXISTS idx_catalogue_items_country_brand ON catalogue_items (country, brand);
 CREATE INDEX IF NOT EXISTS idx_catalogue_items_shelf ON catalogue_items (country, product_type, product_subtype);
 ALTER TABLE catalogue_items ADD COLUMN IF NOT EXISTS maker TEXT;
+-- Search matches words in the folded name (lib/db.ts SQL_FOLD, regex `~`).
+-- Since the 2026-10-19 full-catalogue switch (~760k TR rows) that was a full
+-- scan, 3.6-5 s per uncached search; the trigram index brings it to ~1 s.
+-- The expression must stay byte-identical to SQL_FOLD. Guarded because PGlite
+-- (tests) has no pg_trgm; on the server it was built CONCURRENTLY, so this is a
+-- no-op there. One line on purpose: the loaders split this file on ";\n".
+DO $$ BEGIN CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE INDEX IF NOT EXISTS idx_catalogue_items_name_trgm ON catalogue_items USING gin (lower(translate(name, 'ÇĞİÖŞÜIÂÎÛçğıöşüâîû', 'cgiosuiaiucgiosuaiu')) gin_trgm_ops); EXCEPTION WHEN others THEN NULL; END $$;
 
 -- Full-catalogue tallies (browse-all counts), per brand, rewritten by the same
 -- refresh. /api/meta sums these instead of counting every in-stock product.
