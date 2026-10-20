@@ -245,7 +245,7 @@ export async function checkAll(
             }
             rows.push({ c, r });
             seen.push(r);
-            if (seen.length >= 4 && seen.every(REFUSED)) {
+            if (!stop && seen.length >= 4 && seen.every(REFUSED)) {
               stop = true;
               walled.push(host);
             }
