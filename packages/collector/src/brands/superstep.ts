@@ -53,20 +53,32 @@ export function genderOf(p: any): ProductRecord["gender"] {
   return null; // Unisex
 }
 
-/** Sizes (and colour names) from Akinon's variant groups, listing or PDP shape. */
+/**
+ * Sizes (and colour names) from Akinon's variant groups, listing or PDP shape.
+ *
+ * Marketplace rows (seller 265, `/urun/…/265-jp8673-1/`, ~1,000 deals on
+ * 2026-10-20) group by `mp_size` / `mp_color` instead of `integration_beden` /
+ * `integration_renk`, and their labels are the seller's (US "7,5"), so the
+ * label is the option's `filterable_size` — the EU size the shop's own size
+ * filter uses ("41"), in the same "42,5" form as SuperStep's own sizes. Those
+ * rows used to come out with no sizes at all.
+ */
 export function variantsOf(groups: any[] | undefined): ProductVariants | null {
   const g = (key: string): any[] => (groups ?? []).find((x) => x?.attribute_key === key)?.options ?? [];
+  const own = g("integration_beden");
+  const market = own.length === 0;
   const seen = new Set<string>();
   const sizes: SizeVariant[] = [];
-  for (const o of g("integration_beden")) {
-    const label = String(o?.label ?? "").trim();
+  for (const o of market ? g("mp_size") : own) {
+    const eu = market ? o?.product?.attributes?.filterable_size : null;
+    const label = String((typeof eu === "string" && eu.trim()) || o?.label || "").trim();
     if (!label || seen.has(label)) continue;
     seen.add(label);
     sizes.push({ label, availability: o?.in_stock && o?.is_selectable !== false ? "in_stock" : "out_of_stock" });
   }
   const colors = [
     ...new Set(
-      g("integration_renk")
+      g(market ? "mp_color" : "integration_renk")
         .map((o: any) => String(o?.label ?? "").trim())
         .filter((x: string) => x && x !== "-"),
     ),

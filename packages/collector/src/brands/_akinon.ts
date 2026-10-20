@@ -22,6 +22,8 @@
 import { cleanGallery, type ProductRecord, type ProductVariants, type SizeVariant } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
+import { sizedIds, sizesFirst } from "../sizes";
+import type { CountryCode } from "../../../../lib/countries";
 
 export interface AkinonShop {
   brand: string;
@@ -239,7 +241,8 @@ export async function listAkinon(shop: AkinonShop, limits: AkinonLimits): Promis
     const k = Math.floor(Math.random() * (j + 1));
     [missing[j], missing[k]] = [missing[k], missing[j]];
   }
-  await pool(missing.slice(0, limits.detailLimit), CONCURRENCY, async (r) => {
+  const sized = await sizedIds(shop.brand, "TR");
+  await pool(sizesFirst(missing, (r) => r.externalId, sized, limits.detailLimit), CONCURRENCY, async (r) => {
     const v = await fetchPdpVariants(shop, r.url);
     if (!v) return;
     r.variants = v;
@@ -388,10 +391,14 @@ export async function fillAkinonSizes(
     return a;
   };
   const missing = records.filter((r) => !r.variants && r.url.startsWith(site) && r.url !== site);
-  const queue = [
-    ...shuffle(missing.filter((r) => r.listPrice != null)),
-    ...shuffle(missing.filter((r) => r.listPrice == null)),
-  ].slice(0, limit);
+  // Products with no stored sizes first (sizes.ts), deals before full price.
+  const sized = records.length ? await sizedIds(records[0].brand, (records[0].country ?? "TR") as CountryCode) : new Set<string>();
+  const queue = sizesFirst(
+    [...shuffle(missing.filter((r) => r.listPrice != null)), ...shuffle(missing.filter((r) => r.listPrice == null))],
+    (r) => r.externalId,
+    sized,
+    limit,
+  );
   let requests = 0;
   await pool(queue, opts.concurrency ?? CONCURRENCY, async (r) => {
     if (Date.now() > opts.deadline) return;

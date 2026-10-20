@@ -53,7 +53,10 @@ export const brand = STORE.shop.brand;
  */
 export const CATALOGUE: AkinonStore = { ...STORE, shop: { ...STORE.shop, listPath: "/list/" } };
 
-const DEFAULTS = { maxProducts: 120_000, maxPages: 120, detailLimit: 600 };
+// detailLimit 1,000 (was 600, 2026-10-20): unsized rows go first now (sizes.ts),
+// so ~1,000 PDPs a run clears the ~6,700 unsized deals in under a day; the
+// budget below still stops the pass on a slow day.
+const DEFAULTS = { maxProducts: 120_000, maxPages: 120, detailLimit: 1000 };
 
 export function limits(): AkinonCatalogueLimits {
   return {

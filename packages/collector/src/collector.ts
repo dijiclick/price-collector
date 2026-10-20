@@ -17,9 +17,11 @@ import {
   markMissingOutOfStock,
   getWatchedSizes,
   getVariantsByIds,
+  getSizedExternalIds,
   key,
   type Db,
 } from "./db";
+import { setSizedLoader } from "./sizes";
 
 export interface BrandResult {
   brand: string;
@@ -132,6 +134,10 @@ export async function runCollect(adapters: BrandAdapter[], db: Db): Promise<Bran
   // Indexed rather than pushed, so the report keeps registry order regardless of
   // which brand happens to finish first.
   const results: BrandResult[] = new Array(adapters.length);
+  // Lets rotating detail passes spend their budget on products with no stored
+  // sizes first (sizes.ts). Read lazily, once per brand × market, only by
+  // adapters that ask.
+  setSizedLoader((brand, country) => getSizedExternalIds(db, brand, country));
 
   /**
    * Fetching parallelises freely; writing is bounded so a burst of brands cannot

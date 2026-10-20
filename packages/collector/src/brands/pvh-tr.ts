@@ -19,12 +19,19 @@
  * SIZES. `fashion_original_sizes` lists only the sizes in stock, so it cannot
  * say which size sold out (and a restock alert needs exactly that). The PDP
  * HTML has every size with `data-stock` — the PDPs also answer runners — so a
- * rotating shuffled subset gets full per-size stock each run; the upsert keeps
- * earlier variants for the rest (`variants: null` = keep), the Akinon pattern.
+ * rotating shuffled subset gets full per-size stock each run.
+ *
+ * Since 2026-10-20 every other row carries the feed's in-stock sizes too
+ * (labels prefixed "e" — "eXL", "e14 Yaş" — which is stripped), stored with
+ * `sizesInStockOnly`: the upsert keeps the sizes an earlier PDP read found
+ * that are now missing, as out_of_stock (sizes.ts). Rows the PDP pass had not
+ * reached yet used to have no sizes at all, which hides them from the app's
+ * size filter.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant, type ProductVariants } from "../types";
 import { getJson, getText } from "../http";
 import { toMinor } from "../normalize";
+import { sortSizes } from "../sizes";
 
 export type PvhTrBrand = "calvinklein" | "tommyhilfiger";
 
@@ -68,6 +75,20 @@ export function genderOf(p: any): ProductRecord["gender"] {
   return p?.fashion_gender === "f" ? "kadin" : p?.fashion_gender === "m" ? "erkek" : null;
 }
 
+/** The feed's in-stock sizes ("eXL" → "XL"); none for a lone one-size label. Pure. */
+export function feedSizes(p: any): SizeVariant[] {
+  const out: SizeVariant[] = [];
+  const seen = new Set<string>();
+  for (const raw of Array.isArray(p?.fashion_original_sizes) ? p.fashion_original_sizes : []) {
+    const label = String(raw).trim().replace(/^e(?=[A-Z0-9])/, "");
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    out.push({ label, availability: "in_stock" });
+  }
+  if (out.length === 1 && /^(os|standart|std|tek ebat|tek beden)$/i.test(out[0].label)) return [];
+  return sortSizes(out); // the feed's order is arbitrary ("L, M, XL, S")
+}
+
 /** Map one PersonaClick row. Pure; `null` for rows without a usable price, id or own url. */
 export function mapPvhTr(brand: PvhTrBrand, p: any): ProductRecord | null {
   const { site } = PVH_TR[brand];
@@ -78,6 +99,7 @@ export function mapPvhTr(brand: PvhTrBrand, p: any): ProductRecord | null {
   if (!url.startsWith(`${site}/`)) return null;
   const img = typeof p.image_url === "string" ? p.image_url : p.image_url_resized?.original ?? null;
   const colour = param(p, "color");
+  const sizes = feedSizes(p);
   return {
     brand,
     country: "TR",
@@ -93,7 +115,8 @@ export function mapPvhTr(brand: PvhTrBrand, p: any): ProductRecord | null {
     inStock: true,
     category: param(p, "kategori"),
     gender: genderOf(p),
-    variants: null,
+    variants: sizes.length ? { colors: colour ? [colour] : [], sizes } : null,
+    sizesInStockOnly: sizes.length ? true : undefined,
     groupKey: p.group_id ? `${brand}:${p.group_id}` : null,
     colorName: colour,
   };
@@ -156,6 +179,7 @@ export async function listPvhTr(brand: PvhTrBrand): Promise<ProductRecord[]> {
     if (!sizes.length) return;
     const variants: ProductVariants = { colors: r.colorName ? [r.colorName] : [], sizes };
     r.variants = variants;
+    r.sizesInStockOnly = undefined; // the PDP lists every size
     r.inStock = sizes.some((s) => s.availability !== "out_of_stock");
   });
 

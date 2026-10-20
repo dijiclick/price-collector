@@ -14,10 +14,17 @@
  * `categories=7001` is the site's "Sezon İndirimi" category (680 products,
  * 4 pages). Answers a runner with 200 (probe run 38136272241). Rows carry
  * price/oldprice in TRY, gender, stock quantity, and every size's EAN
- * (`barcodeList`, `"<size>£<ean>"`) — but no per-size stock, so `variants` is
- * null and the EANs go to `barcodes` (tags are scannable).
+ * (`barcodeList`, `"<size>£<ean>"`; the EANs go to `barcodes`, so tags are
+ * scannable).
+ *
+ * SIZES (2026-10-20). `fashion_original_sizes` (and the size half of
+ * `barcodeList`) lists the sizes IN STOCK, not the size run: 237696-BBK with
+ * one pair left lists only "41.5", and 150715-SIL's 35–39 matched the PDP's
+ * enabled sizes. So they are stored as in_stock with `sizesInStockOnly`, and
+ * the upsert keeps a size that drops out as out_of_stock (sizes.ts). Until
+ * then Skechers stored no sizes and fell out of every size-filtered feed.
  */
-import { cleanGallery, type ProductRecord } from "../types";
+import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
 import type { CountryCode } from "../../../../lib/countries";
@@ -37,6 +44,21 @@ export const skechersUrl = (page: number) =>
 const param = (p: any, key: string): string[] =>
   ((p?.params ?? []).find((x: any) => x?.key === key)?.values ?? []).map(String);
 
+/** The sizes in stock, in the feed's order. Pure. */
+export function skechersSizes(p: any): SizeVariant[] {
+  const listed: string[] = Array.isArray(p?.fashion_original_sizes) ? p.fashion_original_sizes.map(String) : [];
+  const raw = listed.length ? listed : param(p, "barcodeList").map((v) => v.split("£")[0]);
+  const seen = new Set<string>();
+  const out: SizeVariant[] = [];
+  for (const r of raw) {
+    const label = r.trim();
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    out.push({ label, availability: "in_stock" });
+  }
+  return out;
+}
+
 const title = (s: string) =>
   s.toLocaleLowerCase("tr").replace(/(^|[\s-])\S/g, (c) => c.toLocaleUpperCase("tr"));
 
@@ -55,6 +77,7 @@ export function mapSkechers(p: any): ProductRecord | null {
   const gender: ProductRecord["gender"] =
     p.fashion_feature === "child" ? "cocuk" : p.fashion_gender === "f" ? "kadin" : p.fashion_gender === "m" ? "erkek" : null;
   const colour = param(p, "Renk")[0] ?? null;
+  const sizes = skechersSizes(p);
   return {
     brand: "skechers",
     country: "TR",
@@ -70,7 +93,8 @@ export function mapSkechers(p: any): ProductRecord | null {
     barcodes: barcodes.length ? [...new Set(barcodes)] : null,
     category: param(p, "urunCesidi")[0] ?? null,
     gender,
-    variants: null,
+    variants: sizes.length ? { colors: colour ? [colour] : [], sizes } : null,
+    sizesInStockOnly: sizes.length ? true : undefined,
     groupKey: p.group_id && p.group_id !== p.id ? `skechers:${p.group_id}` : null,
     colorName: colour,
   };

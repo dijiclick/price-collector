@@ -10,6 +10,7 @@ import { makerOf } from "../../../lib/maker";
 import { resolveGender } from "../../../lib/gender";
 import { colorFamilies } from "../../../lib/colors";
 import { DEFAULT_COUNTRY } from "../../../lib/countries";
+import { mergeInStockSizes } from "./sizes";
 
 /** Minimal row-returning query interface both Neon (postgres.js) and PGlite satisfy. */
 export interface Db {
@@ -216,6 +217,9 @@ export async function upsertProducts(db: Db, records: ProductRecord[]): Promise<
   records = records.map((r) =>
     r.listPrice === cleanListPrice(r.price, r.listPrice) ? r : { ...r, listPrice: cleanListPrice(r.price, r.listPrice) },
   );
+  // In-stock-only size lists keep the stored sold-out sizes (sizes.ts). Before
+  // the hash, so an unchanged merged list does not churn the row.
+  records = await mergeStoredSizes(db, records);
 
   // Existing fingerprints for every brand AND country in this batch (normally
   // exactly one of each). Scoped by country as well so a Zara/AE run reads
@@ -265,6 +269,46 @@ export async function upsertProducts(db: Db, records: ProductRecord[]): Promise<
 
   await upsertChanged(db, changed, map);
   return map;
+}
+
+/**
+ * Records flagged `sizesInStockOnly` get the stored sold-out sizes laid back in
+ * (mergeInStockSizes). One narrow read per brand × market in the batch.
+ */
+async function mergeStoredSizes(db: Db, records: ProductRecord[]): Promise<ProductRecord[]> {
+  const flagged = records.filter((r) => r.sizesInStockOnly && r.variants?.sizes?.length);
+  if (flagged.length === 0) return records;
+  const byScope = new Map<string, ProductRecord[]>();
+  for (const r of flagged) {
+    const scope = r.brand + "|" + countryOf(r);
+    (byScope.get(scope) ?? byScope.set(scope, []).get(scope)!).push(r);
+  }
+  const stored = new Map<string, ProductVariants["sizes"]>();
+  for (const group of byScope.values()) {
+    const rows = await db.query<{ external_id: string; variants: ProductVariants | null }>(
+      "SELECT external_id, variants FROM products WHERE brand=$1 AND country=$2 AND external_id = ANY($3) AND variants IS NOT NULL",
+      [group[0].brand, countryOf(group[0]), group.map((r) => r.externalId)],
+    );
+    for (const row of rows) {
+      const sizes = row.variants?.sizes;
+      if (Array.isArray(sizes) && sizes.length) stored.set(key(group[0].brand, countryOf(group[0]), row.external_id), sizes);
+    }
+  }
+  if (stored.size === 0) return records;
+  return records.map((r) => {
+    const prev = r.sizesInStockOnly && r.variants ? stored.get(key(r.brand, countryOf(r), r.externalId)) : undefined;
+    return prev ? { ...r, variants: { ...r.variants!, sizes: mergeInStockSizes(prev, r.variants!.sizes) } } : r;
+  });
+}
+
+/** External ids of one brand × market whose stored variants hold sizes (sizes.ts `sizedIds`). */
+export async function getSizedExternalIds(db: Db, brand: string, country: string): Promise<Set<string>> {
+  const rows = await db.query<{ external_id: string }>(
+    "SELECT external_id FROM products WHERE brand=$1 AND country=$2" +
+      " AND jsonb_typeof(variants->'sizes') = 'array' AND jsonb_array_length(variants->'sizes') > 0",
+    [brand, country],
+  );
+  return new Set(rows.map((r) => r.external_id));
 }
 
 async function upsertChanged(

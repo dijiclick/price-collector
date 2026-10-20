@@ -63,6 +63,12 @@ export interface ProductRecord {
   /** Colour/size availability, when the adapter can surface it. */
   variants?: ProductVariants | null;
   /**
+   * `variants.sizes` lists only the sizes the shop can sell right now (a feed
+   * that drops sold-out sizes). The upsert then keeps every stored size missing
+   * from this run as out_of_stock, so a restock is still visible (sizes.ts).
+   */
+  sizesInStockOnly?: boolean;
+  /**
    * Stable id shared by every variant (colour/shade) of the SAME product, so
    * the feed can collapse them into one card. Only set from an explicit,
    * source-provided grouping — never from name similarity (brands reuse generic

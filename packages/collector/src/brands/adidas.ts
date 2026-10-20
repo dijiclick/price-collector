@@ -32,6 +32,7 @@
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
+import { sizedIds, sizesFirst } from "../sizes";
 import { randomUUID } from "node:crypto";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
@@ -59,6 +60,14 @@ export function appUa(fingerprint: string = randomUUID(), model = MODELS[Math.fl
 const PAGE_SIZE = 48; // fixed by the API
 const MAX_PAGES = Number(process.env.ADIDAS_MAX_PAGES ?? 32); // 1,536 products
 const STOCK_LIMIT = Number(process.env.ADIDAS_STOCK_LIMIT ?? 20);
+/**
+ * Turkey's stock pass is bigger (2026-10-20): ~2,000 deals, one call each, and
+ * since the size filter hides unsized clothes and shoes, every deal needs a
+ * size list. Products with no stored sizes go first (sizes.ts), so ~300 a run
+ * (~40 s at 4 in flight from the Hetzner box, every 3 hours) covers the
+ * backlog in about a day and then keeps refreshing.
+ */
+const TR_STOCK_LIMIT = Number(process.env.ADIDAS_TR_STOCK_LIMIT ?? 300);
 const CAP = 1500;
 
 export const ADIDAS_MARKETS: Partial<Record<CountryCode, { lang: string; collection: string; site: string }>> = {
@@ -309,7 +318,7 @@ export async function listAdidas(country: CountryCode): Promise<ProductRecord[]>
     const k = Math.floor(Math.random() * (j + 1));
     [ids[j], ids[k]] = [ids[k], ids[j]];
   }
-  await pool(ids.slice(0, STOCK_LIMIT), 4, async (id) => {
+  await pool(sizesFirst(ids, (id) => id, await sizedIds(brand, country), STOCK_LIMIT), 4, async (id) => {
     const stock = await getJson<any>(`${API}/gw/stc/inline/products/${id}/stock`, { headers, country, retries: 1 }).catch(() => null);
     const sizes = sizesOf(stock);
     if (!sizes.length) return;
@@ -417,7 +426,7 @@ export async function listAdidasTrCatalogue(): Promise<ProductRecord[]> {
     if (accessories.has(id)) r.category = "Aksesuar";
   }
 
-  // Stock pass: a random subset each run, deals first; the upsert keeps earlier runs' sizes.
+  // Stock pass: unsized products first, then a random subset, deals first; the upsert keeps earlier runs' sizes.
   const shuffle = <T>(a: T[]) => {
     for (let j = a.length - 1; j > 0; j--) {
       const k = Math.floor(Math.random() * (j + 1));
@@ -427,7 +436,7 @@ export async function listAdidasTrCatalogue(): Promise<ProductRecord[]> {
   };
   const all = [...byId.values()];
   const queue = [...shuffle(all.filter((r) => r.listPrice != null)), ...shuffle(all.filter((r) => r.listPrice == null))];
-  await pool(queue.slice(0, STOCK_LIMIT), 4, async (r) => {
+  await pool(sizesFirst(queue, (r) => r.externalId, await sizedIds(brand, country), TR_STOCK_LIMIT), 4, async (r) => {
     const stock = await getJson<any>(`${API}/gw/stc/inline/products/${r.externalId}/stock`, { headers, country, retries: 1 }).catch(() => null);
     const sizes = sizesOf(stock);
     if (!sizes.length) return;

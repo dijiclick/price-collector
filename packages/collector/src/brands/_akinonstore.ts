@@ -16,6 +16,7 @@
  */
 import type { ProductRecord, ProductVariants } from "../types";
 import { getJson } from "../http";
+import { sizedIds, sizesFirst } from "../sizes";
 import {
   RESULT_WINDOW,
   akinonRecords,
@@ -171,7 +172,8 @@ export async function listAkinonStore(store: AkinonStore, limits: AkinonLimits):
     const k = Math.floor(Math.random() * (j + 1));
     [missing[j], missing[k]] = [missing[k], missing[j]];
   }
-  await pool(missing.slice(0, limits.detailLimit), CONCURRENCY, async (r) => {
+  const sized = await sizedIds(shop.brand, "TR");
+  await pool(sizesFirst(missing, (r) => r.externalId, sized, limits.detailLimit), CONCURRENCY, async (r) => {
     const v = await fetchVariants(store, r.url);
     if (!v) return;
     r.variants = v;
