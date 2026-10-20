@@ -72,6 +72,17 @@ export const notHomeGoods = (a: string) => `NOT (
     OR ${foldSql(`${a}.name`)} ~ '${HOME_STRONG_RE}'
     OR coalesce(${a}.url, '') ~* '${HOME_URL_RE}')`;
 
+/**
+ * The product's link still opens the product (2026-10-20). A row of
+ * `product_link_checks` marked `broken` — two checks in a row ended on a
+ * 404/410 or on a category/home page — hides the product everywhere the caches
+ * reach (feed, search, shelves, Stilist), but only while `products.url` is the
+ * url that was checked: a collector that writes a corrected url un-hides it
+ * with no other step. See packages/collector/src/host/links.ts.
+ */
+export const linkOk = (a: string) =>
+  `NOT EXISTS (SELECT 1 FROM product_link_checks l WHERE l.product_id = ${a}.id AND l.broken AND l.url = ${a}.url)`;
+
 /** Rows a feed row needs; the order is the INSERT's column list. */
 const FEED_COLS = [
   "id", "country", "brand", "currency", "name", "url", "image_url", "category",
@@ -120,7 +131,8 @@ const feedSelect = (scope: string, onSale = true) => `
    WHERE ${scope}
      ${onSale ? `AND p.current_list_price IS NOT NULL AND ${DISCOUNTED.replace(/current_/g, "p.current_")}` : ""}
      AND p.image_url IS NOT NULL AND p.in_stock AND p.${FRESH}
-     AND ${notHomeGoods("p")}`;
+     AND ${notHomeGoods("p")}
+     AND ${linkOk("p")}`;
 
 /**
  * The search catalogue (2026-10-11): the same compact rows as the feed cache,
@@ -270,6 +282,7 @@ export const REFRESH_CATALOGUE_SQL = `
    WHERE country = $1 AND brand = $2
      AND image_url IS NOT NULL AND in_stock AND ${FRESH} AND current_price >= $3
      AND ${notHomeGoods("products")}
+     AND ${linkOk("products")}
    GROUP BY product_type, product_subtype, gender`;
 
 interface Queryable {

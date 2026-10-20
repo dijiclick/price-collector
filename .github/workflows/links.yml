@@ -1,0 +1,47 @@
+name: links
+
+# The dead-link guard (packages/collector/src/host/links.ts) for the shops the
+# main Hetzner box cannot reach. The box runs the same job every 2 h for every
+# shop that answers it (modadrop-links.timer); Boyner and Rossmann refuse its
+# IP but answer a GitHub runner with real 404s for removed products (probe run
+# 39469012937, 2026-10-20). Inditex answers both with a 2 KB shell for ANY url,
+# so its links cannot be judged over HTTP at all and are left alone.
+#
+# THE COLLECTOR REPOSITORY IS PUBLIC — same trigger rules as collect.yml:
+# schedule and workflow_dispatch only. Never pull_request_target or workflow_run.
+# It sends nothing to anyone, so it does not share collect.yml's group.
+on:
+  schedule:
+    - cron: "41 1,7,13,19 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: links
+  cancel-in-progress: false
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --omit=dev --ignore-scripts
+      - name: Re-check product links
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LINK_COUNTRIES: TR
+          LINK_MOVED_COUNTRIES: TR
+          LINK_ONLY_HOSTS: boyner.com.tr,rossmann.com.tr
+          LINK_BUDGET: "800"
+          LINK_PER_HOST: "400"
+          MODADROP_STATE_DIR: ${{ runner.temp }}/modadrop
+        run: npx tsx packages/collector/src/host/links.ts

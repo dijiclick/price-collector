@@ -71,9 +71,25 @@ export function mapGender(value: unknown): ProductRecord["gender"] {
   return null;
 }
 
+/**
+ * guess.com/tr-tr does not sell kids online (2026-10-20). The tr_TR index still
+ * lists ~700 kids products ("Junior Girls/Boys", urls under /guess-kids/ and
+ * /guess/cocuklar/), but every one of those product pages 301s to
+ * /tr-tr/guess/kadin — through the index url, the guess.com host, the generic
+ * /product?pid= route (410) and the SFCC Product-Show route (404) alike.
+ * Owner report: "open on site" never reached the product. Other markets'
+ * kids pages open fine (en-gb/en-ch/en-no checked), so only Turkey drops them.
+ */
+export function unsellableInMarket(h: any, m: Market): boolean {
+  if (m.country !== "TR") return false;
+  const url = String(h.url ?? "");
+  return mapGender(h.guess_gender) === "cocuk" || /\/(guess-kids|cocuklar)\//.test(url);
+}
+
 export function mapHit(h: any, m: Market = market("TR")): ProductRecord | null {
   const id = String(h.objectID ?? "");
   if (!id || id.startsWith("ENSEMBLE-")) return null; // skip "shop the look" bundles
+  if (unsellableInMarket(h, m)) return null;
   // Every hit names its own currency. A mismatch would store e.g. EUR amounts
   // labelled SEK — a silently wrong price — so drop the hit instead.
   if (h.currencyCode && h.currencyCode !== m.currency) return null;

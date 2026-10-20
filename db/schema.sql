@@ -574,3 +574,44 @@ CREATE INDEX IF NOT EXISTS idx_stilist_alarms_token ON stilist_alarms (token);
 -- Implicit = remembered from a search, not set by the user (lib/interests.ts):
 -- new products only, one push per device per 48 h, expires after 14 days.
 ALTER TABLE stilist_alarms ADD COLUMN IF NOT EXISTS implicit BOOLEAN NOT NULL DEFAULT false;
+
+-- ---------------------------------------------------------------------------
+-- AI product tags for the outfit engine (2026-10-19). One row per product,
+-- written by scripts/tag-products.mjs (Gemini Flash-Lite, free AI Studio keys)
+-- running on the main Hetzner box. `tags` is the model's JSON: category,
+-- subtype, colours (hex), pattern, style, formality, season, material family,
+-- weight, sheen, fit, length… `error` marks a photo that could not be read,
+-- so the job does not retry it forever.
+CREATE TABLE IF NOT EXISTS product_tags (
+  product_id BIGINT PRIMARY KEY,
+  tags       JSONB,
+  model      TEXT NOT NULL,
+  version    INT  NOT NULL DEFAULT 1,
+  error      TEXT,
+  tagged_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------------
+-- Dead product links (2026-10-20). Owner: "open on site" on a Calvin Klein bag
+-- landed on tr.calvinklein.com/kadin — the shop had pulled the page while its
+-- feed still listed the bag in stock. packages/collector/src/host/links.ts
+-- re-checks product urls (tracked items first, then the feed, then the
+-- catalogue) and records the answer here. A row hides its product from the
+-- feed, search, shelves and Stilist (lib/feed-cache.ts `linkOk`) only when
+-- `broken` — two checks in a row, at least 45 min apart, ended on 404/410 or
+-- on a category/home page of the same shop — and only while products.url is
+-- still the url that was checked, so a corrected url un-hides it by itself.
+-- 403/429/timeouts are `unknown` and never hide anything. Never deletes.
+CREATE TABLE IF NOT EXISTS product_link_checks (
+  product_id   INTEGER PRIMARY KEY,
+  url          TEXT NOT NULL,
+  status       TEXT NOT NULL,
+  http         INTEGER,
+  final_url    TEXT,
+  strikes      INTEGER NOT NULL DEFAULT 0,
+  broken       BOOLEAN NOT NULL DEFAULT false,
+  broken_since TIMESTAMPTZ,
+  checked_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_product_link_checks_broken ON product_link_checks (product_id) WHERE broken;
+CREATE INDEX IF NOT EXISTS idx_product_link_checks_checked ON product_link_checks (checked_at);
