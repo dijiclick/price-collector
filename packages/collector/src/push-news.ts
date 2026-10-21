@@ -3,7 +3,7 @@
  * sale-start and sale-calendar reminders added beside it.
  *
  * Owner: "every day maybe it's bad to send message, but generally good idea".
- * So a round-up goes to a device at most once per 72h, only between 20:30 and
+ * So a round-up goes to a device at most once per 48h (was 72h until 2026-10-21), only between 20:30 and
  * 21:59 on the device's own clock (Turkey's shopping peak — research in
  * docs/marketing/daily-engagement-research-2026-10-03.md), only when there are
  * at least 5 fresh drops on brands the device tracks, and never when the
@@ -18,13 +18,15 @@ import { devicePrefs, inQuietHours } from "./push";
 import { classifyToken, loadCreds, sendApns, sendFcm, type PushContent } from "./push-transport";
 import { BRAND_LABELS } from "../../../lib/format";
 import { dueCampaigns } from "./sale-calendar";
+import { logPushes, nudgeAllowed } from "./push-log";
 
 type Outcome = "ok" | "dead" | "retry";
 export type NewsSend = (token: string, c: PushContent) => Promise<Outcome>;
 
 const MIN_DROPS = 5;
 const MIN_PCT = 20;
-const BUDGET_MS = 72 * 3600_000;
+// The round-up's own floor; the shared nudge budget (push-log.ts) is 48 h.
+const BUDGET_MS = 48 * 3600_000;
 export const NEWS_DEFAULT_TZ = "Europe/Istanbul";
 
 /** 20:30-21:59 on the device's clock. */
@@ -43,7 +45,7 @@ export function newsWindowOpen(tz: string | null, now: Date): boolean {
   return mins >= 20 * 60 + 30 && mins < 22 * 60;
 }
 
-/** One news push per device per 72h. */
+/** One round-up per device per 48h (owner 2026-10-21: "every 2 days"). */
 export function newsBudgetOk(last: Date | null, now: Date): boolean {
   return !last || now.getTime() - last.getTime() >= BUDGET_MS;
 }
@@ -123,12 +125,17 @@ export async function pushNews(db: Db, opts: { now?: Date; send?: NewsSend } = {
   const now = opts.now ?? new Date();
   const send = opts.send ?? realSend;
   const devices = await newsDevices(db);
+  // One budget for every nudge (push-log.ts): 48 h apart, longer when ignored.
+  // Sale starts and calendar eves used to be exempt; since 2026-10-21 nothing is.
+  const allowed = await nudgeAllowed(db, devices.map((d) => d.token), now);
   let sent = 0;
   let tried = 0;
   const dead: string[] = [];
   const record = async (d: NewsDevice, key: string) => {
     await db.query(`INSERT INTO push_news (token, key, sent_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [d.token, key, now.toISOString()]);
+    await logPushes(db, [{ token: d.token, kind: key.split(":")[0], nudge: true, key }], now);
     d.last_news = now; // the same run's later passes see it
+    allowed.delete(d.token);
   };
   /** Never two news pushes on one evening, whatever kind. */
   const hadNewsTonight = (d: NewsDevice) => {
@@ -137,8 +144,7 @@ export async function pushNews(db: Db, opts: { now?: Date; send?: NewsSend } = {
   };
 
   // 1. Brand sale starts (brand-sales.ts), to devices tracking that brand.
-  //    Exempt from the 72h budget — a sale start is the news — but once per
-  //    sale per device, and never on an evening that already had news.
+  //    Once per sale per device, inside the shared nudge budget.
   const sales = await db.query<{ brand: string; country: string; started_at: Date | string }>(
     `SELECT brand, country, started_at FROM brand_sales WHERE started_at > $1::timestamptz - interval '24 hours'`,
     [now.toISOString()],
@@ -150,7 +156,7 @@ export async function pushNews(db: Db, opts: { now?: Date; send?: NewsSend } = {
       ),
     );
     for (const d of devices) {
-      if (!newsAwake(d, now) || hadNewsTonight(d)) continue;
+      if (!allowed.has(d.token) || !newsAwake(d, now) || hadNewsTonight(d)) continue;
       const sale = sales.find((x) => x.country === d.country && d.brands.includes(x.brand));
       if (!sale) continue;
       const key = `sale:${sale.brand}:${sale.country}:${localDate(null, asDate(sale.started_at)!)}`;
@@ -166,9 +172,9 @@ export async function pushNews(db: Db, opts: { now?: Date; send?: NewsSend } = {
   }
 
   // 2. Sale-calendar eves (sale-calendar.ts) — to every device that tracks
-  //    something. Exempt from the 72h budget like a sale start, once per key.
+  //    something. Once per key, inside the shared nudge budget.
   for (const d of devices) {
-    if (dead.includes(d.token) || !newsAwake(d, now) || hadNewsTonight(d)) continue;
+    if (dead.includes(d.token) || !allowed.has(d.token) || !newsAwake(d, now) || hadNewsTonight(d)) continue;
     const due = dueCampaigns(now, d.tz);
     if (!due.length) continue;
     const have = new Set(
@@ -186,7 +192,7 @@ export async function pushNews(db: Db, opts: { now?: Date; send?: NewsSend } = {
   }
 
   // 3. The round-up. Fresh drops are counted ONCE per run, not per device —
-  //    every eligible device has the same window (its last news is 72h+ old,
+  //    every eligible device has the same window (its last news is 48h+ old,
   //    or it never had any), and the database is the scarce resource. Grouped
   //    by percentage so each device's own minimum applies in memory.
   let drops: { country: string; brand: string; pct: number; n: number }[] | null = null;
@@ -196,7 +202,7 @@ export async function pushNews(db: Db, opts: { now?: Date; send?: NewsSend } = {
       `SELECT country, brand, pct, count(*)::int AS n FROM (
          SELECT p.id, p.country, p.brand, max(abs(e.pct))::int AS pct
          FROM events e JOIN products p ON p.id = e.product_id
-         WHERE e.type = 'price_drop' AND e.ts > $1::timestamptz - interval '72 hours' AND e.ts <= $1::timestamptz
+         WHERE e.type = 'price_drop' AND e.ts > $1::timestamptz - interval '48 hours' AND e.ts <= $1::timestamptz
            AND abs(e.pct) >= $2 AND p.in_stock
          GROUP BY p.id, p.country, p.brand) x
        GROUP BY 1, 2, 3`,
@@ -205,8 +211,7 @@ export async function pushNews(db: Db, opts: { now?: Date; send?: NewsSend } = {
   for (const d of devices) {
     if (dead.includes(d.token)) continue;
     if (!newsAwake(d, now)) continue;
-    const last = asDate(d.last_news);
-    if (!newsBudgetOk(last, now)) continue;
+    if (!allowed.has(d.token) || !newsBudgetOk(asDate(d.last_news), now)) continue;
     const prefs = devicePrefs(d.prefs);
     const minPct = Math.max(MIN_PCT, prefs?.minPct ?? 0);
     const perBrand = new Map<string, number>();

@@ -14,6 +14,7 @@
  * - Tapping it opens one of the tracked products (the app treats an unknown
  *   `kind` as a plain drop in the foreground and opens the product page).
  */
+import { logPushes, nudgeAllowed } from "./push-log";
 import type { Db } from "./db";
 import { devicePrefs, inQuietHours } from "./push";
 import { classifyToken, loadCreds, sendApns, sendFcm, type PushContent } from "./push-transport";
@@ -82,8 +83,10 @@ export async function pushReminders(
   let sent = 0;
   const done: string[] = [];
   const dead: string[] = [];
+  const allowed = await nudgeAllowed(db, rows.map((r) => r.token), now);
   for (const r of rows) {
     if (classifyToken(r.token) === "expo") continue;
+    if (!allowed.has(r.token)) continue; // the shared 48 h nudge budget; tried again next run
     const prefs = devicePrefs(r.prefs);
     if (prefs && !prefs.drop && !prefs.target && !prefs.restock) {
       done.push(r.token); // opted out of every alert: never remind
@@ -95,6 +98,7 @@ export async function pushReminders(
     if (out === "ok") {
       sent++;
       done.push(r.token);
+      await logPushes(db, [{ token: r.token, kind: "reminder", nudge: true, key: "reminder:d3", productId: r.product_id }], now);
     } else if (out === "dead") dead.push(r.token);
   }
   if (done.length) await db.query(`UPDATE push_devices SET reminded_at = $2 WHERE token = ANY($1)`, [done, now.toISOString()]);

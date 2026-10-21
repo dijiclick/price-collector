@@ -488,6 +488,22 @@ CREATE TABLE IF NOT EXISTS push_news (
 );
 CREATE INDEX IF NOT EXISTS push_news_token_sent_idx ON push_news (token, sent_at DESC);
 
+-- Every push sent (packages/collector/src/push-log.ts, 2026-10-21), and when
+-- the app reported it opened (app/api/push/opened). `nudge` = the app reaching
+-- out unasked (round-up, sale, calendar, reminders, first-week series); those
+-- share one budget: one per device per 48 h, backing off when ignored.
+CREATE TABLE IF NOT EXISTS push_log (
+  id         BIGSERIAL PRIMARY KEY,
+  token      TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  nudge      BOOLEAN NOT NULL,
+  key        TEXT,
+  product_id BIGINT,
+  sent_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  opened_at  TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS push_log_token_sent_idx ON push_log (token, sent_at DESC);
+
 
 -- A brand's sale started (packages/collector/src/brand-sales.ts, 2026-10-03):
 -- one row per brand and country per 21 days; push-news.ts announces it to the
@@ -574,6 +590,8 @@ CREATE INDEX IF NOT EXISTS idx_stilist_alarms_token ON stilist_alarms (token);
 -- Implicit = remembered from a search, not set by the user (lib/interests.ts):
 -- new products only, one push per device per 48 h, expires after 14 days.
 ALTER TABLE stilist_alarms ADD COLUMN IF NOT EXISTS implicit BOOLEAN NOT NULL DEFAULT false;
+-- Until 2026-10-20 filters were written as a JSON string inside jsonb (double-encoded); unwrap them so jsonb operators work.
+UPDATE stilist_alarms SET filters = (filters #>> '{}')::jsonb WHERE jsonb_typeof(filters) = 'string';
 
 -- ---------------------------------------------------------------------------
 -- AI product tags for the outfit engine (2026-10-19). One row per product,
@@ -615,3 +633,22 @@ CREATE TABLE IF NOT EXISTS product_link_checks (
 );
 CREATE INDEX IF NOT EXISTS idx_product_link_checks_broken ON product_link_checks (product_id) WHERE broken;
 CREATE INDEX IF NOT EXISTS idx_product_link_checks_checked ON product_link_checks (checked_at);
+
+-- Stilist looks judged by an AI stylist (2026-10-21, owner: "it must be much
+-- smarter, like a real stylist"). scripts/stylist-judge.mjs on the main box
+-- takes a product from stylist_judge_queue, asks the API for the rules'
+-- candidate looks per occasion, and lets Gemini pick the one a senior stylist
+-- would sign off on — or none. verdict 'none' = no look worth showing.
+CREATE TABLE IF NOT EXISTS stylist_looks (
+  product_id  BIGINT NOT NULL,
+  occasion    TEXT   NOT NULL,
+  verdict     TEXT   NOT NULL,
+  item_ids    BIGINT[],
+  roles       TEXT[],
+  score       INT,
+  headline_tr TEXT, headline_en TEXT, note_tr TEXT, note_en TEXT,
+  model       TEXT,
+  judged_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (product_id, occasion)
+);
+CREATE TABLE IF NOT EXISTS stylist_judge_queue (product_id BIGINT PRIMARY KEY, queued_at TIMESTAMPTZ NOT NULL DEFAULT now());

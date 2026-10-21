@@ -18,6 +18,7 @@
  * Matching runs on catalogue_items (lib/feed-cache.ts) — compact, in memory,
  * every live product of the launched markets — joined to the run's events.
  */
+import { logPushes, nudgeAllowed } from "./push-log";
 import type { Db } from "./db";
 import { devicePrefs, inQuietHours } from "./push";
 import { classifyToken, hasCoinChannel, loadCreds, sendApns, sendFcm, type PushContent } from "./push-transport";
@@ -151,6 +152,9 @@ export async function pushStilistAlarms(db: Db, opts: { now?: Date; send?: Alarm
     return 0;
   }
   let sent = 0;
+  // Remembered searches are nudges (push-log.ts): inside the shared 48 h budget.
+  // Saved alarms are personal — the shopper asked for them — and are not.
+  const allowed = await nudgeAllowed(db, [...new Set(alarms.filter((a) => a.implicit).map((a) => a.token))], now);
   // The newest implicit push each device has had — the 48 h ration is per
   // device, across all its remembered searches.
   const lastImplicit = new Map<string, number>();
@@ -171,6 +175,7 @@ export async function pushStilistAlarms(db: Db, opts: { now?: Date; send?: Alarm
         }
         if (now.getTime() - (lastImplicit.get(a.token) ?? 0) < IMPLICIT_COOLDOWN_MS) continue;
         if (prefs && prefs.news === false) continue; // "Haberler ve fırsatlar" off means no reminders
+        if (!allowed.has(a.token)) continue;
       }
       if (inQuietHours(a.tz || "Europe/Istanbul", now, prefs)) continue; // window stays open until morning
       const floor = new Date(now.getTime() - MAX_LOOKBACK_H * 3600_000);
@@ -194,7 +199,8 @@ export async function pushStilistAlarms(db: Db, opts: { now?: Date; send?: Alarm
         await db.query(`DELETE FROM stilist_alarms WHERE token = $1`, [a.token]);
       } else if (outcome === "ok") {
         sent += 1;
-        if (a.implicit) lastImplicit.set(a.token, now.getTime());
+        if (a.implicit) { lastImplicit.set(a.token, now.getTime()); allowed.delete(a.token); }
+        await logPushes(db, [{ token: a.token, kind: a.implicit ? "search" : "alarm", nudge: !!a.implicit, key: `alarm:${a.id}`, productId: rows[0].id }], now);
         await db.query(`UPDATE stilist_alarms SET checked_at = $2, last_notified_at = $2 WHERE id = $1`, [a.id, now.toISOString()]);
       } // "retry": the window stays open and the next run tries again
     } catch (err) {

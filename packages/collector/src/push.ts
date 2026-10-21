@@ -1,3 +1,4 @@
+import { logPushes } from "./push-log";
 import type { Db } from "./db";
 import { fromMinor } from "./normalize";
 import { BRAND_LABELS } from "../../../lib/format";
@@ -378,6 +379,9 @@ async function deliver(rows: PushRow[]): Promise<Outcome[]> {
   return out;
 }
 
+/** A personal alert as the push log records it (push-log.ts). */
+const personalLog = (r: PushRow) => ({ token: r.token, kind: buildMessage(r).data.kind, nudge: false, productId: r.product_id });
+
 export interface PushNotifyOpts {
   /** Test seam for quiet hours. */
   now?: Date;
@@ -448,6 +452,7 @@ export async function pushNotify(db: Db, opts: PushNotifyOpts = {}): Promise<num
   const releasedHeld: PushRow[] = [...stale, ...muted];
   if (dueHeld.length) {
     const outcomes = await deliver(dueHeld);
+    await logPushes(db, dueHeld.filter((_, i) => outcomes[i] === "ok").map(personalLog), now);
     dueHeld.forEach((r, i) => {
       if (outcomes[i] === "ok") sent++;
       if (outcomes[i] === "dead") deadTokens.add(r.token);
@@ -525,6 +530,7 @@ export async function pushNotify(db: Db, opts: PushNotifyOpts = {}): Promise<num
   }
 
   const outcomes = await deliver(due);
+  await logPushes(db, due.filter((_, i) => outcomes[i] === "ok").map(personalLog), now);
   due.forEach((r, i) => {
     if (outcomes[i] === "ok") sent++;
     else if (outcomes[i] === "dead") deadTokens.add(r.token);

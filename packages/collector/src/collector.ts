@@ -398,6 +398,14 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
   } catch (err) {
     console.error("push news failed:", err instanceof Error ? err.message : err);
   }
+  // First-week series for devices that track nothing yet — after news, so the
+  // shared nudge budget already counts tonight's round-ups.
+  try {
+    const { pushWelcome } = await import("./push-welcome");
+    await pushWelcome(db);
+  } catch (err) {
+    console.error("push welcome failed:", err instanceof Error ? err.message : err);
+  }
   await db.close();
   failOnBlocked(results, label);
 }
