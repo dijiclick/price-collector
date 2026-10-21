@@ -47,7 +47,9 @@ import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
-import { galleryOf } from "./pandora";
+import { edgeImage, galleryOf } from "./pandora";
+
+export { edgeImage };
 
 export interface PandoraMarket {
   org: string;
@@ -72,8 +74,6 @@ const MAX_PAGES = 8;
 const ID_BATCH = 24;
 const DETAIL_CONCURRENCY = 4;
 const CAP = Number(process.env.PANDORA_INTL_MAX_PRODUCTS ?? 1500);
-const IMAGE_EDGE = "https://edge.disstg.commercecloud.salesforce.com/dw/image/v2";
-const IMAGE_SIZE = "sw=1000&sh=1000&sm=fit";
 
 const scapi = (m: PandoraMarket) => `https://${m.shortCode}.api.commercecloud.salesforce.com`;
 
@@ -152,14 +152,6 @@ export function mapIntlHit(hit: any, country: CountryCode, m: PandoraMarket): Pr
     groupKey: null,
     colorName: null,
   };
-}
-
-/** Storefront image URL → the same file on Salesforce's image edge, resized. */
-export function edgeImage(link: string | null | undefined, realm: string): string | null {
-  if (typeof link !== "string") return null;
-  const i = link.indexOf("/on/demandware.static/");
-  if (i < 0) return null;
-  return `${IMAGE_EDGE}/${realm}${link.slice(i).split("?")[0]}?${IMAGE_SIZE}`;
 }
 
 /** Card photo: the packshot the listing shows (not the bracelet-builder cut-out). */

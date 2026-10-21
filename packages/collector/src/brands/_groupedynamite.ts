@@ -19,7 +19,17 @@
  * Flow per market: 1 token + shopper-search on the brand's sale category
  * (`grg_sale` / `dyn_sale`, 200 per page, `perPricebook=true` for the list and
  * sale price books) + shopper-products in batches of 24 for per-size
- * `orderable` (= restock alerts). ~30 requests for ~550 products.
+ * `orderable` (= restock alerts) and the promotional price. ~30 requests for
+ * ~550 products.
+ *
+ * Promotions: most sale styles also carry an automatic "Extra 30%" promotion
+ * that the product page shows as the current price (the PWA's getPriceData
+ * takes the lowest `productPromotions[].promotionalPrice` below the price,
+ * e.g. "$14.00" over a struck "$34.95" while the sale book says 20.00). Search
+ * hits list the promotion but not its price; shopper-products with
+ * `expand=promotions` has it, so the detail pass lowers `price` to it. A guest
+ * token only gets the promotions that apply to a guest, so no loyalty or
+ * employee prices. If the detail call fails the sale-book price stays.
  */
 import { type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -89,6 +99,30 @@ export function mapGdiHit(brand: GdiBrand, hit: any, country: CountryCode): Prod
     groupKey: null,
     colorName: colour,
   };
+}
+
+/**
+ * The promotional price the product page shows: the lowest
+ * `promotionalPrice` among the record's (or its variants') product
+ * promotions. Null when there is none.
+ */
+export function promoPriceOf(prod: any): number | null {
+  const promos: any[] = [...(prod?.productPromotions ?? []), ...(prod?.variants ?? []).flatMap((v: any) => v?.productPromotions ?? [])];
+  const prices = promos.map((p) => Number(p?.promotionalPrice)).filter((n) => n > 0);
+  return prices.length ? Math.min(...prices) : null;
+}
+
+/** Fold one shopper-products record into its search-hit record: sizes, category, promotional price. */
+export function applyGdiProduct(r: ProductRecord, prod: any): void {
+  const { sizes, category, colour } = sizesOf(prod);
+  if (sizes.length) {
+    r.variants = { colors: colour ? [colour] : [], sizes };
+    r.inStock = sizes.some((s) => s.availability === "in_stock");
+  }
+  r.category = category ?? r.category ?? null;
+  r.colorName = colour ?? r.colorName ?? null;
+  const promo = promoPriceOf(prod);
+  if (promo != null && toMinor(promo) < r.price) r.price = toMinor(promo);
 }
 
 /**
@@ -176,20 +210,13 @@ export async function listGroupeDynamite(brand: GdiBrand, country: CountryCode):
       ids: ids.slice(i, i + BATCH).join(","),
       locale: site.locale,
       currency,
-      expand: "availability,variations",
+      expand: "availability,variations,promotions",
       allImages: "false",
     });
     const data = await getJson<any>(`${SCAPI}/product/shopper-products/v1/organizations/${ORG}/products?${q}`, { country, headers: auth }).catch(() => null);
     for (const prod of data?.data ?? []) {
       const r = byId.get(String(prod?.id));
-      if (!r) continue;
-      const { sizes, category, colour } = sizesOf(prod);
-      if (sizes.length) {
-        r.variants = { colors: colour ? [colour] : [], sizes };
-        r.inStock = sizes.some((s) => s.availability === "in_stock");
-      }
-      r.category = category ?? r.category ?? null;
-      r.colorName = colour ?? r.colorName ?? null;
+      if (r) applyGdiProduct(r, prod);
     }
   }
   return [...ordered.filter((r) => r.inStock), ...ordered.filter((r) => !r.inStock)];

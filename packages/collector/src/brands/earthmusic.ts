@@ -57,7 +57,9 @@ export function parseCards(html: string): ProductRecord[] {
     // A card shown at a campaign/member price is not a public markdown.
     if (attr(block, "data-campaignPrice")) continue;
     const clr = /[?&]clr_id=([^&]+)/.exec(href)?.[1] ?? null;
-    const img = /data-src="(https:\/\/img\.stripe-club\.com\/[^"]+)"/.exec(block)?.[1] ?? null;
+    // The card's `_m_` file is a 280×336 thumbnail; `_l_` is the same photo at
+    // 750×900 (200 for every row checked, 2026-10-21).
+    const img = /data-src="(https:\/\/img\.stripe-club\.com\/[^"]+)"/.exec(block)?.[1]?.replace(/_m_(c[^/]*)$/, "_l_$1") ?? null;
     const url = `${BASE}/brand/earth1999/item/${code}${clr ? `?clr_id=${clr}` : ""}`;
     out.push({
       brand,

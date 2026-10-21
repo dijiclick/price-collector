@@ -118,6 +118,11 @@ export function mapTicimax(shop: TicimaxShop, p: any): ProductRecord | null {
   const shelf = gross(p, "productSellPrice");
   const cart = gross(p, "productCartPrice");
   if (!p?.productId || !p?.name || !Number.isFinite(shelf) || shelf <= 0) return null;
+  // A ":" in the shop path (BBW "/stress-relief:-eucalyptus-…-BBW28017586")
+  // never opens: Ticimax's ASP.NET rejects it with a 302 to SystemError.aspx,
+  // %3A does the same and dropping it is a 404 (2026-10-21; 1 of ~7,300 rows).
+  const path = String(p.url ?? p.defaultUrl ?? "");
+  if (path.includes(":")) return null;
   const price = Number.isFinite(cart) && cart > 0 ? Math.min(cart, shelf) : shelf;
   const big = (u: unknown) => (typeof u === "string" && u ? u.replace("/UrunResimleri/thumb/", "/UrunResimleri/buyuk/") : null);
   const first = big(p.imageThumbPath) ?? big(p.imageLoadingPath);
@@ -128,7 +133,7 @@ export function mapTicimax(shop: TicimaxShop, p: any): ProductRecord | null {
     country: "TR",
     externalId: String(p.productId),
     name,
-    url: `${shop.site}${p.url ?? p.defaultUrl ?? ""}`,
+    url: `${shop.site}${path}`,
     imageUrl: first,
     images: cleanGallery(extra, first),
     price: toMinor(price),

@@ -68,17 +68,22 @@ async function token(): Promise<string> {
  *
  * The markdown actually lives in `c_promoPrices`, a PER-VARIANT array
  * (`[{ pid, price, masterid }]`) where individual sizes go on promotion while
- * the master `price` stays at list. We take the cheapest purchasable variant,
- * which is both the real "you can pay this today" figure and what Pandora's own
- * listing shows. Note this means a markdown confined to one size surfaces as a
- * deal on the product — correct, and the size variants attached below tell the
- * user which size it is.
+ * the master `price` stays at list. That array is not limited to sizes the shop
+ * sells, though: 180963CZ and 180919CZ (2026-10-21) carry -62/-64 entries at
+ * ₺2,329 that are neither in `representedProducts` nor among the Shopper
+ * Products variants, while every real size sells at ₺5,449 / ₺9,849 — we showed
+ * both as 57–76% deals. So a promo only counts for a pid the shop actually
+ * offers: `allowed` is the set of orderable variant ids from the detail pass,
+ * or (for the first pass from search) the hit's own variant ids. Of those we
+ * take the cheapest — a markdown confined to one real, orderable size is a deal
+ * on the product, and the size variants tell the user which size it is.
  */
-function prices(hit: any): { price: number; listPrice: number | null } | null {
+function prices(hit: any, allowed: Set<string>): { price: number; listPrice: number | null } | null {
   const info = hit?.c_extend?.priceInfo ?? {};
   const original = info.originalPrice?.value ?? hit?.price;
   if (typeof original !== "number" || original <= 0) return null;
   const promos: number[] = (hit?.c_promoPrices ?? [])
+    .filter((p: any) => allowed.has(String(p?.pid ?? "")))
     .map((p: any) => p?.price)
     .filter((v: any): v is number => typeof v === "number" && v > 0);
   const lowest = promos.length > 0 ? Math.min(...promos) : original;
@@ -87,6 +92,24 @@ function prices(hit: any): { price: number; listPrice: number | null } | null {
     price: toMinor(current),
     listPrice: current < original ? toMinor(original) : null,
   };
+}
+
+/** The pids a search hit says exist: its variants, or itself when it has none. */
+function hitPids(hit: any): Set<string> {
+  const ids = (hit?.representedProducts ?? []).map((p: any) => String(p?.id ?? "")).filter(Boolean);
+  return new Set([String(hit?.productId ?? ""), ...ids]);
+}
+
+/**
+ * The pids Shopper Products says can be ordered right now: the orderable
+ * variants, or the product itself when it has no variants (charms, gift boxes).
+ */
+export function orderablePids(product: any): Set<string> {
+  const variants: any[] = Array.isArray(product?.variants) ? product.variants : [];
+  if (variants.length > 0) {
+    return new Set(variants.filter((v) => v?.orderable === true).map((v) => String(v?.productId ?? "")));
+  }
+  return new Set(product?.inventory?.orderable ? [String(product?.id ?? "")] : []);
 }
 
 /**
@@ -100,6 +123,26 @@ function prices(hit: any): { price: number; listPrice: number | null } | null {
  * which are left out here as marketing imagery, not photos of this item.
  */
 const PDP_VIEWS = ["modeldetailshot_rect", "main_rect_center", "modelshot_rect", "singlepackshot_rect_center"];
+
+/**
+ * Every image link SCAPI returns points at tr.pandora.net, which is behind
+ * Cloudflare and 403s outside a browser (both `/on/demandware.static/` and the
+ * storefront's `/dw/image/v2/` resizer). Salesforce's own image edge serves the
+ * same file — 200 image/png from the Mac and a runner — and `sw`/`sh` resize it
+ * (the original is ~1 MB). pandora-intl uses this for the US/CA orgs.
+ */
+const IMAGE_EDGE = "https://edge.disstg.commercecloud.salesforce.com/dw/image/v2";
+const IMAGE_SIZE = "sw=1000&sh=1000&sm=fit";
+/** Image realm of the TR org on the edge (the org's 4 letters + _PRD). */
+const REALM = "BJRN_PRD";
+
+/** Storefront image URL → the same file on Salesforce's image edge, resized. */
+export function edgeImage(link: string | null | undefined, realm: string): string | null {
+  if (typeof link !== "string") return null;
+  const i = link.indexOf("/on/demandware.static/");
+  if (i < 0) return null;
+  return `${IMAGE_EDGE}/${realm}${link.slice(i).split("?")[0]}?${IMAGE_SIZE}`;
+}
 
 const fileOf = (url: string) => url.split("?")[0].split("/").pop() ?? url;
 
@@ -139,16 +182,20 @@ export function galleryOf(groups: any[] | null | undefined, first: string | null
 
 export function mapHit(hit: any): ProductRecord | null {
   const id = String(hit?.productId ?? "");
-  const p = id ? prices(hit) : null;
+  const p = id ? prices(hit, hitPids(hit)) : null;
   if (!p) return null;
-  const imageUrl: string | null = hit.image?.link ?? null;
+  // Gallery picks and de-dupes on the storefront links (file names), then every
+  // link moves to the image edge.
+  const link: string | null = hit.image?.link ?? null;
+  const imageUrl = edgeImage(link, REALM);
+  const gallery = galleryOf(hit.imageGroups, link, id) ?? [];
   return {
     brand: "pandora",
     externalId: id,
     name: hit.productName ?? "",
     url: hit.c_slugURL ?? `${SITE}/tr/${id}.html`,
     imageUrl,
-    images: galleryOf(hit.imageGroups, imageUrl, id),
+    images: cleanGallery(gallery.map((u) => edgeImage(u, REALM)), imageUrl),
     ...p,
     currency: "TRY",
     // `orderable` is true for every hit including sold-out ones; c_productInStock
@@ -156,6 +203,19 @@ export function mapHit(hit: any): ProductRecord | null {
     inStock: hit.c_productInStock !== false,
     variants: null,
   };
+}
+
+/**
+ * Re-price a discounted record against what Shopper Products says is orderable
+ * (`product` null = the detail call failed or did not return it). A promo on a
+ * size that can't be bought is no deal, so with nothing to confirm it the
+ * record falls back to list price rather than keep an unverified discount.
+ */
+export function confirmPrice(rec: ProductRecord, hit: any, product: any | null): void {
+  const p = prices(hit, product ? orderablePids(product) : new Set());
+  if (!p) return;
+  rec.price = p.price;
+  rec.listPrice = p.listPrice;
 }
 
 /** Size labels + per-size availability, from the variation attribute matrix. */
@@ -183,27 +243,29 @@ async function pool<T>(items: T[], workers: number, fn: (item: T) => Promise<voi
 }
 
 /**
- * Attach sizes to the records that will actually surface as deals. The search
- * response carries only variant *ids*, so sizes need a second call; doing it for
- * the discounted subset keeps that to ~30 batched requests instead of ~75 for
- * the whole catalog.
+ * Confirm prices and attach sizes for the records that would surface as deals.
+ * The search response carries only variant *ids*, so per-variant orderability
+ * and sizes need a second call; doing it for the discounted subset keeps that
+ * to ~30 batched requests instead of ~75 for the whole catalog.
  */
-async function attachSizes(recs: ProductRecord[], auth: Record<string, string>): Promise<void> {
-  const byId = new Map(recs.map((r) => [r.externalId, r]));
-  const targets = recs.filter((r) => r.listPrice !== null).map((r) => r.externalId);
-  const batches: string[][] = [];
+async function attachSizes(recs: ProductRecord[], hits: Map<string, any>, auth: Record<string, string>): Promise<void> {
+  const targets = recs.filter((r) => r.listPrice !== null);
+  const batches: ProductRecord[][] = [];
   for (let i = 0; i < targets.length; i += ID_BATCH) batches.push(targets.slice(i, i + ID_BATCH));
 
-  await pool(batches, DETAIL_CONCURRENCY, async (ids) => {
+  await pool(batches, DETAIL_CONCURRENCY, async (batch) => {
     const url =
       `${SCAPI}/product/shopper-products/v1/organizations/${ORG}/products` +
-      `?siteId=${SITE_ID}&ids=${ids.join(",")}&expand=availability,variations`;
-    // Best-effort: sizes are an enrichment, and the upsert coalesces a null onto
-    // whatever is already stored, so a failure here must not lose the prices.
+      `?siteId=${SITE_ID}&ids=${batch.map((r) => r.externalId).join(",")}&expand=availability,variations`;
+    // Sizes are an enrichment and the upsert coalesces a null onto whatever is
+    // already stored, so a failure here keeps the record — but not its
+    // discount, which confirmPrice can no longer vouch for.
     const res = await getJson<any>(url, { headers: auth }).catch(() => null);
-    for (const product of res?.data ?? []) {
-      const rec = byId.get(String(product?.id ?? ""));
-      if (!rec) continue;
+    const byPid = new Map<string, any>((res?.data ?? []).map((p: any) => [String(p?.id ?? ""), p]));
+    for (const rec of batch) {
+      const product = byPid.get(rec.externalId) ?? null;
+      confirmPrice(rec, hits.get(rec.externalId), product);
+      if (!product) continue;
       const sizes = sizesOf(product);
       if (sizes.length > 0) rec.variants = { colors: [], sizes };
       if (typeof product?.inventory?.orderable === "boolean") {
@@ -218,6 +280,7 @@ export const brand = "pandora";
 export async function listProducts(): Promise<ProductRecord[]> {
   const auth = { Authorization: `Bearer ${await token()}` };
   const byId = new Map<string, ProductRecord>();
+  const hits = new Map<string, any>();
   let total = 0;
 
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -244,13 +307,15 @@ export async function listProducts(): Promise<ProductRecord[]> {
     }
     for (const hit of res?.hits ?? []) {
       const rec = mapHit(hit);
-      if (rec) byId.set(rec.externalId, rec);
+      if (!rec) continue;
+      byId.set(rec.externalId, rec);
+      hits.set(rec.externalId, hit);
     }
     total = res?.total ?? 0;
     if (offset + PAGE_SIZE >= total) break;
   }
 
   const recs = [...byId.values()];
-  await attachSizes(recs, auth);
+  await attachSizes(recs, hits, auth);
   return recs;
 }

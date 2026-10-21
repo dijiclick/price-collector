@@ -3,7 +3,9 @@
  * product object — `{"id":…,"unit_sale":1299.99,"unit_sale_price":799.99,
  * "stock":47,…}` — which carries both the struck-through and the selling
  * price, so one HTML fetch is the lookup. `unit_sale_price` is the shelf
- * price; basket campaigns ("2000 TL ve Üzeri %20") are not applied, matching
+ * price; an automatic `productCampaignName` "%15 İNDİRİMLİ 212,49 TL" (no
+ * code, no minimum) is the price paid, while basket-minimum campaigns ("2000
+ * TL ve Üzeri %20") are not applied — the rule in
  * packages/collector/src/brands/modanisa.ts.
  */
 import type { LiveProduct } from "../live-lookup";
@@ -54,12 +56,23 @@ function objectAt(text: string, from: number): any | null {
 const jsVar = (page: string, name: string): string | null =>
   page.match(new RegExp(`var ${name}\\s*=\\s*(["'])((?:\\\\.|(?!\\1).)*)\\1`))?.[2] ?? null;
 
+/** "%15 İNDİRİMLİ 212,49 TL" → 212.49 when it is 15% off `shelf`; else NaN. */
+function campaignPrice(page: string, shelf: number): number {
+  const text = (page.match(/productCampaignName\s*:\s*"([^"]*)"/)?.[1] ?? "").replace(/\s+/g, " ").trim();
+  const m = text.match(/^%(\d{1,2}) (?:İNDİRİMLİ|İndirimli) (\d[\d.]*(?:,\d+)?) TL$/);
+  if (!m) return NaN;
+  const price = Number(m[2].replace(/\./g, "").replace(",", "."));
+  return Math.abs(shelf * (1 - Number(m[1]) / 100) - price) <= shelf * 0.01 ? price : NaN;
+}
+
 export function mapModanisaPage(page: string): LiveProduct | null {
   const at = page.search(/"product":\s*\{"id":/);
   const p = at >= 0 ? objectAt(page, at + 10) : null;
-  const price = Number(p?.unit_sale_price);
-  if (!p?.id || !p.name || !Number.isFinite(price) || price <= 0) return null;
-  const list = Number(p.unit_sale);
+  const shelf = Number(p?.unit_sale_price);
+  if (!p?.id || !p.name || !Number.isFinite(shelf) || shelf <= 0) return null;
+  const campaign = campaignPrice(page, shelf);
+  const price = campaign > 0 && campaign < shelf ? campaign : shelf;
+  const list = Math.max(Number(p.unit_sale) || 0, shelf);
   const colour = page.match(/variant\s*:\s*"([^"]*)"/)?.[1] ?? null;
   const cats: string[] = Array.isArray(p.taxonomy) ? p.taxonomy.map(String) : [];
   const c = cats.join(" | ");
@@ -72,7 +85,7 @@ export function mapModanisaPage(page: string): LiveProduct | null {
     url: p.url ? `${SITE}${String(p.url).replace(/\\\//g, "/")}` : SITE,
     imageUrl: typeof p.product_image_url === "string" ? p.product_image_url : null,
     price: toMinor(price),
-    listPrice: Number.isFinite(list) && list > price ? toMinor(list) : null,
+    listPrice: list > price ? toMinor(list) : null,
     inStock: p.stock == null ? true : Number(p.stock) > 0,
     // Marketplace: the label goes in category, as the collector does.
     category: jsVar(page, "productBrand"),

@@ -78,10 +78,13 @@ export const notHomeGoods = (a: string) => `NOT (
  * 404/410 or on a category/home page — hides the product everywhere the caches
  * reach (feed, search, shelves, Stilist), but only while `products.url` is the
  * url that was checked: a collector that writes a corrected url un-hides it
- * with no other step. See packages/collector/src/host/links.ts.
+ * with no other step. The same goes for the photo (2026-10-21): `img_broken`
+ * — two 404/410 answers for products.image_url — hides it while image_url is
+ * still the one checked. See packages/collector/src/host/links.ts.
  */
 export const linkOk = (a: string) =>
-  `NOT EXISTS (SELECT 1 FROM product_link_checks l WHERE l.product_id = ${a}.id AND l.broken AND l.url = ${a}.url)`;
+  `NOT EXISTS (SELECT 1 FROM product_link_checks l WHERE l.product_id = ${a}.id
+     AND ((l.broken AND l.url = ${a}.url) OR (l.img_broken AND l.img_url = ${a}.image_url)))`;
 
 /** Rows a feed row needs; the order is the INSERT's column list. */
 const FEED_COLS = [

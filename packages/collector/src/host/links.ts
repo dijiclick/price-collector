@@ -30,6 +30,13 @@
  *     answering 404 (Zalando does), a geo redirect or an outage — never
  *     hundreds of genuinely dead products — so none of that shop's answers
  *     count this run. A systematic url bug is fixed in the adapter instead.
+ * THE PHOTO is checked in the same pass (2026-10-21; link-check.ts
+ * `checkImage`, HEAD then a ranged GET): two 404/410 answers for the product's
+ * image_url, at least 45 min apart, set `img_broken`, which hides the product
+ * the same way (and un-hides when the collector writes another image_url).
+ * Photos are deduplicated (one Massimo Dutti png serves ~26 countries) and
+ * fetched politely per image host; the shop-wide anomaly test applies to them
+ * too.
  * 403/429/5xx/timeouts are `unknown` and change nothing. After the first few
  * answers of a shop are all refusals the rest of its batch is skipped — no
  * point knocking on a wall, and it keeps the job polite.
@@ -43,7 +50,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { connect, type Db } from "../db";
-import { checkLink, type LinkResult } from "../link-check";
+import { checkImage, checkLink, politeMap, type LinkResult } from "../link-check";
 import { refreshFeedItems } from "../../../../lib/feed-cache";
 import { ACTIVE_COUNTRIES } from "../../../../lib/countries";
 
@@ -52,6 +59,7 @@ export interface Candidate {
   country: string;
   brand: string;
   url: string;
+  image_url?: string | null;
   tier: number;
 }
 
@@ -105,7 +113,8 @@ export const hostOf = (url: string): string => {
 
 /** Due = never checked, one strike pending, or older than the tier's interval. */
 const DUE = (interval: string) => `(l.product_id IS NULL OR l.url <> c.url
-   OR (l.strikes > 0 AND l.checked_at < now() - interval '45 minutes')
+   OR l.img_url IS DISTINCT FROM c.image_url
+   OR ((l.strikes > 0 OR l.img_strikes > 0) AND l.checked_at < now() - interval '45 minutes')
    OR (l.status = 'unknown' AND l.checked_at < now() - interval '1 day')
    OR l.checked_at < now() - interval '${interval}')`;
 
@@ -117,29 +126,29 @@ export const CANDIDATES_SQL = `
     UNION SELECT product_id FROM watchlist
   ),
   t1 AS (
-    SELECT p.id, p.country, p.brand, p.url, 1 AS tier
+    SELECT p.id, p.country, p.brand, p.url, p.image_url, 1 AS tier
       FROM tracked t JOIN products p ON p.id = t.id
       LEFT JOIN product_link_checks l ON l.product_id = p.id
-      CROSS JOIN LATERAL (SELECT p.url) c(url)
+      CROSS JOIN LATERAL (SELECT p.url, p.image_url) c(url, image_url)
      WHERE p.in_stock AND p.country = ANY($1::text[]) AND ${DUE("12 hours")}
   ),
   t2 AS (
-    SELECT c.id, c.country, c.brand, c.url, 2 AS tier
+    SELECT c.id, c.country, c.brand, c.url, c.image_url, 2 AS tier
       FROM feed_items c TABLESAMPLE SYSTEM (3)
       LEFT JOIN product_link_checks l ON l.product_id = c.id
      WHERE c.country = ANY($1::text[]) AND ${DUE("7 days")}
   ),
   t3 AS (
-    SELECT c.id, c.country, c.brand, c.url, 3 AS tier
+    SELECT c.id, c.country, c.brand, c.url, c.image_url, 3 AS tier
       FROM catalogue_items c TABLESAMPLE SYSTEM (1)
       LEFT JOIN product_link_checks l ON l.product_id = c.id
      WHERE c.country = ANY($1::text[]) AND c.in_stock AND ${DUE("30 days")}
   ),
   pending AS (
-    SELECT p.id, p.country, p.brand, p.url, 0 AS tier
+    SELECT p.id, p.country, p.brand, p.url, p.image_url, 0 AS tier
       FROM product_link_checks l JOIN products p ON p.id = l.product_id
-      CROSS JOIN LATERAL (SELECT p.url) c(url)
-     WHERE l.strikes > 0 AND NOT l.broken AND l.url = p.url AND p.in_stock
+     WHERE ((l.strikes > 0 AND NOT l.broken AND l.url = p.url)
+         OR (l.img_strikes > 0 AND NOT l.img_broken AND l.img_url = p.image_url)) AND p.in_stock
        AND p.country = ANY($1::text[]) AND l.checked_at < now() - interval '45 minutes'
   ),
   allc AS (
@@ -154,15 +163,15 @@ export const CANDIDATES_SQL = `
     SELECT *, row_number() OVER (PARTITION BY host ORDER BY tier, random()) AS rn
       FROM hosted WHERE host <> ALL($4::text[]) AND (cardinality($5::text[]) = 0 OR host = ANY($5::text[]))
   )
-  SELECT id, country, brand, url, tier FROM ranked WHERE rn <= $2
+  SELECT id, country, brand, url, image_url, tier FROM ranked WHERE rn <= $2
    ORDER BY tier, random() LIMIT $3`;
 
 /** A few random in-stock catalogue rows of each (country, brand), for the anomaly test. */
 export const CONTROLS_SQL = `
-  SELECT c.id, c.country, c.brand, c.url, 4 AS tier
+  SELECT c.id, c.country, c.brand, c.url, c.image_url, 4 AS tier
     FROM unnest($1::text[], $2::text[], $3::int[]) AS d(country, brand, n)
     CROSS JOIN LATERAL (
-      SELECT id, country, brand, url FROM catalogue_items x
+      SELECT id, country, brand, url, image_url FROM catalogue_items x
        WHERE x.country = d.country AND x.brand = d.brand AND x.in_stock
        ORDER BY random() LIMIT d.n) c`;
 
@@ -259,24 +268,48 @@ export async function checkAll(
 }
 
 /**
+ * Check the photos of the checked rows: each distinct image url once, at most
+ * `perHostConcurrency` in flight per image host, `gapMs` apart. Returns one
+ * result per row (unknown when the row has no image).
+ */
+export async function checkImages(
+  rows: { c: Candidate }[],
+  o: Opts,
+  check: (url: string) => Promise<LinkResult> = (u) => checkImage(u, { timeoutMs: o.timeoutMs }),
+): Promise<LinkResult[]> {
+  const urls = [...new Set(rows.map((x) => x.c.image_url).filter((u): u is string => !!u && /^https?:\/\//.test(u)))];
+  const got = await politeMap(urls, hostOf, check, {
+    perKey: o.perHostConcurrency, total: o.concurrency, gapMs: o.gapMs,
+  });
+  const by = new Map(urls.map((u, i) => [u, got[i]]));
+  return rows.map((x) => by.get(x.c.image_url ?? "") ?? { verdict: "unknown", http: null, finalUrl: null, note: "no image" });
+}
+
+/**
  * Record one batch. $1 int[] ids, $2 text[] urls, $3 text[] verdicts,
- * $4 int[] http, $5 text[] final urls. A broken verdict adds a strike (or
- * starts again at one when the url changed); `ok` clears everything;
- * `unknown` only stamps the time. Returns the ids whose `broken` flipped.
+ * $4 int[] http, $5 text[] final urls; the photo's $6 text[] image urls,
+ * $7 text[] verdicts (ok/gone/unknown), $8 int[] http. A broken verdict adds a
+ * strike (or starts again at one when the url changed); `ok` clears
+ * everything; `unknown` only stamps the time — for the link and the photo
+ * alike. Returns the ids whose hidden state (broken OR img_broken) flipped.
  */
 export const RECORD_SQL = `
   WITH input AS (
-    SELECT * FROM unnest($1::int[], $2::text[], $3::text[], $4::int[], $5::text[])
-      AS i(product_id, url, status, http, final_url)
+    SELECT * FROM unnest($1::int[], $2::text[], $3::text[], $4::int[], $5::text[], $6::text[], $7::text[], $8::int[])
+      AS i(product_id, url, status, http, final_url, img_url, img_status, img_http)
   ),
   before AS (
-    SELECT l.product_id, l.broken FROM product_link_checks l JOIN input i USING (product_id)
+    SELECT l.product_id, l.broken OR l.img_broken AS hidden FROM product_link_checks l JOIN input i USING (product_id)
   ),
   up AS (
-    INSERT INTO product_link_checks AS l (product_id, url, status, http, final_url, strikes, broken, broken_since, checked_at)
+    INSERT INTO product_link_checks AS l (product_id, url, status, http, final_url, strikes, broken, broken_since, checked_at,
+                                          img_url, img_status, img_http, img_strikes, img_broken, img_broken_since)
     SELECT product_id, url, status, http, final_url,
            CASE WHEN status IN ('gone', 'moved') THEN 1 ELSE 0 END, false,
-           CASE WHEN status IN ('gone', 'moved') THEN now() END, now()
+           CASE WHEN status IN ('gone', 'moved') THEN now() END, now(),
+           img_url, img_status, img_http,
+           CASE WHEN img_status = 'gone' THEN 1 ELSE 0 END, false,
+           CASE WHEN img_status = 'gone' THEN now() END
       FROM input
     ON CONFLICT (product_id) DO UPDATE SET
       strikes = CASE
@@ -297,11 +330,30 @@ export const RECORD_SQL = `
       status = EXCLUDED.status,
       http = EXCLUDED.http,
       final_url = EXCLUDED.final_url,
-      checked_at = now()
-    RETURNING l.product_id, l.broken
+      checked_at = now(),
+      -- The photo, by the same rules; "same" = the same image url.
+      img_strikes = CASE
+        WHEN EXCLUDED.img_status = 'ok' THEN 0
+        WHEN EXCLUDED.img_status = 'gone' THEN
+          CASE WHEN l.img_url = EXCLUDED.img_url THEN l.img_strikes + 1 ELSE 1 END
+        ELSE CASE WHEN l.img_url = EXCLUDED.img_url THEN l.img_strikes ELSE 0 END END,
+      img_broken_since = CASE
+        WHEN EXCLUDED.img_status = 'ok' THEN NULL
+        WHEN EXCLUDED.img_status = 'gone' THEN
+          CASE WHEN l.img_url = EXCLUDED.img_url AND l.img_strikes > 0 THEN l.img_broken_since ELSE now() END
+        ELSE CASE WHEN l.img_url = EXCLUDED.img_url THEN l.img_broken_since END END,
+      img_broken = CASE
+        WHEN EXCLUDED.img_status = 'ok' THEN false
+        WHEN EXCLUDED.img_status = 'gone' THEN COALESCE(l.img_url = EXCLUDED.img_url AND l.img_strikes + 1 >= 2
+                                                       AND l.img_broken_since <= now() - interval '45 minutes', false)
+        ELSE COALESCE(l.img_url = EXCLUDED.img_url AND l.img_broken, false) END,
+      img_url = EXCLUDED.img_url,
+      img_status = EXCLUDED.img_status,
+      img_http = EXCLUDED.img_http
+    RETURNING l.product_id, l.broken OR l.img_broken AS hidden
   )
   SELECT up.product_id AS id FROM up LEFT JOIN before b USING (product_id)
-   WHERE up.broken IS DISTINCT FROM COALESCE(b.broken, false)`;
+   WHERE up.hidden IS DISTINCT FROM COALESCE(b.hidden, false)`;
 
 export async function runOnce(
   db: Db,
@@ -335,6 +387,8 @@ export async function runOnce(
   const { rows, walled } = await checkAll(all, o);
   for (const row of rows) row.r = trustVerdict(row.c, row.r, o.movedCountries);
   const voided = voidAnomalies(rows, o.minPerHost);
+  const imgs = (await checkImages(rows, o)).map((r, i) => ({ c: rows[i].c, r }));
+  const imgVoided = voidAnomalies(imgs, o.minPerHost);
 
   // Per-shop summary, then the broken ones in full so the log is the audit trail.
   const sum = new Map<string, Record<string, number>>();
@@ -347,8 +401,14 @@ export async function runOnce(
   for (const [k, s] of [...sum].sort()) log(`  ${k}: ${Object.entries(s).map(([v, n]) => `${v} ${n}`).join(", ")}`);
   if (walled.length) log(`  refused (skipped after 4): ${walled.sort().join(", ")}`);
   if (voided.length) log(`  shop-wide anomaly (broken answers ignored): ${voided.sort().join(", ")}`);
+  if (imgVoided.length) log(`  shop-wide photo anomaly (404s ignored): ${imgVoided.sort().join(", ")}`);
+  const imgSum = imgs.reduce<Record<string, number>>((s, { r }) => ((s[r.verdict] = (s[r.verdict] ?? 0) + 1), s), {});
+  log(`  photos: ${Object.entries(imgSum).map(([v, n]) => `${v} ${n}`).join(", ")}`);
   for (const { c, r } of rows) {
     if (r.verdict === "gone" || r.verdict === "moved") log(`  ${r.verdict} ${r.http} #${c.id} ${c.country}/${c.brand} ${c.url} -> ${r.finalUrl}`);
+  }
+  for (const { c, r } of imgs) {
+    if (r.verdict === "gone") log(`  photo gone ${r.http} #${c.id} ${c.country}/${c.brand} ${c.image_url}`);
   }
 
   if (o.dryRun) {
@@ -364,11 +424,14 @@ export async function runOnce(
       chunk.map((x) => x.r.verdict),
       chunk.map((x) => x.r.http),
       chunk.map((x) => x.r.finalUrl),
+      chunk.map((_, j) => imgs[i + j].c.image_url ?? null),
+      chunk.map((_, j) => imgs[i + j].r.verdict),
+      chunk.map((_, j) => imgs[i + j].r.http),
     ]);
     flipped.push(...out.map((o) => Number(o.id)));
   }
   if (flipped.length) await refreshFeedItems(db, flipped);
-  const [{ n }] = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM product_link_checks WHERE broken`);
+  const [{ n }] = await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM product_link_checks WHERE broken OR img_broken`);
   log(`links: checked ${rows.length}, ${flipped.length} hidden/un-hidden, ${n} hidden in total (${Math.round((Date.now() - t0) / 1000)} s)`);
   return { checked: rows.length, flipped, walled };
 }

@@ -34,6 +34,8 @@ export interface StorefrontStore {
   /** Shop-specific tag dialect, consulted when the generic tag reading finds no gender. */
   tagGender?: (tags: string[]) => ProductRecord["gender"];
   maxProducts?: number;
+  /** Handles of retired listings the API still returns (their pages 404). */
+  skipHandle?: RegExp;
 }
 
 const API_VERSION = "2025-01";
@@ -89,6 +91,10 @@ export function toProductsJson(node: any, currency: string): any | null {
   };
 }
 
+/** True when the store marks this node's handle as a retired listing. */
+export const isRetired = (store: StorefrontStore, node: any): boolean =>
+  !!store.skipHandle && store.skipHandle.test(String(node?.handle ?? ""));
+
 async function post(store: StorefrontStore, query: string, variables: Record<string, unknown>): Promise<any> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (store.token) headers["X-Shopify-Storefront-Access-Token"] = store.token;
@@ -123,6 +129,7 @@ export async function listStorefront(store: StorefrontStore, country: CountryCod
         break;
       }
       for (const node of conn.nodes ?? []) {
+        if (isRetired(store, node)) continue;
         const p = toProductsJson(node, currency);
         const r = p && mapShopify(store, country, site, p);
         if (r && r.gender == null && store.tagGender) r.gender = store.tagGender(p.tags);

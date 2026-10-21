@@ -17,13 +17,17 @@ import { toMinor } from "../normalize";
  *   row — struck-through ones as deals, the rest with `listPrice: null`. The
  *   old walk read only the Outlet list and kept only struck-through rows, which
  *   had fallen to ~1 in 64 (16 rows on 10-19): Modanisa's outlet is "cheap", not
- *   "marked down", and its reductions are basket campaigns, which are not
- *   markdowns of the product.
+ *   "marked down", and most of its reductions are campaigns (below).
  * - SIZES: `/api/product_variants.php`, the tiny HTML fragment the product page
  *   loads its size boxes from; an out-of-stock size carries `disabled`.
  *
- * Basket campaigns ("%15 İNDİRİMLİ …", "2000 TL ve Üzeri %20 İndirim") are not
- * markdowns of the product and are ignored, like Boyner's coupons.
+ * Campaigns (`metadata.campaign`, 2026-10-21): "%15 İNDİRİMLİ  212,49 TL" is
+ * an automatic per-product price — a guest basket holding just that one item
+ * (8882739: 249,99 → 212,49; 9437034: 1.089,99 → 926,49) is charged it, with
+ * no code and no minimum — so it is the price and the shelf (or struck-through)
+ * price is the original, the same rule as LCW/DeFacto/Boyner's basket prices.
+ * "2000 TL ve Üzeri %20 İndirim" (a basket minimum) and "3 Al 2 Öde" (a
+ * multi-buy) are not prices of the product and are ignored.
  */
 const SITE = "https://www.modanisa.com";
 const BFF = "https://searchlisting-web-bff.modanisa.com/products";
@@ -51,12 +55,30 @@ export function trMoney(s: unknown): number {
   return Number(m[0].replace(/\./g, "").replace(",", "."));
 }
 
-/** Shelf price and struck-through original from the BFF's display metadata. */
+/**
+ * The automatic campaign price out of "%15 İNDİRİMLİ  212,49 TL", or NaN for
+ * anything conditional (a basket minimum, a coupon/code, a multi-buy) or a
+ * price that does not match its own percentage off `shelf`.
+ */
+export function campaignPrice(campaign: any, shelf: number): number {
+  if (!campaign || campaign.display === "hidden") return NaN;
+  const text = String(campaign.smallText || campaign.label || "").replace(/\s+/g, " ").trim();
+  if (/sepet|kupon|kod|[üu]zeri|\bal\b.*[öo]de/i.test(text)) return NaN;
+  const m = text.match(/^%(\d{1,2}) (?:İNDİRİMLİ|İndirimli) (\d[\d.]*(?:,\d+)?) TL$/);
+  if (!m) return NaN;
+  const price = trMoney(m[2]);
+  return Math.abs(shelf * (1 - Number(m[1]) / 100) - price) <= shelf * 0.01 ? price : NaN;
+}
+
+/** Price and original from the BFF's display metadata. */
 export function pricesOf(meta: any): { price: number; list: number | null } | null {
   const shelf = trMoney(meta?.campaignPriceValue) || trMoney(meta?.secondaryPrice?.display !== "hidden" ? meta?.secondaryPrice?.label : "");
   if (!Number.isFinite(shelf) || shelf <= 0) return null;
   const struck = meta?.primaryPrice?.display === "striped" ? trMoney(meta.primaryPrice.label) : NaN;
-  return { price: shelf, list: Number.isFinite(struck) && struck > shelf ? struck : null };
+  const original = Number.isFinite(struck) && struck > shelf ? struck : null;
+  const campaign = campaignPrice(meta?.campaign, shelf);
+  if (campaign > 0 && campaign < shelf) return { price: campaign, list: original ?? shelf };
+  return { price: shelf, list: original };
 }
 
 function genderOf(categories: string[]): ProductRecord["gender"] {

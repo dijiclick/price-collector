@@ -32,6 +32,11 @@ export const STOREFRONT_STORES: StorefrontStore[] = [
       AU: "https://skims.com", HK: "https://skims.com", JP: "https://skims.com", KR: "https://skims.com", SG: "https://skims.com",
     },
     defaultGender: "kadin",
+    // A relaunched product keeps its old listing renamed `<name>-old-<colour>`
+    // (`cotton-fleece-jogger-old-old-light-heather-grey`, in skims-sale, 404s).
+    // All 7 such handles of 3,844 (2026-10-21) have a live twin without "-old";
+    // no current handle has an "old" word ("gold", "foldover" lack the hyphen).
+    skipHandle: /-old(-|$)/,
   },
   // Hydrogen. "Women's Clothing on Sale"; men's/kids' rows carry their own tags.
   {

@@ -11,6 +11,8 @@
  *   gone  — the final answer is 404 or 410
  *   moved — a redirect chain that ends on a category, a section or the home
  *           page (see `isListingRedirect`)
+ *   gone  — also a redirect to the same shop's SystemError.aspx (Ticimax: a
+ *           url its server refuses to route, see `verdictFor`)
  * Everything a bot wall or a bad network can cause — 403, 429, 5xx, a timeout,
  * a TLS error, a redirect to a captcha or a country picker — is `unknown`, and
  * `unknown` never hides anything. A shop blocking our IP must not empty its
@@ -114,9 +116,30 @@ const samePath = (a: string, b: string): boolean => {
   }
 };
 
+/**
+ * Did the chain end on the same shop's ASP.NET error page? Ticimax shops send
+ * a url their server will not route there (bathandbodyworks.com.tr, 2026-10-21:
+ * "/stress-relief:-eucalyptus-…-BBW28017586" → 302 /SystemError.aspx?err=400,
+ * which answers 500). Checked before the status (the page answers 500) and
+ * before NEUTRAL_PATH (which matches "error"). An err=5xx is the shop's own
+ * outage, not the product, so it stays unknown.
+ */
+function isSystemError(original: string, finalUrl: string): boolean {
+  try {
+    const a = new URL(original);
+    const b = new URL(finalUrl);
+    if (bareHost(a.hostname) !== bareHost(b.hostname) || samePath(original, finalUrl)) return false;
+    if (!/\/systemerror\.aspx$/i.test(b.pathname)) return false;
+    return !/^5/.test(b.searchParams.get("err") ?? "");
+  } catch {
+    return false;
+  }
+}
+
 /** The verdict for a chain that ended with `status` at `finalUrl`. Pure, for tests. */
 export function verdictFor(original: string, status: number | null, finalUrl: string | null): LinkResult {
   if (status === null || finalUrl === null) return { verdict: "unknown", http: status, finalUrl, note: "no answer" };
+  if (isSystemError(original, finalUrl)) return { verdict: "gone", http: status, finalUrl, note: "SystemError.aspx" };
   // 404/410 counts only on the product's own path (a redirect that changed
   // the path first — Showpo's /au/ → /row/au/ for a foreign visitor — is the
   // redirect's 404, not the product's).
@@ -170,6 +193,59 @@ export async function checkLink(
       return verdictFor(url, res.status, cur);
     }
     return { verdict: "unknown", http: null, finalUrl: cur, note: "redirect loop" };
+  } catch (err) {
+    return { verdict: "unknown", http: null, finalUrl: null, note: err instanceof Error ? err.name : "error" };
+  }
+}
+
+/**
+ * Does a product's photo still load? (2026-10-21) Shops delete photos of
+ * products they pulled while the feed keeps the product (Decathlon SG
+ * contents.mediadecathlon.com/p2074126/… → 410, a Massimo Dutti HK png → 403).
+ * Same rule as links: only 404/410 is `gone`; 403/429/5xx/timeouts are
+ * `unknown` (an image CDN walling this box must not hide a shop). `moved`
+ * never applies — an image that redirects and loads is fine.
+ */
+export function imageVerdictFor(status: number | null, finalUrl: string | null): LinkResult {
+  if (status === null) return { verdict: "unknown", http: null, finalUrl, note: "no answer" };
+  if (status >= 200 && status < 300) return { verdict: "ok", http: status, finalUrl };
+  if (status === 404 || status === 410) return { verdict: "gone", http: status, finalUrl };
+  return { verdict: "unknown", http: status, finalUrl, note: `http ${status}` };
+}
+
+/**
+ * Check an image url cheaply: HEAD first; anything but a 2xx (a CDN that
+ * refuses HEAD with 403/405/501, or a 404 worth confirming) is asked again
+ * with a one-byte ranged GET, and that answer decides. Never throws.
+ */
+export async function checkImage(
+  url: string,
+  opts: { timeoutMs?: number; fetchImpl?: typeof fetch } = {},
+): Promise<LinkResult> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const signal = AbortSignal.timeout(opts.timeoutMs ?? 15_000);
+  const ask = async (method: "HEAD" | "GET") => {
+    const res = await doFetch(url, {
+      method,
+      redirect: "follow",
+      signal,
+      headers: {
+        "user-agent": LINK_UA,
+        accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        ...(method === "GET" ? { range: "bytes=0-0" } : {}),
+      },
+    });
+    try {
+      await res.body?.cancel();
+    } catch {
+      /* already closed */
+    }
+    return res;
+  };
+  try {
+    let res = await ask("HEAD");
+    if (res.status < 200 || res.status >= 300) res = await ask("GET");
+    return imageVerdictFor(res.status, res.url || url);
   } catch (err) {
     return { verdict: "unknown", http: null, finalUrl: null, note: err instanceof Error ? err.name : "error" };
   }

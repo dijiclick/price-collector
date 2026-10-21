@@ -18,10 +18,11 @@
  * list, so prices come back in GBP / CHF / NOK / EUR / SEK / DKK. EU markets
  * (2026-10-21) that refuse `en-GB` use their own language — see `EU` below.
  *
- * Only reduced rows are kept, in-stock first, capped. Sale pages are seasonal:
- * COS had no sale at all on 2026-10-11 (0 rows is a correct answer then), and
- * the category grids of COS and & Other Stories deliberately EXCLUDE sale
- * items, so the sale filter / sale pages are the only way in.
+ * Only reduced rows are kept, in-stock first, capped. Sale pages are seasonal,
+ * and the category grids of COS and & Other Stories deliberately EXCLUDE sale
+ * items, so the sale filter / sale pages are the only way in. COS is the
+ * exception: when its sale filter is empty the whole catalogue is tracked at
+ * full price instead (see `listHmGroup`).
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -35,6 +36,8 @@ type Gender = ProductRecord["gender"];
 const APP_HEADERS = { "User-Agent": "okhttp/4.12.0", Accept: "application/json" };
 const LOCALE = "en-GB";
 const CAP = 1500;
+/** COS's whole catalogue (3,194 rows in GB on 2026-10-21): uncapped in effect, so no listed row is swept as sold out. */
+const CAP_FULL = 5000;
 const PAUSE_MS = 600;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -150,17 +153,21 @@ function record(
     was: number | null;
     gallery: unknown[];
   },
+  /** Keep full-price rows too (listPrice null) — COS out of season. */
+  keepFull = false,
 ): ProductRecord | null {
   const { price, was, gallery, ...rest } = r;
   // Never store a non-URL as a photo ("[object Object]" shipped for Weekday on 2026-10-21).
   if (rest.imageUrl != null && !/^https?:\/\//.test(String(rest.imageUrl))) rest.imageUrl = null;
-  if (!rest.externalId || !rest.name || price == null || was == null || was <= price) return null;
+  if (!rest.externalId || !rest.name || price == null) return null;
+  const reduced = was != null && was > price;
+  if (!reduced && !keepFull) return null;
   return {
     ...rest,
     brand: slug,
     country,
     price: toMinor(price),
-    listPrice: toMinor(was),
+    listPrice: reduced ? toMinor(was) : null,
     currency: COUNTRIES[country].currency,
     images: cleanGallery(gallery as string[], rest.imageUrl),
   };
@@ -168,7 +175,8 @@ function record(
 
 // ---------- COS (Fredhopper BFF) ----------
 
-export function cosUrl(mk: string, offset: number, limit: number, lang = "en"): string {
+/** `onSale: false` drops the sale filter: the full catalogue (~3,200 rows in GB). */
+export function cosUrl(mk: string, offset: number, limit: number, lang = "en", onSale = true): string {
   const p = new URLSearchParams({
     customerType: "regular",
     deviceType: "desktop",
@@ -177,12 +185,12 @@ export function cosUrl(mk: string, offset: number, limit: number, lang = "en"): 
     view: "lister",
     limit: String(limit),
     offset: String(offset),
-    filters: JSON.stringify([{ attribute: `statuses_${mk}`, type: "set", operator: "any of", values: ["on_sale"] }]),
   });
+  if (onSale) p.set("filters", JSON.stringify([{ attribute: `statuses_${mk}`, type: "set", operator: "any of", values: ["on_sale"] }]));
   return `https://api.cos.com/product-search/v1/${mk}/products?${p}`;
 }
 
-export function mapCos(country: CountryCode, p: any): ProductRecord | null {
+export function mapCos(country: CountryCode, p: any, keepFull = false): ProductRecord | null {
   const m = HMGROUP.cos.markets[country]!;
   const imgs: string[] = (p?.media ?? []).map((x: any) => x?.source?.standard?.url);
   const g = String(p?.gender ?? "").toLowerCase();
@@ -201,7 +209,7 @@ export function mapCos(country: CountryCode, p: any): ProductRecord | null {
     variants: null,
     groupKey: p?.parent?.sku ? `cos:${p.parent.sku}` : null,
     colorName: p?.variant?.name ?? null,
-  });
+  }, keepFull);
 }
 
 // ---------- & Other Stories / Weekday (Elevate behind the brand BFF) ----------
@@ -330,6 +338,7 @@ export async function listHmGroup(slug: HmGroupSlug, country: CountryCode): Prom
     if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
   };
   let requests = 0;
+  let cap = CAP;
   const fetchJson = async (url: string, init: { method?: string; body?: string } = {}) => {
     if (requests > 0) await sleep(PAUSE_MS);
     requests++;
@@ -342,12 +351,23 @@ export async function listHmGroup(slug: HmGroupSlug, country: CountryCode): Prom
   const MAX_REQ = 40;
 
   if (slug === "cos") {
-    for (let off = 0; requests < MAX_REQ; off += b.pageSize) {
-      const d = await fetchJson(cosUrl(m.mk, off, b.pageSize, (m.locale ?? LOCALE).slice(0, 2)));
-      const rows: any[] = d?.data?.products ?? [];
-      if (off === 0) assertCurrency(slug, country, rows[0]?.price?.currencyCode);
-      rows.forEach((p) => add(mapCos(country, p)));
-      if (!rows.length || off + b.pageSize >= (d?.data?.pagination?.totalProducts ?? 0)) break;
+    // COS's sale ended on 2026-10-20: the on_sale filter answered 0 in GB/CH/NO
+    // while 966 of the 970 rows we held were still listed, at full price. An
+    // empty sale is then not "nothing to collect" — that left the stale -30%
+    // rows live and tripped the zero-collect guard every run. Like Mango, track
+    // the full catalogue out of season: the old markdowns reprice to full price
+    // and the next sale shows up as price drops on rows we already hold.
+    const lang = (m.locale ?? LOCALE).slice(0, 2);
+    for (const onSale of [true, false]) {
+      for (let off = 0; requests < MAX_REQ; off += b.pageSize) {
+        const d = await fetchJson(cosUrl(m.mk, off, b.pageSize, lang, onSale));
+        const rows: any[] = d?.data?.products ?? [];
+        if (off === 0) assertCurrency(slug, country, rows[0]?.price?.currencyCode);
+        rows.forEach((p) => add(mapCos(country, p, !onSale)));
+        if (!rows.length || off + b.pageSize >= (d?.data?.pagination?.totalProducts ?? 0)) break;
+      }
+      if (byId.size) break;
+      cap = CAP_FULL;
     }
   } else {
     let checked = false;
@@ -373,5 +393,5 @@ export async function listHmGroup(slug: HmGroupSlug, country: CountryCode): Prom
     }
   }
   const all = [...byId.values()];
-  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
+  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, cap);
 }

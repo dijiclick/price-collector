@@ -633,6 +633,16 @@ CREATE TABLE IF NOT EXISTS product_link_checks (
 );
 CREATE INDEX IF NOT EXISTS idx_product_link_checks_broken ON product_link_checks (product_id) WHERE broken;
 CREATE INDEX IF NOT EXISTS idx_product_link_checks_checked ON product_link_checks (checked_at);
+-- The product's photo, checked in the same pass (2026-10-21: shops delete
+-- photos of pulled products — Decathlon SG answers 410). Same rule as the
+-- link: `img_broken` after two 404/410 answers at least 45 min apart, and it
+-- hides only while products.image_url is still `img_url`.
+ALTER TABLE product_link_checks ADD COLUMN IF NOT EXISTS img_url TEXT;
+ALTER TABLE product_link_checks ADD COLUMN IF NOT EXISTS img_status TEXT;
+ALTER TABLE product_link_checks ADD COLUMN IF NOT EXISTS img_http INTEGER;
+ALTER TABLE product_link_checks ADD COLUMN IF NOT EXISTS img_strikes INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE product_link_checks ADD COLUMN IF NOT EXISTS img_broken BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE product_link_checks ADD COLUMN IF NOT EXISTS img_broken_since TIMESTAMPTZ;
 
 -- Stilist looks judged by an AI stylist (2026-10-21, owner: "it must be much
 -- smarter, like a real stylist"). scripts/stylist-judge.mjs on the main box

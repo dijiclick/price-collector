@@ -100,6 +100,25 @@ export function sizesOf(h: any): SizeVariant[] {
   return out;
 }
 
+/**
+ * On's Contentful originals are 4000×4000 and 7-9 MB a photo (PNGs included);
+ * Contentful resizes on request, so store a 1000px JPEG (8.8 MB → ~60 KB).
+ * The app's photoAt() swaps `w` for the size it draws. Other hosts unchanged.
+ */
+export function sizedPhoto(u: unknown): string | null {
+  if (typeof u !== "string" || !u) return null;
+  try {
+    const url = new URL(u);
+    if (url.hostname !== "images.ctfassets.net") return u;
+    url.searchParams.set("w", "1000");
+    url.searchParams.set("fm", "jpg");
+    url.searchParams.set("q", "80");
+    return url.toString();
+  } catch {
+    return u;
+  }
+}
+
 export function mapOnHit(h: any, country: CountryCode): ProductRecord | null {
   const m = ON_MARKETS[country];
   const st = m && h?.stores?.[m.store];
@@ -109,7 +128,7 @@ export function mapOnHit(h: any, country: CountryCode): ProductRecord | null {
   const base = Number(st.basePrice);
   if (!(price > 0) || !(base > price)) return null;
   const sizes = sizesOf(h);
-  const img = typeof h.imageUrl === "string" ? h.imageUrl : null;
+  const img = sizedPhoto(h.imageUrl);
   const type = [h.productSubtype, h.productType].filter((x) => typeof x === "string" && x).join(" ").replace(/_/g, " ");
   return {
     brand: "on",
@@ -118,7 +137,7 @@ export function mapOnHit(h: any, country: CountryCode): ProductRecord | null {
     name: String(h.name ?? "").trim(),
     url: `${m.site}${h.productUrl ?? ""}`,
     imageUrl: img,
-    images: cleanGallery([img, h.firstGalleryImageUrl, h.onsiteImageUrl], img),
+    images: cleanGallery([img, sizedPhoto(h.firstGalleryImageUrl), sizedPhoto(h.onsiteImageUrl)], img),
     price: toMinor(price),
     listPrice: toMinor(base),
     currency: COUNTRIES[country].currency,
