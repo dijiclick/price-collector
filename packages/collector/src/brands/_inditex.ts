@@ -568,9 +568,11 @@ export function anySizeInStock(sizes: any[] | undefined): boolean {
  * (or its `isBuyable` flag). We surface the colour names plus the primary
  * colour's sizes, deduped by label.
  */
-export function pickVariants(detail: any): ProductVariants | null {
+export function pickVariants(detail: any, colorId?: string | number | null): ProductVariants | null {
   const colors = detail?.colors ?? [];
   if (!colors.length) return null;
+  // Sizes of `colorId` when given (the colour the row prices), else the first.
+  const sized = (colorId != null && colors.find((c: any) => String(c?.id) === String(colorId))) || colors[0];
   // Colour names can repeat across a product's variants — keep them unique.
   const colorNames: string[] = [
     ...new Set(colors.map((c: any) => c?.name).filter(Boolean) as string[]),
@@ -582,7 +584,7 @@ export function pickVariants(detail: any): ProductVariants | null {
   const rank: Record<Availability, number> = { in_stock: 2, low_on_stock: 1, out_of_stock: 0 };
   const order: string[] = [];
   const best = new Map<string, Availability>();
-  for (const s of colors[0]?.sizes ?? []) {
+  for (const s of sized?.sizes ?? []) {
     const label = String(s?.name ?? "").trim();
     if (!label) continue;
     const availability = sizeAvailability(s);
@@ -599,6 +601,71 @@ export function pickVariants(detail: any): ProductVariants | null {
   return { colors: colorNames, sizes };
 }
 
+/** Cheapest size of one colour. Key on sku — size *names* repeat. */
+function colourPrice(color: any): { price: number; listPrice: number | null } | null {
+  const seenSkus = new Set<number>();
+  let price = Infinity;
+  let listPrice: number | null = null;
+  for (const s of color?.sizes ?? []) {
+    if (s?.sku == null || seenSkus.has(s.sku)) continue;
+    seenSkus.add(s.sku);
+    const v = Number(s.price); // already integer minor units, e.g. "65000" = 650.00
+    if (!Number.isFinite(v) || v <= 0) continue;
+    if (v < price) {
+      price = v;
+      const old = s.oldPrice == null ? NaN : Number(s.oldPrice);
+      listPrice = Number.isFinite(old) && old > v ? old : null;
+    }
+  }
+  return Number.isFinite(price) ? { price, listPrice } : null;
+}
+
+/**
+ * Which of two offers of the same garment is the better deal: the biggest real
+ * markdown (lowest price relative to its OWN list price; full price = 1), then
+ * the lower price. 0 = no preference — callers keep what they had, so a
+ * garment with nothing to choose between stays on the colour it always had.
+ */
+export function dealOrder(
+  a: { price: number; listPrice: number | null | undefined },
+  b: { price: number; listPrice: number | null | undefined },
+): number {
+  const ratio = (o: typeof a) => (o.listPrice != null && o.listPrice > o.price ? o.price / o.listPrice : 1);
+  return ratio(a) - ratio(b) || a.price - b.price;
+}
+
+/**
+ * The colour a row should show. Every colour of a garment is its own bundle
+ * (`p.id` = `?pelement=`), and every bundle carries ALL the colours in
+ * `detail.colors`, each with its own sizes and prices — and its own bundle id
+ * as `catentryId` (verified live 2026-10-22 on P&B, Stradivarius and Massimo
+ * Dutti TR: every colour's catentryId came back from productsArray as a bundle
+ * whose `mainColorid` is that colour). Markdowns are per colour: P&B l07670332
+ * is 1.190 ₺ in Gül kurusu and Turkuaz but 1.990 ₺ in Pembe. We used to keep
+ * the bundle's own colour, and the crawl's first bundle won the row, so when
+ * that was a full-price colour the deal never showed.
+ *
+ * Picks the in-stock colour with the best `dealOrder`, among colours we can
+ * link to (the bundle's own, or one with a catentryId). Ties keep the bundle's
+ * own colour. Nothing in stock: the bundle's own colour, as before.
+ */
+function pickColour(p: any, colors: any[]): { color: any; bundleId: string; price: number; listPrice: number | null } | null {
+  const ownIdx = Math.max(0, colors.findIndex((c) => p.mainColorid != null && String(c?.id) === String(p.mainColorid)));
+  const own = colors[ownIdx];
+  const offer = (color: any, bundleId: unknown) => {
+    const pr = colourPrice(color);
+    return pr && bundleId != null && String(bundleId) !== "" ? { color, bundleId: String(bundleId), ...pr } : null;
+  };
+  const ownOffer = offer(own, p.id);
+  let best = ownOffer && anySizeInStock(own.sizes) ? ownOffer : null;
+  colors.forEach((c, i) => {
+    if (i === ownIdx || !anySizeInStock(c?.sizes)) return;
+    const o = offer(c, c?.catentryId);
+    if (o && (!best || dealOrder(o, best) < 0)) best = o;
+  });
+  return best ?? ownOffer;
+}
+
 export function mapProduct(
   site: Pick<InditexSite, "brand" | "domain">,
   m: Pick<InditexMarket, "country" | "urlPrefix" | "currency" | "priceScale">,
@@ -611,25 +678,10 @@ export function mapProduct(
   // is bundleProductSummaries[0]. Some brands return it unwrapped.
   const real = p.bundleProductSummaries?.[0] ?? p;
   const detail = real?.detail;
-  const color = detail?.colors?.[0];
-  if (!color) return null;
-
-  // Cheapest size of the first color. Key on sku — size *names* repeat.
-  const seenSkus = new Set<number>();
-  let price = Infinity;
-  let listPrice: number | null = null;
-  for (const s of color.sizes ?? []) {
-    if (s?.sku == null || seenSkus.has(s.sku)) continue;
-    seenSkus.add(s.sku);
-    const v = Number(s.price); // already integer minor units, e.g. "65000" = 650.00
-    if (!Number.isFinite(v) || v <= 0) continue;
-    if (v < price) {
-      price = v;
-      const old = s.oldPrice == null ? NaN : Number(s.oldPrice);
-      listPrice = Number.isFinite(old) && old > v ? old : null;
-    }
-  }
-  if (!Number.isFinite(price)) return null;
+  const picked = pickColour(p, detail?.colors ?? []);
+  if (!picked) return null;
+  const { color } = picked;
+  let { price, listPrice } = picked;
   // KRW/JPY stores (see InditexMarket.priceScale); 1 everywhere else.
   const k = m.priceScale ?? 1;
   if (k !== 1) {
@@ -649,9 +701,10 @@ export function mapProduct(
   // Stradivarius TR l06609148 bare → Somon 1.190 ₺, `?pelement=519434867` →
   // Mavi 710 ₺; Massimo Dutti TR l00837175 bare → 2.800 ₺, `?pelement=62246010`
   // → 2.000 ₺. `?cS=`/`?colorId=` alone switch the swatch but not the price.
+  // The bundle is the picked colour's (pickColour), not necessarily `p`'s.
   const slug: string | undefined = p.productUrl ?? real?.productUrl;
   const path = slug ? encodeURI(slug) : `-l${detail?.displayReference ?? p.id}`;
-  const url = `${m.urlPrefix}/${path}?pelement=${p.id}`;
+  const url = `${m.urlPrefix}/${path}?pelement=${picked.bundleId}`;
 
   // Product-level id: the same garment ships as one bundle id per COLOUR (same
   // url, e.g. …-l00808111). Key on the shared "l{ref}" from the url so colours
@@ -680,7 +733,8 @@ export function mapProduct(
     inStock: anySizeInStock(color.sizes),
     category,
     gender,
-    variants: pickVariants(detail),
+    variants: pickVariants(detail, color.id),
+    colorName: color.name ?? null,
   };
 }
 
@@ -715,6 +769,12 @@ function categoryRank(name: string, categoryUrl?: string): number {
  * the setting that keeps the slowest brand comfortably clear (124s -> 50s).
  */
 const CATEGORY_CONCURRENCY = Number(process.env.INDITEX_CONCURRENCY ?? 8);
+
+/** Two rows of one garment: in stock beats sold out, then dealOrder. */
+export function betterRow(a: ProductRecord, b: ProductRecord): boolean {
+  if (a.inStock !== b.inStock) return a.inStock;
+  return dealOrder(a, b) < 0;
+}
 
 export function makeInditexAdapter(
   site: InditexSite,
@@ -764,6 +824,17 @@ export function makeInditexAdapter(
                 const rec = mapProduct(site, m, p, cat.name ?? null, cat.gender ?? null);
                 const prev = byId.get(rec?.externalId ?? "");
                 if (rec && !prev) byId.set(rec.externalId, rec);
+                else if (rec && prev && betterRow(rec, prev)) {
+                  // Another colour bundle of the same garment priced better
+                  // (pickColour normally settles this inside one bundle; this
+                  // covers bundles that disagree). The first category seen
+                  // keeps the row's category — that order is deliberate.
+                  byId.set(rec.externalId, {
+                    ...rec,
+                    category: prev.category,
+                    gender: prev.gender ?? rec.gender,
+                  });
+                }
                 // A sectionless rail (Landing/sale widget) can win the dedupe
                 // race — backfill gender when a sectioned category sees the
                 // same product later in the run.
