@@ -28,9 +28,39 @@ import { getJson } from "../http";
 import { toMinor } from "../normalize";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
-const API = "https://app.douglas.ch/api/v2/products/search/category/05";
-const SITE = "https://www.douglas.ch";
-const QUERY = ":promotion:gender:FEMALE";
+/**
+ * Markets. EU added 2026-10-21: the same OCC API on each country's `app.`
+ * host, category 05 = Sale everywhere, and Nocibé (France, same group, its own
+ * slug "nocibe") on `app.nocibe.fr`. The EU price shape differs from CH: the
+ * struck price is `originalValue` (CH: `storeValue`), with `lowestValue` (the
+ * Omnibus 30-day low) and `recommendedRetailValue` (the maker's UVP) beside it.
+ *
+ * REACHABILITY (2026-10-21): every app host answers the Mac, but from a GitHub
+ * runner ALL of them — app.douglas.ch included — now answer Akamai's fake
+ * "400 Request Too Long" / `{}` / 403 (probe 39615552849). So none of this runs
+ * from the runners; it needs an egress Akamai accepts (the Hetzner box, as for
+ * adidas — unverified) before any EU market is listed.
+ */
+export interface DouglasMarket {
+  brand: "douglas" | "nocibe";
+  api: string;
+  site: string;
+  lang: string;
+}
+
+export const DOUGLAS_MARKETS: Partial<Record<CountryCode, DouglasMarket>> = {
+  CH: { brand: "douglas", api: "https://app.douglas.ch", site: "https://www.douglas.ch", lang: "de-CH,de;q=0.9" },
+  DE: { brand: "douglas", api: "https://app.douglas.de", site: "https://www.douglas.de", lang: "de-DE,de;q=0.9" },
+  AT: { brand: "douglas", api: "https://app.douglas.at", site: "https://www.douglas.at", lang: "de-AT,de;q=0.9" },
+  NL: { brand: "douglas", api: "https://app.douglas.nl", site: "https://www.douglas.nl", lang: "nl-NL,nl;q=0.9" },
+  BE: { brand: "douglas", api: "https://app.douglas.be", site: "https://www.douglas.be", lang: "nl-BE,nl;q=0.9" },
+  IT: { brand: "douglas", api: "https://app.douglas.it", site: "https://www.douglas.it", lang: "it-IT,it;q=0.9" },
+  ES: { brand: "douglas", api: "https://app.douglas.es", site: "https://www.douglas.es", lang: "es-ES,es;q=0.9" },
+  FR: { brand: "nocibe", api: "https://app.nocibe.fr", site: "https://www.nocibe.fr", lang: "fr-FR,fr;q=0.9" },
+};
+
+const SALE_PATH = "/api/v2/products/search/category/05";
+const QUERY =":promotion:gender:FEMALE";
 const PAGE_SIZE = 48;
 const MAX_PAGES = 55;
 const CAP = 1500;
@@ -55,8 +85,8 @@ export function fieldsFor(page: number): string {
   return `products(${out.join(",")}),pagination(DEFAULT)`;
 }
 
-export const pageUrl = (page: number): string =>
-  `${API}?currentPage=${page}&pageSize=${PAGE_SIZE}&query=${encodeURIComponent(QUERY)}` +
+export const pageUrl = (page: number, country: CountryCode = "CH"): string =>
+  `${DOUGLAS_MARKETS[country]!.api}${SALE_PATH}?currentPage=${page}&pageSize=${PAGE_SIZE}&query=${encodeURIComponent(QUERY)}` +
   `&fields=${encodeURIComponent(fieldsFor(page))}`;
 
 const clean = (s: unknown): string => (typeof s === "string" ? s.replace(/\s+/g, " ").trim() : "");
@@ -72,12 +102,26 @@ export function douglasName(p: any): string {
 }
 
 /** "50 ml", "510 Gramm", "1 Stück" are amounts; anything else is a shade. */
-const AMOUNT = /^\d[\d.,]*\s*(ml|l|cl|g|gramm|kg|mg|stück|st\.?|pieces?|paar|oz)\b/i;
+const AMOUNT = /^\d[\d.,]*\s*(ml|l|cl|g|gramm|kg|mg|stück|st\.?|stuk|stuks|unités?|unidad(es)?|unità|pezz[oi]|pieces?|paar|oz)(?![a-zà-ÿ])/i;
+
+/**
+ * The struck price: CH's `storeValue`, else the EU's `originalValue` — but not
+ * when that is only the maker's UVP (`recommendedRetailValue`), a price the shop
+ * never charged.
+ */
+function wasPrice(pr: any): number {
+  if (pr?.storeValue != null) return Number(pr.storeValue);
+  const orig = Number(pr?.originalValue);
+  if (pr?.recommendedRetailValue != null && Number(pr.recommendedRetailValue) === orig) return NaN;
+  return orig;
+}
 
 /** One search row → record, or null when it is not a real struck-price deal. Pure. */
 export function mapDouglas(p: any, country: CountryCode = "CH"): ProductRecord | null {
+  const m = DOUGLAS_MARKETS[country];
+  if (!m) return null;
   const price = Number(p?.price?.value);
-  const was = Number(p?.price?.storeValue);
+  const was = wasPrice(p?.price);
   const name = douglasName(p);
   if (!p?.code || !name || !p?.url || !Number.isFinite(price) || price <= 0) return null;
   if (!Number.isFinite(was) || was <= price) return null;
@@ -87,11 +131,11 @@ export function mapDouglas(p: any, country: CountryCode = "CH"): ProductRecord |
   const isAmount = AMOUNT.test(variant);
   const images = cleanGallery((p.images ?? []).map((i: any) => i?.url));
   return {
-    brand: "douglas",
+    brand: m.brand,
     country,
     externalId: String(p.code),
     name,
-    url: `${SITE}${p.url}`,
+    url: `${m.site}${p.url}`,
     imageUrl: images?.[0] ?? null,
     images,
     price: toMinor(price),
@@ -108,20 +152,29 @@ export function mapDouglas(p: any, country: CountryCode = "CH"): ProductRecord |
             : [],
         }
       : null,
-    groupKey: p.baseProduct ? `douglas-${p.baseProduct}` : null,
+    groupKey: p.baseProduct ? `${m.brand}-${p.baseProduct}` : null,
     colorName: variant || null,
   };
 }
 
-/** Register as `listDouglas(country)`. CH only. */
+/** Register as `listDouglas(country)`: Douglas CH + EU (not France — that is Nocibé). */
 export async function listDouglas(country: CountryCode): Promise<ProductRecord[]> {
-  if (country !== "CH") return [];
+  return DOUGLAS_MARKETS[country]?.brand === "douglas" ? listMarket(country) : [];
+}
+
+/** Register as `listNocibe(country)` under the slug "nocibe": France only. */
+export async function listNocibe(country: CountryCode): Promise<ProductRecord[]> {
+  return DOUGLAS_MARKETS[country]?.brand === "nocibe" ? listMarket(country) : [];
+}
+
+async function listMarket(country: CountryCode): Promise<ProductRecord[]> {
+  const m = DOUGLAS_MARKETS[country]!;
   const byId = new Map<string, ProductRecord>();
   let pages = MAX_PAGES;
   let inStock = 0;
   for (let page = 0; page < pages; page++) {
     if (page > 0) await sleep(PAUSE_MS);
-    const d = await getJson<any>(pageUrl(page), { country, headers: { "Accept-Language": "de-CH,de;q=0.9" } });
+    const d = await getJson<any>(pageUrl(page, country), { country, headers: { "Accept-Language": m.lang } });
     const total = Number(d?.pagination?.totalPages);
     if (Number.isFinite(total)) pages = Math.min(total, MAX_PAGES);
     const rows: any[] = d?.products ?? [];

@@ -1,5 +1,5 @@
 /**
- * UNIQLO (United Kingdom + Australia) through the storefront's own commerce API,
+ * UNIQLO (United Kingdom, Australia and, since 2026-10-21, twelve EU markets) through the storefront's own commerce API,
  * `www.uniqlo.com/<region>/api/commerce/v5/en/products?flagCodes=discount`.
  *
  * Every uniqlo.com HTML page is behind Akamai (403 to a GitHub runner), but the
@@ -25,9 +25,25 @@ import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
 export const brand = "uniqlo";
 
-export const UNIQLO_MARKETS: Partial<Record<CountryCode, { region: string; clientId: string }>> = {
+export const UNIQLO_MARKETS: Partial<Record<CountryCode, { region: string; clientId: string; web?: string }>> = {
   GB: { region: "uk", clientId: "uq.gb.web-spa" },
   AU: { region: "au", clientId: "uq.au.web-spa" },
+  // EU (2026-10-21): base + promo in EUR/SEK/DKK, unlike US/CA. Eight countries
+  // have their own region; Austria, Ireland, Portugal and Finland are regions of
+  // the shared EU shop (`eu-<cc>`) keyed by their own client id. The API answers
+  // English everywhere; product links use the storefront language (`web`).
+  FR: { region: "fr", clientId: "uq.fr.web-spa", web: "fr" },
+  DE: { region: "de", clientId: "uq.de.web-spa", web: "de" },
+  ES: { region: "es", clientId: "uq.es.web-spa", web: "es" },
+  IT: { region: "it", clientId: "uq.it.web-spa", web: "it" },
+  NL: { region: "nl", clientId: "uq.nl.web-spa", web: "nl" },
+  BE: { region: "be", clientId: "uq.be.web-spa", web: "fr" },
+  SE: { region: "se", clientId: "uq.se.web-spa" },
+  DK: { region: "dk", clientId: "uq.dk.web-spa" },
+  AT: { region: "eu-at", clientId: "uq.at.web-spa" },
+  IE: { region: "eu-ie", clientId: "uq.ie.web-spa" },
+  PT: { region: "eu-pt", clientId: "uq.pt.web-spa" },
+  FI: { region: "eu-fi", clientId: "uq.fi.web-spa" },
 };
 
 const PAGE_SIZE = 100; // the API's maximum
@@ -76,7 +92,7 @@ export function mapUniqloItem(it: any, country: CountryCode): ProductRecord | nu
     country,
     externalId: `${it.productId}-${group}`,
     name: String(it.name).trim(),
-    url: `https://www.uniqlo.com/${m.region}/en/products/${it.productId}/${group}${colour ? `?colorDisplayCode=${colour}` : ""}`,
+    url: `https://www.uniqlo.com/${m.region}/${m.web ?? "en"}/products/${it.productId}/${group}${colour ? `?colorDisplayCode=${colour}` : ""}`,
     imageUrl: first,
     images: cleanGallery(subs, first),
     price: toMinor(promo),

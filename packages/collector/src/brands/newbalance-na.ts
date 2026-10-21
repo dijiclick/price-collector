@@ -30,9 +30,49 @@ import type { CountryCode } from "../../../../lib/countries";
 
 export const brand = "newbalance";
 
-export const NB_MARKETS: Partial<Record<CountryCode, { origin: string; site: string; locale: string; cgid: string; currency: string; prefix: string }>> = {
+export interface NbMarket {
+  origin: string;
+  site: string;
+  locale: string;
+  cgid: string;
+  currency: string;
+  prefix: string;
+  /** Grid pages walked (100 tiles each). */
+  maxPages?: number;
+  /** Grid pages in flight at once (the EU grid answers in 3–7 s a page). */
+  parallel?: number;
+}
+
+/**
+ * EUROPE (2026-10-21): every EU shop is ONE SFCC site, `Sites-NBEU-Site`, on
+ * each country's own host; the locale picks the price book (fr_FR … EUR,
+ * sv_SE → SEK, da_DK → DKK). Same `Search-UpdateGrid` route and the same tile
+ * markup as North America, and here it answers a GitHub runner (probe
+ * 39615272052: all twelve 200 with tiles; the hosts' pages are Akamai/Cloudflare
+ * 403). The EU outlet categories are empty, so the walk reads the whole range
+ * (`cgid=root`, ~3,270 tiles) and keeps only reduced colours — the EUR shops
+ * strike ~60% of all styles today, SEK/DKK ~50% (measured on the Mac). NL, AT,
+ * FI and DK live on `<cc>.newbalance.eu` (the .nl/.at/.fi/.dk domains redirect).
+ */
+const EU = (origin: string, locale: string, currency = "EUR"): NbMarket => ({
+  origin, site: "Sites-NBEU-Site", locale, cgid: "root", currency, prefix: "", maxPages: 34, parallel: 4,
+});
+
+export const NB_MARKETS: Partial<Record<CountryCode, NbMarket>> = {
   US: { origin: "https://www.newbalance.com", site: "Sites-NBUS-Site", locale: "en_US", cgid: "400143", currency: "USD", prefix: "" },
   CA: { origin: "https://www.newbalance.ca", site: "Sites-NBCA-Site", locale: "en_CA", cgid: "6000", currency: "CAD", prefix: "/en_ca" },
+  FR: EU("https://www.newbalance.fr", "fr_FR"),
+  DE: EU("https://www.newbalance.de", "de_DE"),
+  ES: EU("https://www.newbalance.es", "es_ES"),
+  NL: EU("https://nl.newbalance.eu", "nl_NL"),
+  BE: EU("https://www.newbalance.be", "nl_BE"),
+  IE: EU("https://www.newbalance.ie", "en_IE"),
+  SE: EU("https://www.newbalance.se", "sv_SE", "SEK"),
+  IT: EU("https://www.newbalance.it", "it_IT"),
+  AT: EU("https://at.newbalance.eu", "de_AT"),
+  PT: EU("https://www.newbalance.pt", "pt_PT"),
+  FI: EU("https://fi.newbalance.eu", "fi_FI"),
+  DK: EU("https://dk.newbalance.eu", "da_DK", "DKK"),
 };
 
 const PAGE = 100;
@@ -62,9 +102,14 @@ const num = (v: unknown): number | null => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
-function genderOf(g: unknown): ProductRecord["gender"] {
+export function genderOf(g: unknown): ProductRecord["gender"] {
   const s = String(g ?? "");
   if (/kid|boy|girl|infant|toddler|youth|grade|pre-?school|little|big/i.test(s)) return "cocuk";
+  // Some EU locales name the gender in their own language (es "Hombre/Mujer/Niños",
+  // sv "Män/Kvinnor/Barn", it, pt, da …) — measured 2026-10-21.
+  if (/^\s*(ni[ñn][oa]s?|barn|b[øo]rn|bambin[oi]|crian[çc]as?|kinder|enfants?|lapset)\b/i.test(s)) return "cocuk";
+  if (/^\s*(mujer|kvinnor|kvinder|donna|mulher|damen|femmes?|naiset|dames)\b/i.test(s)) return "kadin";
+  if (/^\s*(hombre|m[äæ]nn?(d|er)?|uomo|homem|herren|hommes?|miehet|heren)(\b|$)/i.test(s)) return "erkek";
   if (/women/i.test(s)) return "kadin";
   if (/^\s*men/i.test(s)) return "erkek";
   return null;
@@ -134,9 +179,10 @@ export async function listNewBalanceNa(country: CountryCode): Promise<ProductRec
   const refused: string[] = [];
   let pagesOk = 0;
   let tiles = 0;
-  for (let page = 0; page < MAX_PAGES && byId.size < CAP; page++) {
-    if (page) await sleep(PAUSE_MS);
-    const html = await getText(nbGridUrl(country, page * PAGE), {
+  const maxPages = m.maxPages ?? MAX_PAGES;
+  const wave = Math.max(1, m.parallel ?? 1);
+  const fetchPage = (page: number) =>
+    getText(nbGridUrl(country, page * PAGE), {
       country,
       timeoutMs: 30_000,
       headers: { "X-Requested-With": "XMLHttpRequest", Accept: "text/html, */*; q=0.01", Referer: `${m.origin}${m.prefix}/sale/` },
@@ -144,12 +190,19 @@ export async function listNewBalanceNa(country: CountryCode): Promise<ProductRec
       refused.push(`start ${page * PAGE}: ${String(e?.message ?? e).slice(0, 80)}`);
       return null;
     });
-    if (html == null) break;
-    pagesOk++;
-    const ts = nbTiles(html);
-    tiles += ts.length;
-    for (const t of ts) for (const r of mapNewBalanceTile(t, country)) if (!byId.has(r.externalId)) byId.set(r.externalId, r);
-    if (ts.length < PAGE) break;
+  // North America: one page at a time (wave 1, as before). Europe: a few at once.
+  walk: for (let first = 0; first < maxPages && byId.size < CAP; first += wave) {
+    if (first) await sleep(PAUSE_MS);
+    const pages = Array.from({ length: Math.min(wave, maxPages - first) }, (_, i) => first + i);
+    const htmls = await Promise.all(pages.map(fetchPage));
+    for (const html of htmls) {
+      if (html == null) break walk;
+      pagesOk++;
+      const ts = nbTiles(html);
+      tiles += ts.length;
+      for (const t of ts) for (const r of mapNewBalanceTile(t, country)) if (!byId.has(r.externalId)) byId.set(r.externalId, r);
+      if (ts.length < PAGE) break walk;
+    }
   }
   if (refused.length) console.warn(`newbalance/${country}: ${refused.join("; ")}`);
   if (pagesOk === 0) throw new Error(`newbalance/${country}: sale grid refused (${refused.join("; ")})`);

@@ -24,7 +24,10 @@ export const SHOPIFY_STORES: ShopifySite[] = [
   { brand: "princesspolly", sites: { US: "https://us.princesspolly.com", AU: "https://www.princesspolly.com.au" }, defaultGender: "kadin" },
   { brand: "stevemadden", sites: { US: "https://www.stevemadden.com", CA: "https://www.stevemadden.ca", GB: "https://www.stevemadden.co.uk", AU: "https://www.stevemadden.com.au" } },
   // Added 2026-10-12 (US/CA push): every site priced in its market's currency, sales live.
-  { brand: "gymshark", sites: { US: "https://us.shop.gymshark.com", CA: "https://ca.shop.gymshark.com", AU: "https://au.shop.gymshark.com", CH: "https://ch.shop.gymshark.com" } },
+  { brand: "gymshark", sites: { US: "https://us.shop.gymshark.com", CA: "https://ca.shop.gymshark.com", AU: "https://au.shop.gymshark.com", CH: "https://ch.shop.gymshark.com",
+    DE: "https://de.shop.gymshark.com", FR: "https://fr.shop.gymshark.com", NL: "https://nl.shop.gymshark.com", SE: "https://se.shop.gymshark.com", DK: "https://dk.shop.gymshark.com",
+    IE: "https://eu.shop.gymshark.com", ES: "https://eu.shop.gymshark.com", IT: "https://eu.shop.gymshark.com", BE: "https://eu.shop.gymshark.com", AT: "https://eu.shop.gymshark.com", PT: "https://eu.shop.gymshark.com", FI: "https://eu.shop.gymshark.com" } },
+  { brand: "scalpers", sites: { ES: "https://scalperscompany.com" } },
   { brand: "whitefox", sites: { US: "https://www.whitefoxboutique.com", GB: "https://www.whitefoxboutique.co.uk", AU: "https://www.whitefoxboutique.com.au" }, defaultGender: "kadin" },
   { brand: "dolcevita", sites: { US: "https://www.dolcevita.com", CA: "https://www.dolcevita.ca" }, defaultGender: "kadin" },
   { brand: "psychobunny", sites: { US: "https://www.psychobunny.com", CA: "https://www.psychobunny.ca" }, defaultGender: "erkek" },

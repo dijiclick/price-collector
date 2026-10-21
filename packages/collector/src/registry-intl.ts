@@ -146,6 +146,28 @@ import { listSsense } from "./brands/ssense";
 import * as topshop from "./brands/topshop";
 import * as newlook from "./brands/newlook";
 import * as asos from "./brands/asos";
+// EU wave 1 (2026-10-21)
+import { listDecathlon } from "./brands/decathlon";
+import { listPromod } from "./brands/promod";
+import { listEtamGroup } from "./brands/_etamgroup";
+import { listIntersport } from "./brands/intersport-fr";
+import { listCourir } from "./brands/courir";
+import { listGemo } from "./brands/gemo";
+import { listScayle } from "./brands/_scayle";
+import { listNewYorker } from "./brands/newyorker";
+import { listTchibo } from "./brands/tchibo";
+import { listBonprix } from "./brands/bonprix";
+import { listBreuninger } from "./brands/breuninger";
+import { listMarcOPolo } from "./brands/marcopolo";
+import { listElCorteIngles } from "./brands/elcorteingles";
+import { listPrimor } from "./brands/primor";
+import { listDruni } from "./brands/druni";
+import { listParfois } from "./brands/parfois";
+import { listTendam } from "./brands/_tendam";
+import { listSprinter } from "./brands/sprinter";
+import { listSfera } from "./brands/sfera";
+import { listTous } from "./brands/tous";
+import { listBimbaYLola } from "./brands/bimbaylola";
 
 type List = (country: CountryCode) => Promise<ProductRecord[]>;
 
@@ -356,5 +378,38 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "weekday", listProducts: (c) => listHmGroup("weekday", c) },
   { brand: "topshop", listProducts: tr2("GB", () => topshop.listProducts("GB")) },
   { brand: "newlook", listProducts: tr2("GB", () => newlook.listProducts("GB")) },
-  { brand: "asos", listProducts: tr2("GB", () => asos.listProducts("GB")) },
+  // ASOS: GB plus its EU stores (2026-10-21) — lib/brands.ts decides which markets run.
+  { brand: "asos", listProducts: (c) => asos.listProducts(c) },
+  // EU wave 1 (2026-10-21): chosen by each country's own Google search demand;
+  // every route confirmed from a GitHub runner, no proxy.
+  // Decathlon: the Android app's shopping API (every website is Cloudflare-walled).
+  { brand: "decathlon", listProducts: (c) => listDecathlon(c) },
+  { brand: "deichmann", listProducts: (c) => listDeichmann("deichmann", c) },
+  // France
+  { brand: "intersport", listProducts: (c) => listIntersport(c) },
+  { brand: "promod", listProducts: (c) => listPromod(c) },
+  { brand: "undiz", listProducts: (c) => listEtamGroup("undiz", c) },
+  { brand: "courir", listProducts: (c) => listCourir(c) },
+  { brand: "gemo", listProducts: (c) => listGemo(c) },
+  // Germany
+  { brand: "soliver", listProducts: (c) => listScayle("soliver", c) },
+  { brand: "tomtailor", listProducts: (c) => listScayle("tomtailor", c) },
+  { brand: "newyorker", listProducts: (c) => listNewYorker(c) },
+  { brand: "tchibo", listProducts: (c) => listTchibo(c) },
+  { brand: "bonprix", listProducts: (c) => listBonprix(c) },
+  { brand: "breuninger", listProducts: (c) => listBreuninger(c) },
+  { brand: "marcopolo", listProducts: (c) => listMarcOPolo(c) },
+  // Spain
+  // El Corte Inglés answers a link-preview User-Agent only; watch it (could close any time).
+  { brand: "elcorteingles", listProducts: (c) => listElCorteIngles(c) },
+  { brand: "primor", listProducts: (c) => listPrimor(c) },
+  { brand: "druni", listProducts: (c) => listDruni(c) },
+  { brand: "parfois", listProducts: (c) => listParfois(c) },
+  { brand: "womensecret", listProducts: (c) => listTendam("womensecret", c) },
+  { brand: "springfield", listProducts: (c) => listTendam("springfield", c) },
+  { brand: "cortefiel", listProducts: (c) => listTendam("cortefiel", c) },
+  { brand: "sprinter", listProducts: (c) => listSprinter(c) },
+  { brand: "sfera", listProducts: (c) => listSfera(c) },
+  { brand: "tous", listProducts: (c) => listTous(c) },
+  { brand: "bimbaylola", listProducts: (c) => listBimbaYLola(c) },
 ];

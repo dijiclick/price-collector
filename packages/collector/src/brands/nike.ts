@@ -36,6 +36,22 @@ export const NIKE_MARKETS: Partial<Record<CountryCode, { language: string; site:
   AU: { language: "en-GB", site: "https://www.nike.com/au" },
   CH: { language: "en-GB", site: "https://www.nike.com/ch" },
   NO: { language: "en-GB", site: "https://www.nike.com/no" },
+  // EU, 2026-10-21: each market in its own site's language (the site's
+  // `initialLocale`); en-GB answers 0 for FR/DE/ES/IT and `es` is refused (only
+  // `es-ES`). Discounted ACTIVE threads ≈2,200 per market, verified from a
+  // GitHub runner (probe 39615272052). PT is left out: its whole wall (5,703
+  // groups) carries no reduced price today, and its thread feed answers 0.
+  FR: { language: "fr", site: "https://www.nike.com/fr" },
+  DE: { language: "de", site: "https://www.nike.com/de" },
+  ES: { language: "es-ES", site: "https://www.nike.com/es" },
+  NL: { language: "nl", site: "https://www.nike.com/nl" },
+  BE: { language: "nl", site: "https://www.nike.com/be" },
+  IE: { language: "en-GB", site: "https://www.nike.com/ie" },
+  SE: { language: "sv", site: "https://www.nike.com/se" },
+  IT: { language: "it", site: "https://www.nike.com/it" },
+  AT: { language: "de", site: "https://www.nike.com/at" },
+  FI: { language: "en-GB", site: "https://www.nike.com/fi" },
+  DK: { language: "da", site: "https://www.nike.com/dk" },
 };
 
 export function threadsUrl(extra: string[], anchor = 0, count = PAGE, country: CountryCode = "TR"): string {

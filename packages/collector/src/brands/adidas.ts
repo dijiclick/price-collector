@@ -80,6 +80,22 @@ export const ADIDAS_MARKETS: Partial<Record<CountryCode, { lang: string; collect
   NO: { lang: "no-NO", collection: "outlet", site: "https://www.adidas.no" },
   // Turkey answers the same way (tr-TR → TRY, outlet ~3,000), direct, no proxy.
   TR: { lang: "tr-TR", collection: "outlet", site: "https://www.adidas.com.tr/tr" },
+  // EU, 2026-10-21: each language answers its own EUR/SEK/DKK outlet (3,800–4,500
+  // rows, all reduced), measured from the Mac. en-FI / en-DK are refused (400),
+  // so the Nordic shops run in their own language. Like every adidas market
+  // Akamai 403s GitHub runners (probe 39615272052) — these run on the Hetzner box.
+  FR: { lang: "fr-FR", collection: "outlet", site: "https://www.adidas.fr" },
+  DE: { lang: "de-DE", collection: "outlet", site: "https://www.adidas.de" },
+  ES: { lang: "es-ES", collection: "outlet", site: "https://www.adidas.es" },
+  NL: { lang: "nl-NL", collection: "outlet", site: "https://www.adidas.nl" },
+  BE: { lang: "nl-BE", collection: "outlet", site: "https://www.adidas.be/en" },
+  IE: { lang: "en-IE", collection: "outlet", site: "https://www.adidas.ie" },
+  SE: { lang: "sv-SE", collection: "outlet", site: "https://www.adidas.se" },
+  IT: { lang: "it-IT", collection: "outlet", site: "https://www.adidas.it" },
+  AT: { lang: "de-AT", collection: "outlet", site: "https://www.adidas.at" },
+  PT: { lang: "pt-PT", collection: "outlet", site: "https://www.adidas.pt" },
+  FI: { lang: "fi-FI", collection: "outlet", site: "https://www.adidas.fi" },
+  DK: { lang: "da-DK", collection: "outlet", site: "https://www.adidas.dk" },
 };
 
 export function appHeaders(country: CountryCode, ua: string = appUa()): Record<string, string> {
@@ -160,9 +176,11 @@ export function planSweeps(refinements: any[], maxPages: number): Sweep[] {
 /** First word of the subtitle ("Women Originals", "Damer TERREX", "Erkek Performance"). */
 function genderOf(subtitle: unknown): ProductRecord["gender"] {
   const w = String(subtitle ?? "").trim().split(/\s+/)[0]?.toLocaleLowerCase("tr") ?? "";
-  if (/^(women|damer?|kvinner|kadın|kadin)$/.test(w)) return "kadin";
-  if (/^(men|menn|herre|erkek)$/.test(w)) return "erkek";
-  if (/^(kids|barn|youth|infant|infants|toddler|baby|babies|junior|çocuk|cocuk|genç|bebek)$/.test(w)) return "cocuk";
+  // EU words (2026-10-21): Femmes/Hommes, Frauen/Männer, Mujer/Hombre, Dames/Heren,
+  // Dam/Herr, Donna/Uomo, Mulher/Homem, Naiset/Miehet, Kvinder/Mænd.
+  if (/^(women|damer?|kvinner|kadın|kadin|dam|femmes?|frauen|damen|mujer|dames|donna|mulher|naiset|kvinder)$/.test(w)) return "kadin";
+  if (/^(men|menn|herre|erkek|hommes?|männer|herren|hombre|heren|herr|uomo|homem|miehet|mænd)$/.test(w)) return "erkek";
+  if (/^(kids|barn|youth|infant|infants|toddler|baby|babies|junior|çocuk|cocuk|genç|bebek|enfants?|kinder|niños|niño|kinderen|bambini|bambino|criança|crianças|lapset|børn)$/.test(w)) return "cocuk";
   return null;
 }
 

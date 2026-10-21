@@ -1,5 +1,5 @@
 /**
- * Zalando Switzerland + Norway — women's sale, through the GraphQL endpoint the
+ * Zalando Switzerland, Norway and (2026-10-21) twelve EU shops — women's sale, through the GraphQL endpoint the
  * Zalando ANDROID APP calls (added 2026-10-11).
  *
  * www.zalando.<tld> is Akamai: every HTML page, sitemap and the web
@@ -51,6 +51,19 @@ const APP_CATALOG = "4fff04773d07da1892419b81016f5f658df2c2e84d596d1b4e6692c0994
 export const ZALANDO_MARKETS: Partial<Record<CountryCode, { host: string; appDomain: number; lang: string; women: string }>> = {
   CH: { host: "www.zalando.ch", appDomain: 20, lang: "de", women: "damen" },
   NO: { host: "www.zalando.no", appDomain: 32, lang: "no", women: "dame" },
+  // EU (2026-10-21): shop ids from the app's `/api/mobile/v3/config/shops`.
+  DE: { host: "www.zalando.de", appDomain: 1, lang: "de", women: "damen" },
+  AT: { host: "www.zalando.at", appDomain: 19, lang: "de", women: "damen" },
+  NL: { host: "www.zalando.nl", appDomain: 5, lang: "nl", women: "dames" },
+  BE: { host: "www.zalando.be", appDomain: 25, lang: "nl", women: "dames" },
+  FR: { host: "www.zalando.fr", appDomain: 11, lang: "fr", women: "femme" },
+  IT: { host: "www.zalando.it", appDomain: 15, lang: "it", women: "donna" },
+  ES: { host: "www.zalando.es", appDomain: 30, lang: "es", women: "mujer" },
+  PT: { host: "www.zalando.pt", appDomain: 50, lang: "pt", women: "mulher-roupa" },
+  IE: { host: "www.zalando.ie", appDomain: 48, lang: "en", women: "women" },
+  SE: { host: "www.zalando.se", appDomain: 27, lang: "sv", women: "kvinna" },
+  DK: { host: "www.zalando.dk", appDomain: 29, lang: "da", women: "damer" },
+  FI: { host: "www.zalando.fi", appDomain: 28, lang: "fi", women: "naiset" },
 };
 
 const PAGE = 50; // the server rejects larger pages ("first is greater than the max allowed value")
@@ -169,7 +182,8 @@ export function mapNode(country: CountryCode, n: any): ProductRecord | null {
   const dp = n.displayPrice ?? {};
   // A price range across sizes: "ab"/"fra" before the price, "bis zu"/"opptil" before the %.
   if (dp.promotional?.lowerBoundLabel || dp.original?.lowerBoundLabel || dp.current?.lowerBoundLabel) return null;
-  if (/bis zu|opptil|up to|jusqu|fino a/i.test(String(dp.original?.discountLabel ?? ""))) return null;
+  // "up to -N%" in every shop language (de, no, en, fr, it, nl, es, sv, da, fi, pt).
+  if (/bis zu|opptil|up to|jusqu|fino a|\btot\b|hasta|upp till|op til|jopa|até/i.test(String(dp.original?.discountLabel ?? ""))) return null;
   const brandName = String(n.brand?.name ?? "").trim();
   const name = String(n.name).replace(/\s+/g, " ").trim();
   const { type, colour } = splitName(name);
@@ -205,8 +219,8 @@ export async function listZalando(country: CountryCode): Promise<ProductRecord[]
   let after: string | null = null;
   for (let page = 0; page < MAX_PAGES && byId.size < CAP; page++) {
     if (page > 0) await sleep(PAUSE_MS);
-    const body = JSON.stringify([{ id: APP_CATALOG, variables: catalogVariables(country, after) }]);
-    const data = await getJson<any>(`https://${m.host}${PATH}`, {
+    const body: string = JSON.stringify([{ id: APP_CATALOG, variables: catalogVariables(country, after) }]);
+    const data: any = await getJson<any>(`https://${m.host}${PATH}`, {
       method: "POST",
       body,
       headers: appHeaders(country),
@@ -216,7 +230,7 @@ export async function listZalando(country: CountryCode): Promise<ProductRecord[]
       if (page === 0) throw new Error(`zalando/${country}: catalog refused (${e?.message ?? e})`);
       return null;
     });
-    const ents = (Array.isArray(data) ? data[0] : data)?.data?.collection?.entities;
+    const ents: any = (Array.isArray(data) ? data[0] : data)?.data?.collection?.entities;
     const edges: any[] = ents?.edges ?? [];
     if (!edges.length) {
       if (page === 0) throw new Error(`zalando/${country}: empty catalog answer`);

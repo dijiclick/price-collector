@@ -25,10 +25,21 @@ import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
 export type BestsellerBrand = "only" | "veromoda";
 
+/**
+ * EU catalogues (2026-10-21): each answers with its own price list (`eur_de`,
+ * `eur_fr`, `sek`, `dkk` …) — not geo-IP. Pieces, Vila and Object are not on
+ * this API (their `/api/catalog/…` answers 404), so only ONLY and VERO MODA.
+ */
+const EU_CATALOGS: Partial<Record<CountryCode, string>> = {
+  DE: "de-de", AT: "de-at", FR: "fr-fr", ES: "es-es", IT: "it-it", NL: "nl-nl",
+  IE: "en-ie", SE: "sv-se", DK: "da-dk", FI: "fi-fi", PT: "pt-pt",
+};
+
 /** Storefront origin per brand, and the catalogue (locale path) per market. */
 export const BESTSELLER_SITES: Record<BestsellerBrand, { origin: string; catalogs: Partial<Record<CountryCode, string>> }> = {
-  only: { origin: "https://www.only.com", catalogs: { CH: "de-ch", NO: "nb-no" } },
-  veromoda: { origin: "https://www.veromoda.com", catalogs: { CH: "de-ch", NO: "nb-no" } },
+  only: { origin: "https://www.only.com", catalogs: { CH: "de-ch", NO: "nb-no", ...EU_CATALOGS, BE: "nl-be" } },
+  // Vero Moda Belgium (nl-be / fr-be) had 0 markdown items on 2026-10-21 — not mapped.
+  veromoda: { origin: "https://www.veromoda.com", catalogs: { CH: "de-ch", NO: "nb-no", ...EU_CATALOGS } },
 };
 
 const SEARCH_PAGE = 200;

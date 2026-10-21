@@ -77,6 +77,10 @@ export const GROUP: Record<string, GroupBrand> = {
     markets: {
       TR: { siteId: "calzedonia-tr", locale: "tr-TR", path: "tr", saleCgids: ["CAL_Women_Sales_TR", "CAL_Men_Sales_TR", "CAL_Kids_Sales_TR"] },
       CH: { siteId: "calzedonia-ch", locale: "de-CH", path: "ch", saleCgids: ["CAL_Women_Sales_CH", "CAL_Men_Sales_CH", "CAL_Kids_Sales_CH"] },
+      // EU (2026-10-21), site ids/locales from the storefront's own site list.
+      // Only ES (343) and PT (302) had a women's sale running that day; the
+      // other markets answer with an empty sale tree and fill when it starts.
+      ...calzedoniaEu(),
     },
   },
   falconeri: {
@@ -101,9 +105,38 @@ export const GROUP: Record<string, GroupBrand> = {
     markets: {
       TR: { siteId: "intimissimi-tr", locale: "tr_TR", path: "tr", saleCgids: ["INT_Woman_Sales_TR", "INT_Man_Sales_TR"] },
       CH: { siteId: "intimissimi-ch", locale: "de_CH", path: "ch", saleCgids: ["INT_Woman_Sales_CH", "INT_Man_Sales_CH"] },
+      // EU (2026-10-21): every one of these sale categories exists (it renders its
+      // own "Sale" page) but was empty that day. AT/NL/BE are left out: their
+      // `INT_*_Sales_XX` ids fall back to the whole catalogue page.
+      ...intimissimiEu(),
     },
   },
 };
+
+/** Calzedonia's EU sites: `calzedonia-<cc>`, except Italy and Ireland, which share `calzedonia-eu`. */
+function calzedoniaEu(): Partial<Record<CountryCode, GroupMarket>> {
+  const rows: [CountryCode, string, string][] = [
+    ["DE", "calzedonia-de", "de-DE"], ["AT", "calzedonia-at", "de-AT"], ["FR", "calzedonia-fr", "fr-FR"],
+    ["NL", "calzedonia-nl", "nl-NL"], ["BE", "calzedonia-be", "fr-BE"], ["ES", "calzedonia-es", "es-ES"],
+    ["PT", "calzedonia-pt", "pt-PT"], ["SE", "calzedonia-se", "sv-SE"], ["DK", "calzedonia-dk", "en-DK"],
+    ["IT", "calzedonia-eu", "it-IT"], ["IE", "calzedonia-eu", "en-IE"],
+  ];
+  return Object.fromEntries(
+    rows.map(([c, siteId, locale]) => [c, { siteId, locale, path: c.toLowerCase(), saleCgids: [`CAL_Women_Sales_${c}`, `CAL_Men_Sales_${c}`, `CAL_Kids_Sales_${c}`] }]),
+  );
+}
+
+/** Intimissimi's EU SFRA sites (`intimissimi-<cc>`; Ireland is on `intimissimi-eu`). */
+function intimissimiEu(): Partial<Record<CountryCode, GroupMarket>> {
+  const rows: [CountryCode, string, string][] = [
+    ["IT", "intimissimi-it", "it_IT"], ["DE", "intimissimi-de", "de_DE"], ["FR", "intimissimi-fr", "fr_FR"],
+    ["ES", "intimissimi-es", "es_ES"], ["PT", "intimissimi-pt", "pt_PT"], ["IE", "intimissimi-eu", "en_IE"],
+    ["SE", "intimissimi-se", "sv_SE"], ["DK", "intimissimi-dk", "en_DK"],
+  ];
+  return Object.fromEntries(
+    rows.map(([c, siteId, locale]) => [c, { siteId, locale, path: c.toLowerCase(), saleCgids: [`INT_Woman_Sales_${c}`, `INT_Man_Sales_${c}`] }]),
+  );
+}
 
 const MAX_PRODUCTS = Number(process.env.CALZEDONIA_MAX_PRODUCTS ?? 1500);
 /** SCAPI pages of 100 (~25 KB a hit; 200 times out at the gateway). ~10 s each. */

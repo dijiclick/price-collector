@@ -1,6 +1,8 @@
 import type { ProductRecord } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
+import type { CountryCode } from "../../../../lib/countries";
+import { listRossmannDe } from "./rossmann-de";
 
 /**
  * Rossmann (rossmann.com.tr) is collected from its SEARCH PROVIDER, wawlabs —
@@ -138,7 +140,13 @@ export async function crawl(
 
 export const brand = "rossmann";
 
-export async function listProducts(): Promise<ProductRecord[]> {
+/**
+ * Turkey is the wawlabs crawl below, unchanged. Germany (2026-10-21) is a
+ * different company's shop with its own app API — see rossmann-de.ts.
+ */
+export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
+  if (country === "DE") return listRossmannDe();
+  if (country !== "TR") return [];
   const t0 = Date.now();
   // Direct only (no `proxy`): Turkey never goes through the proxy. getJson
   // retries a failed query twice with backoff.

@@ -13,9 +13,10 @@
  *   arket   wA35412D6.api.esales.apptus.cloud                Voyado Elevate storefront API directly (public, no key)
  *
  * All four verified from a GitHub runner, no proxy: probe run 38134841738.
- * English (`en-GB`) is used in every market, since lib/productTypes.ts
- * classifies English; the market code still picks the price list, so prices
- * come back in GBP / CHF / NOK.
+ * English (`en-GB`) is used wherever the market accepts it, since
+ * lib/productTypes.ts classifies English; the market code still picks the price
+ * list, so prices come back in GBP / CHF / NOK / EUR / SEK / DKK. EU markets
+ * (2026-10-21) that refuse `en-GB` use their own language — see `EU` below.
  *
  * Only reduced rows are kept, in-stock first, capped. Sale pages are seasonal:
  * COS had no sale at all on 2026-10-11 (0 rows is a correct answer then), and
@@ -37,31 +38,73 @@ const CAP = 1500;
 const PAUSE_MS = 600;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * One market: the code the API takes, the site's locale path, and the locale to
+ * ask for when the market refuses `en-GB` ("Locale "en-GB" is not supported in
+ * market "de"" — every API checks the pair).
+ */
+interface Market {
+  mk: string;
+  path: string;
+  locale?: string;
+}
+
 interface Brand {
   site: string;
   /** Market code the API takes, and the site's locale path, per country. */
-  markets: Partial<Record<CountryCode, { mk: string; path: string }>>;
+  markets: Partial<Record<CountryCode, Market>>;
   /** Sale pages (Elevate pageReference) with the section's gender. Unused by COS. */
   pages: [ref: string, gender: Gender][];
   pageSize: number;
 }
 
+/**
+ * EU markets (2026-10-21). Each brand runs its own market for the big
+ * countries, and one euro market, `eu` (English, EUR), for the rest — Ireland,
+ * Belgium, Portugal and Finland have no market of their own (their codes answer
+ * 400 on every locale). Where a market accepts `en-GB` it is used (English
+ * names classify best); elsewhere its own language. Measured from this Mac:
+ * Arket's FR/ES/IT sale pages answer with 0 hits, and Weekday has no ES/IT
+ * market, so those are left out rather than mapped to another shop.
+ */
+const EU = (mk: string, path = "en-eu"): Market => ({ mk, path });
+
 export const HMGROUP: Record<HmGroupSlug, Brand> = {
   cos: {
     site: "https://www.cos.com",
-    markets: { GB: { mk: "gb", path: "en-gb" }, CH: { mk: "ch", path: "en-ch" }, NO: { mk: "no", path: "en-no" } },
+    markets: {
+      GB: { mk: "gb", path: "en-gb" }, CH: { mk: "ch", path: "en-ch" }, NO: { mk: "no", path: "en-no" },
+      // COS had no sale in any market on 2026-10-21 (on_sale filter: 0 everywhere, GB too).
+      DE: { mk: "de", path: "en-de" }, AT: { mk: "at", path: "de-at", locale: "de-AT" },
+      FR: { mk: "fr", path: "fr-fr", locale: "fr-FR" }, ES: { mk: "es", path: "es-es", locale: "es-ES" },
+      IT: { mk: "it", path: "it-it", locale: "it-IT" }, NL: { mk: "nl", path: "en-nl" },
+      SE: { mk: "se", path: "sv-se", locale: "sv-SE" }, DK: { mk: "dk", path: "en-dk" },
+      IE: EU("ie", "en-ie"), BE: EU("eu"), PT: EU("eu"), FI: EU("eu"),
+    },
     pages: [],
     pageSize: 500,
   },
   arket: {
     site: "https://www.arket.com",
-    markets: { GB: { mk: "GB", path: "en-gb" }, CH: { mk: "CH", path: "en-ch" }, NO: { mk: "NO", path: "en-no" } },
+    markets: {
+      GB: { mk: "GB", path: "en-gb" }, CH: { mk: "CH", path: "en-ch" }, NO: { mk: "NO", path: "en-no" },
+      DE: { mk: "DE", path: "de-de", locale: "de-DE" }, AT: { mk: "AT", path: "de-at", locale: "de-AT" },
+      NL: { mk: "NL", path: "en-nl" }, SE: { mk: "SE", path: "en-se" }, DK: { mk: "DK", path: "en-dk" },
+      IE: EU("EU"), BE: EU("EU"), PT: EU("EU"), FI: EU("EU"),
+    },
     pages: [["/sale/women", "kadin"], ["/sale/men", "erkek"], ["/sale/children", "cocuk"]],
     pageSize: 200,
   },
   stories: {
     site: "https://www.stories.com",
-    markets: { GB: { mk: "gb", path: "en-gb" }, CH: { mk: "ch", path: "en-ch" }, NO: { mk: "no", path: "en-no" } },
+    markets: {
+      GB: { mk: "gb", path: "en-gb" }, CH: { mk: "ch", path: "en-ch" }, NO: { mk: "no", path: "en-no" },
+      DE: { mk: "de", path: "en-de" }, AT: { mk: "at", path: "de-at", locale: "de-AT" },
+      NL: { mk: "nl", path: "en-nl" }, SE: { mk: "se", path: "en-se" }, DK: { mk: "dk", path: "en-dk" },
+      FR: { mk: "fr", path: "fr-fr", locale: "fr-FR" }, ES: { mk: "es", path: "es-es", locale: "es-ES" },
+      IT: { mk: "it", path: "it-it", locale: "it-IT" },
+      IE: EU("eu"), BE: EU("eu"), PT: EU("eu"), FI: EU("eu"),
+    },
     // "/promotions/new-to-sale" is the live markdown page; "/sale" is where the
     // seasonal sale lands (0 rows outside it). & Other Stories is womenswear.
     pages: [["/promotions/new-to-sale", "kadin"], ["/sale", "kadin"]],
@@ -69,7 +112,13 @@ export const HMGROUP: Record<HmGroupSlug, Brand> = {
   },
   weekday: {
     site: "https://www.weekday.com",
-    markets: { GB: { mk: "gb", path: "en-gb" }, CH: { mk: "ch", path: "en-ch" }, NO: { mk: "no", path: "no-no" } },
+    markets: {
+      GB: { mk: "gb", path: "en-gb" }, CH: { mk: "ch", path: "en-ch" }, NO: { mk: "no", path: "no-no" },
+      DE: { mk: "de", path: "de-de", locale: "de-DE" }, AT: { mk: "at", path: "de-at", locale: "de-AT" },
+      FR: { mk: "fr", path: "fr-fr", locale: "fr-FR" }, NL: { mk: "nl", path: "nl-nl", locale: "nl-NL" },
+      SE: { mk: "se", path: "sv-se", locale: "sv-SE" }, DK: { mk: "dk", path: "en-dk" },
+      IE: EU("eu"), BE: EU("eu"), PT: EU("eu"), FI: EU("eu"),
+    },
     pages: [["/women/sale", "kadin"], ["/men/sale", "erkek"]],
     pageSize: 200,
   },
@@ -117,11 +166,11 @@ function record(
 
 // ---------- COS (Fredhopper BFF) ----------
 
-export function cosUrl(mk: string, offset: number, limit: number): string {
+export function cosUrl(mk: string, offset: number, limit: number, lang = "en"): string {
   const p = new URLSearchParams({
     customerType: "regular",
     deviceType: "desktop",
-    languageCode: "en",
+    languageCode: lang,
     layout: "editorial",
     view: "lister",
     limit: String(limit),
@@ -155,11 +204,11 @@ export function mapCos(country: CountryCode, p: any): ProductRecord | null {
 
 // ---------- & Other Stories / Weekday (Elevate behind the brand BFF) ----------
 
-export function bffUrl(slug: "stories" | "weekday", mk: string, ref: string, skip: number, limit: number): string {
+export function bffUrl(slug: "stories" | "weekday", mk: string, ref: string, skip: number, limit: number, locale = LOCALE): string {
   const p = new URLSearchParams({
     customerKey: "modadrop",
     sessionKey: "modadrop",
-    locale: LOCALE,
+    locale,
     touchpoint: "DESKTOP",
     pageReference: ref,
     notify: "false",
@@ -226,10 +275,10 @@ export function mapWeekday(country: CountryCode, p: any, gender: Gender): Produc
 
 export const ARKET_CLUSTER = "https://wa35412d6.api.esales.apptus.cloud";
 
-export function arketUrl(mk: string, ref: string, skip: number, limit: number): string {
+export function arketUrl(mk: string, ref: string, skip: number, limit: number, locale = LOCALE): string {
   const p = new URLSearchParams({
     market: mk,
-    locale: LOCALE,
+    locale,
     customerKey: "modadrop",
     sessionKey: "modadrop",
     touchpoint: "desktop",
@@ -289,7 +338,7 @@ export async function listHmGroup(slug: HmGroupSlug, country: CountryCode): Prom
 
   if (slug === "cos") {
     for (let off = 0; requests < MAX_REQ; off += b.pageSize) {
-      const d = await fetchJson(cosUrl(m.mk, off, b.pageSize));
+      const d = await fetchJson(cosUrl(m.mk, off, b.pageSize, (m.locale ?? LOCALE).slice(0, 2)));
       const rows: any[] = d?.data?.products ?? [];
       if (off === 0) assertCurrency(slug, country, rows[0]?.price?.currencyCode);
       rows.forEach((p) => add(mapCos(country, p)));
@@ -300,12 +349,12 @@ export async function listHmGroup(slug: HmGroupSlug, country: CountryCode): Prom
     for (const [ref, gender] of b.pages) {
       for (let skip = 0; requests < MAX_REQ && byId.size < CAP * 2; skip += b.pageSize) {
         if (slug === "arket") {
-          const d = await fetchJson(arketUrl(m.mk, ref, skip, b.pageSize), { method: "POST", body: "{}" });
+          const d = await fetchJson(arketUrl(m.mk, ref, skip, b.pageSize, m.locale), { method: "POST", body: "{}" });
           const groups: any[] = d?.primaryList?.productGroups ?? [];
           for (const g of groups) for (const p of g?.products ?? []) add(mapArket(country, p, gender));
           if (!groups.length || skip + b.pageSize >= (d?.primaryList?.totalHits ?? 0)) break;
         } else {
-          const d = await fetchJson(bffUrl(slug, m.mk, ref, skip, b.pageSize));
+          const d = await fetchJson(bffUrl(slug, m.mk, ref, skip, b.pageSize, m.locale));
           const rows: any[] = d?.data?.products ?? [];
           if (!checked && rows.length) {
             const r0 = rows[0];

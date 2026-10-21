@@ -1,5 +1,5 @@
 /**
- * C&A — Switzerland (www.c-and-a.com/ch/de/shop), added 2026-10-11.
+ * C&A — Switzerland (www.c-and-a.com/ch/de/shop), added 2026-10-11; DE, AT, NL, BE, FR, ES 2026-10-21.
  *
  * The storefront is a React SPA over one GraphQL endpoint, `POST /api`. The
  * site sends Apollo persisted-query hashes, but the server also accepts a plain
@@ -28,6 +28,14 @@ const MAX_PAGES = 40;
 /** Per market: the URL path prefix and the header values the API keys on. */
 export const CANDA_MARKETS: Partial<Record<CountryCode, { country: string; language: string; path: string }>> = {
   CH: { country: "ch", language: "de", path: "/ch/de/shop" },
+  // EU (2026-10-21): same API and the same Sale tree ids; prices in EUR. IT, PT,
+  // IE and the Nordics answer 500 (no C&A web shop there).
+  DE: { country: "de", language: "de", path: "/de/de/shop" },
+  AT: { country: "at", language: "de", path: "/at/de/shop" },
+  NL: { country: "nl", language: "nl", path: "/nl/nl/shop" },
+  BE: { country: "be", language: "nl", path: "/be/nl/shop" },
+  FR: { country: "fr", language: "fr", path: "/fr/fr/shop" },
+  ES: { country: "es", language: "es", path: "/es/es/shop" },
 };
 
 /** Sale slices (ipimId → gender). */

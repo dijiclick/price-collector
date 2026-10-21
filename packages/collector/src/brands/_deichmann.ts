@@ -20,7 +20,7 @@ import { cleanGallery, type ProductRecord } from "../types";
 import { getJson, getText } from "../http";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
-export type DeichmannSlug = "dosenbach" | "ochsner-shoes" | "ochsnersport" | "snipes";
+export type DeichmannSlug = "dosenbach" | "ochsner-shoes" | "ochsnersport" | "snipes" | "deichmann";
 
 interface Charybdis {
   concept: string;
@@ -51,6 +51,42 @@ export interface DeichmannShop {
 }
 
 const DEICH_API = "https://api.deichmann.com/dse-pl-prd-stor-we-char/v1/v1";
+const SNIPES_API = "https://api.snipes.com/sni-pl-prd-stor-we-char/v1/v1";
+
+/**
+ * EU shops, 2026-10-21 (values from each shop's own ng-state CONFIG). Every
+ * Deichmann country is the DSE concept on deichmann.com/<locale>, sale
+ * category 477 everywhere ("Sale", "Promotion", "Rea", "Tilbud" …); every SNIPES
+ * country is snipes.com/<locale>, sale category 660. Prices in cents of the
+ * shop's currency (SEK/DKK for Deichmann SE/DK). Verified from a GitHub runner
+ * (probe 39615284904: all sixteen 200 with products). Deichmann NL/BE answer
+ * 503 for the storefront itself today, so they are not listed; SNIPES has no
+ * IE/SE/DK/FI shop (404).
+ */
+const DSE_TOKEN = { concept: "DSE", scayleEnvironment: "dmg-live", cmsSpace: "httlbzrqc9c6", cmsEnvironment: "master", cmsAccessToken: "QZ0q_7hcOA_hTCT7JfdvxOfdFeHNhW7K9ul_qwLol30" };
+const SNI_TOKEN = { concept: "SNI", scayleEnvironment: "snipes-live", cmsSpace: "kjf22wf4wsoh", cmsEnvironment: "master", cmsAccessToken: "ysP4LsVG53AZ5Zm5ZOnoacsBNSJ6G8boSoowpNrDqmM" };
+
+const deichmannEu = (context: string, shopId: string, tree: string): DeichmannShop => ({
+  slug: "deichmann",
+  site: `https://www.deichmann.com/${context}`,
+  api: DEICH_API,
+  assets: "https://asset.deichmann.com",
+  saleCategory: 477,
+  lang: context,
+  perPage: 100,
+  token: { ...DSE_TOKEN, scayleShopId: shopId, tree, context },
+});
+
+const snipesEu = (context: string, shopId: string, tree: string): DeichmannShop => ({
+  slug: "snipes",
+  site: `https://www.snipes.com/${context}`,
+  api: SNIPES_API,
+  assets: "https://asset.snipes.com",
+  saleCategory: 660,
+  lang: context,
+  perPage: 48,
+  token: { ...SNI_TOKEN, scayleShopId: shopId, tree, context },
+});
 
 /** Values read from each shop's ng-state CONFIG on 2026-10-11. */
 export const DEICHMANN_SHOPS: Record<DeichmannSlug, Partial<Record<CountryCode, DeichmannShop>>> = {
@@ -113,6 +149,24 @@ export const DEICHMANN_SHOPS: Record<DeichmannSlug, Partial<Record<CountryCode, 
         cmsEnvironment: "master", cmsAccessToken: "ysP4LsVG53AZ5Zm5ZOnoacsBNSJ6G8boSoowpNrDqmM", tree: "17", context: "de-ch",
       },
     },
+    DE: snipesEu("de-de", "1048", "16"),
+    FR: snipesEu("fr-fr", "1042", "12"),
+    NL: snipesEu("nl-nl", "1054", "6"),
+    BE: snipesEu("nl-be", "1062", "19"),
+    AT: snipesEu("de-at", "1051", "5"),
+    IT: snipesEu("it-it", "1039", "10"),
+    ES: snipesEu("es-es", "1036", "11"),
+    PT: snipesEu("pt-pt", "1033", "9"),
+  },
+  deichmann: {
+    DE: deichmannEu("de-de", "10089", "52"),
+    FR: deichmannEu("fr-fr", "10008", "39"),
+    AT: deichmannEu("de-at", "10032", "19"),
+    IT: deichmannEu("it-it", "10007", "47"),
+    ES: deichmannEu("es-es", "10005", "38"),
+    PT: deichmannEu("pt-pt", "10006", "46"),
+    SE: deichmannEu("sv-se", "10015", "43"),
+    DK: deichmannEu("da-dk", "10009", "42"),
   },
 };
 
@@ -129,7 +183,7 @@ const many = (a: any): any[] => (Array.isArray(a?.values) ? a.values : a?.values
  */
 export function genderOf(p: any): ProductRecord["gender"] {
   const phases = many(p?.attributes?.phasesOfLife).map((v) => String(v?.value ?? ""));
-  if (phases.length && !phases.includes("erwachsene") && phases.some((x) => /kid|kinder|teen|bab/.test(x))) return "cocuk";
+  if (phases.length && !phases.includes("erwachsene") && phases.some((x) => /kid|kinder|child|teen|bab/.test(x))) return "cocuk";
   const g = many(p?.attributes?.genders).map((v) => String(v?.value ?? "").toLowerCase());
   const women = g.some((x) => /^(damen|women|female|weiblich)/.test(x));
   const men = g.some((x) => /^(herren|men|male|maennlich|männlich)/.test(x));
@@ -138,7 +192,21 @@ export function genderOf(p: any): ProductRecord["gender"] {
   return null;
 }
 
-export const imageUrl = (assets: string, publicId: string) => `${assets}/images/f_auto,q_auto/w_800/${publicId}/p`;
+/**
+ * The shop's product-type label. Outside the German-language shops the label is
+ * French/Italian/Swedish … ("Bottines"), which the type classifier does not
+ * read, so the attribute's own value — a German code ("stiefelette",
+ * "sneaker", "sandale") — rides along after it.
+ */
+function categoryOf(shop: DeichmannShop, p: any): string | null {
+  const t = one(p?.attributes?.productType);
+  const label = String(t?.label ?? "").trim();
+  const code = String(t?.value ?? "").trim();
+  if (shop.lang.startsWith("de") || !code || label.toLowerCase().includes(code.toLowerCase())) return label || null;
+  return label ? `${label} (${code})` : code;
+}
+
+export const imageUrl =(assets: string, publicId: string) => `${assets}/images/f_auto,q_auto/w_800/${publicId}/p`;
 
 /**
  * Map one listing product. Pure. Prices in the API are already centimes.
@@ -185,7 +253,7 @@ export function mapDeichmann(shop: DeichmannShop, country: CountryCode, p: any):
     currency: String(min?.currencyCode ?? COUNTRIES[country].currency),
     inStock: p.isSoldOut !== true && Number(p.stock ?? 1) > 0,
     barcodes: barcodes.length ? [...new Set<string>(barcodes)] : null,
-    category: String(one(p.attributes?.productType)?.label ?? "").trim() || null,
+    category: categoryOf(shop, p),
     gender: genderOf(p),
     variants: null,
     groupKey: siblings > 1 && p.masterKey ? `${shop.slug}:${p.masterKey}` : null,

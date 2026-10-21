@@ -40,6 +40,7 @@ import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
+import { SEPHORA_EU_MARKETS, listSephoraEu } from "./sephora-eu";
 
 export const SEPHORA_INTL_MARKETS: Partial<Record<CountryCode, { key: string; network: string; site: string }>> = {
   US: { key: "u7PNVQx-prod-en-us", network: "network_SEPHORAUS", site: "https://www.sephora.com" },
@@ -170,6 +171,9 @@ export function mapSephoraResult(r: any, country: CountryCode): ProductRecord | 
 }
 
 export async function listSephoraIntl(country: CountryCode): Promise<ProductRecord[]> {
+  // FR/DE/IT (2026-10-21): their own SFCC OCAPI (sephora-eu.ts). The registry
+  // sends every non-TR/AU/CH market here, so Europe is dispatched from this file.
+  if (SEPHORA_EU_MARKETS[country]) return listSephoraEu(country);
   if (!SEPHORA_INTL_MARKETS[country]) return [];
   const byId = new Map<string, ProductRecord>();
   const refused: string[] = [];

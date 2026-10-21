@@ -1,5 +1,5 @@
 /**
- * About You — Switzerland (en.aboutyou.ch), added 2026-10-11. Multi-brand.
+ * About You — Switzerland (en.aboutyou.ch), added 2026-10-11; eleven EU shops 2026-10-21. Multi-brand.
  *
  * The storefront renders no products into its HTML; the category grid comes
  * from a gRPC-web API, `https://tadarida-web.aboutyou.com/aysa_api.services.
@@ -63,7 +63,35 @@ export const ABOUTYOU_MARKETS: Partial<Record<CountryCode, AboutYouMarket>> = {
       { categoryId: 32544, gender: "erkek", share: 1 / 3 },
     ],
   },
+  ...euMarkets(),
 };
+
+/**
+ * EU shops (2026-10-21): the same gRPC API, the same global sale category ids;
+ * only the `grpcConfig` country/language enums differ — read from each shop's
+ * home page (`"grpcConfig":{"country":…,"language":…}`). Names come back in the
+ * shop's own language.
+ */
+function euMarkets(): Partial<Record<CountryCode, AboutYouMarket>> {
+  const sale: AboutYouMarket["sale"] = [
+    { categoryId: 32543, gender: "kadin", share: 2 / 3 },
+    { categoryId: 32544, gender: "erkek", share: 1 / 3 },
+  ];
+  const shops: [CountryCode, string, number, number][] = [
+    ["DE", "https://www.aboutyou.de", 1, 1],
+    ["AT", "https://www.aboutyou.at", 3, 1],
+    ["NL", "https://www.aboutyou.nl", 4, 3],
+    ["BE", "https://www.aboutyou.be", 5, 3],
+    ["FR", "https://www.aboutyou.fr", 19, 2],
+    ["ES", "https://www.aboutyou.es", 22, 19],
+    ["IT", "https://www.aboutyou.it", 23, 20],
+    ["PT", "https://www.aboutyou.pt", 24, 21],
+    ["SE", "https://www.aboutyou.se", 20, 17],
+    ["DK", "https://www.aboutyou.dk", 17, 15],
+    ["FI", "https://www.aboutyou.fi", 21, 18],
+  ];
+  return Object.fromEntries(shops.map(([cc, site, country, language]) => [cc, { site, country, language, sale }]));
+}
 
 // ---------- minimal protobuf wire format ----------
 
@@ -238,8 +266,8 @@ export function parseStream(msg: Uint8Array): { tiles: Uint8Array[]; total: numb
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function clientVersion(m: AboutYouMarket): Promise<string> {
-  const html = await getText(m.site + "/", { country: "CH" }).catch(() => "");
+async function clientVersion(m: AboutYouMarket, country: CountryCode): Promise<string> {
+  const html = await getText(m.site + "/", { country }).catch(() => "");
   return html.match(/"clientVersion":"([^"]+)"/)?.[1] ?? FALLBACK_CLIENT_VERSION;
 }
 
@@ -273,7 +301,7 @@ async function streamPage(m: AboutYouMarket, version: string, categoryId: number
 export async function listAboutYou(country: CountryCode, maxProducts = 1500): Promise<ProductRecord[]> {
   const m = ABOUTYOU_MARKETS[country];
   if (!m) return [];
-  const version = await clientVersion(m);
+  const version = await clientVersion(m, country);
   const byId = new Map<string, ProductRecord>();
   let first = true;
   for (const s of m.sale) {

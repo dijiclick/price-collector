@@ -1,10 +1,18 @@
 import { gunzipSync } from "node:zlib";
 import { cleanGallery, type ProductRecord } from "../types";
 import { getJson, getText } from "../http";
+import type { CountryCode } from "../../../../lib/countries";
 import { pickImage, pickImages, pickVariants, anySizeInStock, resolveMarket, type InditexMarket } from "./_inditex";
 
 /**
- * Lefties (Inditex, itxrest brandId 9) — Turkey only.
+ * Lefties (Inditex, itxrest brandId 9) — Turkey, and since 2026-10-21 Spain and
+ * Portugal (and any other market with a `sitemap-products-lf-{cc}` map).
+ *
+ * Spain/Portugal: same flow, same size (~1,800 ids each in their sitemaps).
+ * Their store resolves to English (`/es/en`), so names are English; the
+ * sitemap lists each product in every storefront language (es, en, ca, eu, gl),
+ * and the English url is kept. On 2026-10-21 about 2–3% of the ES/PT range
+ * carried a strike price (sampled 150 ids: ES 3, PT 4).
  *
  * The other Inditex crawls walk the category tree, but on Lefties every
  * category and grid endpoint answers Akamai's 403 page (verified 2026-10-10,
@@ -41,15 +49,21 @@ const UA =
  * ones, and slugless `c…p….html?keyWordReplace=` entries (marketing bundles)
  * are skipped. Pure.
  */
-export function idsFromSitemap(xml: string): Map<string, string> {
+export function idsFromSitemap(xml: string, country: CountryCode = "TR"): Map<string, string> {
+  const cc = country.toLowerCase();
+  const prefix = `https://www.lefties.com/${cc}/`;
+  const en = `/${cc}/en/`;
+  // Turkey keeps its Turkish urls (the live sweep's names are Turkish); every
+  // other market is collected in English, so its English url wins.
+  const better = (url: string, prev: string) =>
+    country === "TR" ? !url.includes(en) && prev.includes(en) : url.includes(en) && !prev.includes(en);
   const out = new Map<string, string>();
   for (const m of xml.matchAll(/<loc>([^<]+)<\/loc>/g)) {
     const url = m[1].trim().replace(/&amp;/g, "&");
-    if (!/^https:\/\/www\.lefties\.com\/tr\//.test(url) || url.includes("?")) continue;
+    if (!url.startsWith(prefix) || url.includes("?")) continue;
     const id = url.match(/-c\d+p(\d{6,})\.html$/)?.[1];
     if (!id) continue;
-    const english = url.includes("/tr/en/");
-    if (!out.has(id) || (!english && out.get(id)!.includes("/tr/en/"))) out.set(id, url);
+    if (!out.has(id) || better(url, out.get(id)!)) out.set(id, url);
   }
   return out;
 }
@@ -61,10 +75,10 @@ export function idsFromSitemap(xml: string): Map<string, string> {
  * slug — "boyfriend jean" is not a kids' item.
  */
 export function leftiesGender(section: string | null | undefined, url = ""): ProductRecord["gender"] {
-  const seg = decodeURIComponentSafe(url).toLowerCase().match(/\/tr\/(?:en\/)?([^/]+)\/[^/]+\//)?.[1] ?? "";
-  if (/^(çocuk|kids|bebek|baby)$/.test(seg)) return "cocuk";
-  if (/^(kadın|woman|women)$/.test(seg)) return "kadin";
-  if (/^(erkek|man|men)$/.test(seg)) return "erkek";
+  const seg = decodeURIComponentSafe(url).toLowerCase().match(/lefties\.com\/[a-z]{2}\/(?:[a-z]{2}\/)?([^/]+)\/[^/]+\//)?.[1] ?? "";
+  if (/^(çocuk|kids|bebek|baby|niños|nenos|nens|haurrak|crianças|bebé)$/.test(seg)) return "cocuk";
+  if (/^(kadın|woman|women|mujer|muller|dona|emakumea|mulher)$/.test(seg)) return "kadin";
+  if (/^(erkek|man|men|hombre|homem|gizona)$/.test(seg)) return "erkek";
   if (seg === "home") return null;
   const s = String(section ?? "").toUpperCase();
   if (/\b(BOYS?|GIRLS?|BABY|KIDS?)\b/.test(s)) return "cocuk";
@@ -118,7 +132,7 @@ export function leftiesCategory(raw: unknown): string | null {
  * `p{id}` of its url — so a pasted link maps straight to the row.
  */
 export function mapProduct(
-  m: Pick<InditexMarket, "urlPrefix" | "currency">,
+  m: Pick<InditexMarket, "urlPrefix" | "currency"> & { country?: CountryCode },
   p: any,
   urls: Map<string, string>,
 ): ProductRecord | null {
@@ -150,7 +164,7 @@ export function mapProduct(
   const imageUrl = pickImage(media, color.id);
   return {
     brand,
-    country: "TR",
+    country: m.country ?? "TR",
     externalId: id,
     // The tag's article number, so a scanned label resolves (as Bershka does).
     barcodes: ref.length >= 6 ? [ref] : null,
@@ -178,12 +192,14 @@ async function sitemapXml(url: string): Promise<string> {
   return buf[0] === 0x1f && buf[1] === 0x8b ? gunzipSync(buf).toString("utf8") : buf.toString("utf8");
 }
 
-export async function listProducts(): Promise<ProductRecord[]> {
-  const m = await resolveMarket(SITE, "TR");
+export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
+  const m = await resolveMarket(SITE, country);
   const index = await getText(SITEMAP_INDEX);
-  const maps = [...index.matchAll(/<loc>([^<]*sitemap-products-lf-tr-\d+\.xml(?:\.gz)?)<\/loc>/g)].map((x) => x[1]);
+  const cc = country.toLowerCase();
+  const maps = [...index.matchAll(/<loc>([^<]*sitemap-products-lf-([a-z]{2})-\d+\.xml(?:\.gz)?)<\/loc>/g)].filter((x) => x[2] === cc).map((x) => x[1]);
+  if (!maps.length) throw new Error(`lefties/${country}: no product sitemap for this market`);
   const urls = new Map<string, string>();
-  for (const sm of maps) for (const [id, u] of idsFromSitemap(await sitemapXml(sm))) urls.set(id, u);
+  for (const sm of maps) for (const [id, u] of idsFromSitemap(await sitemapXml(sm), country)) urls.set(id, u);
   const ids = [...urls.keys()];
 
   const chunks: string[][] = [];

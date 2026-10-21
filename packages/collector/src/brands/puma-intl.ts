@@ -41,6 +41,22 @@ export const PUMA_MARKETS: Partial<Record<CountryCode, { host: string; locale: s
   CA: { host: "ca.puma.com", locale: "en-CA", site: "https://ca.puma.com/ca/en" },
   GB: { host: "uk.puma.com", locale: "en-GB", site: "https://uk.puma.com/uk/en" },
   CH: { host: "eu.puma.com", locale: "en-CH", site: "https://eu.puma.com/ch/en" },
+  // EU, 2026-10-21: the same eu.puma.com graph, one `locale` per shop; the
+  // Nordic/PT shops only accept English ("Unsupported locale" for sv-SE, da-DK,
+  // fi-FI, pt-PT, de-AT is fine). Sale ≈2,600–3,300 colourways each, every row
+  // reduced; guestLogon 200 for all twelve from a GitHub runner (probe 39615284904).
+  FR: { host: "eu.puma.com", locale: "fr-FR", site: "https://eu.puma.com/fr/fr" },
+  DE: { host: "eu.puma.com", locale: "de-DE", site: "https://eu.puma.com/de/de" },
+  ES: { host: "eu.puma.com", locale: "es-ES", site: "https://eu.puma.com/es/es" },
+  NL: { host: "eu.puma.com", locale: "nl-NL", site: "https://eu.puma.com/nl/nl" },
+  BE: { host: "eu.puma.com", locale: "nl-BE", site: "https://eu.puma.com/be/nl" },
+  IE: { host: "eu.puma.com", locale: "en-IE", site: "https://eu.puma.com/ie/en" },
+  SE: { host: "eu.puma.com", locale: "en-SE", site: "https://eu.puma.com/se/en" },
+  IT: { host: "eu.puma.com", locale: "it-IT", site: "https://eu.puma.com/it/it" },
+  AT: { host: "eu.puma.com", locale: "de-AT", site: "https://eu.puma.com/at/de" },
+  PT: { host: "eu.puma.com", locale: "en-PT", site: "https://eu.puma.com/pt/en" },
+  FI: { host: "eu.puma.com", locale: "en-FI", site: "https://eu.puma.com/fi/en" },
+  DK: { host: "eu.puma.com", locale: "en-DK", site: "https://eu.puma.com/dk/en" },
 };
 
 export const LISTING_QUERY = `query CategoryPLP($url: String!, $offset: Int!, $limit: Int!) {
@@ -80,9 +96,11 @@ function genderOf(name: string, cat: string): ProductRecord["gender"] {
   // ("Speedcat OG Sneakers Unisex" sits under womens-shoes-sneakers-summer).
   const kids = /\b(kids?'?|youth|toddlers?|infants?|babies|baby|boys'?|girls'?|jr)\b/i;
   if (kids.test(name)) return "cocuk";
-  if (/\bunisex\b/i.test(name)) return null;
-  if (/\bwomen'?s?\b|\bdamen\b/i.test(name)) return "kadin";
-  if (/\bmen'?s?\b|\bherren\b/i.test(name)) return "erkek";
+  if (/\b(enfants?|kinder|niños?|niñas?|bambin[oi]|ragazz[oi])\b/i.test(name)) return "cocuk";
+  if (/\buni(sex|seks)\b/i.test(name)) return null;
+  // EU names (2026-10-21): "… pour femme", "… Damen", "… para mujer", "… dames", "… da donna".
+  if (/\bwomen'?s?\b|\bdamen\b|\bfemmes?\b|\bmujer\b|\bdames\b|\bdonna\b/i.test(name)) return "kadin";
+  if (/\bmen'?s?\b|\bherren\b|\bhommes?\b|\bhombre\b|\bheren\b|\buomo\b/i.test(name)) return "erkek";
   if (/(^|-)(kids|boys|girls|baby|infants?|toddlers?)(-|$)/.test(cat)) return "cocuk";
   if (/(^|-)womens?(-|$)/.test(cat)) return "kadin";
   if (/(^|-)mens?(-|$)/.test(cat)) return "erkek";
