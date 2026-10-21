@@ -67,11 +67,14 @@ export interface LoggedPush { token: string; kind: string; nudge: boolean; key?:
 export async function logPushes(db: Db, items: LoggedPush[], now: Date = new Date()): Promise<void> {
   if (!items.length) return;
   try {
+    // One JSON parameter, not typed arrays: the production driver sent a
+    // one-element boolean[] as a bare boolean ("cannot cast type boolean to
+    // boolean[]", first run 2026-10-21) while PGlite in the tests did not.
     await db.query(
       `INSERT INTO push_log (token, kind, nudge, key, product_id, sent_at)
-       SELECT * FROM unnest($1::text[], $2::text[], $3::bool[], $4::text[], $5::bigint[], $6::timestamptz[])`,
-      [items.map((i) => i.token), items.map((i) => i.kind), items.map((i) => i.nudge), items.map((i) => i.key ?? null),
-        items.map((i) => i.productId ?? null), items.map(() => now.toISOString())],
+       SELECT x.token, x.kind, x.nudge, x.key, x.product_id, $2::timestamptz
+         FROM jsonb_to_recordset($1::jsonb) AS x(token text, kind text, nudge boolean, key text, product_id bigint)`,
+      [JSON.stringify(items.map((i) => ({ token: i.token, kind: i.kind, nudge: i.nudge, key: i.key ?? null, product_id: i.productId ?? null }))), now.toISOString()],
     );
   } catch (err) {
     console.error("push log failed:", err instanceof Error ? err.message : err);
