@@ -80,3 +80,12 @@ export async function logPushes(db: Db, items: LoggedPush[], now: Date = new Dat
     console.error("push log failed:", err instanceof Error ? err.message : err);
   }
 }
+
+/** Send records live 90 days — the limit /gizlilik and /privacy promise (2026-10-21). */
+export async function prunePushLog(db: Db, now: Date = new Date()): Promise<void> {
+  try {
+    await db.query(`DELETE FROM push_log WHERE sent_at < $1::timestamptz - interval '90 days'`, [now.toISOString()]);
+  } catch (err) {
+    console.error("push log prune failed:", err instanceof Error ? err.message : err);
+  }
+}

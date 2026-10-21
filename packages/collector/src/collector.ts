@@ -403,6 +403,8 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
   try {
     const { pushWelcome } = await import("./push-welcome");
     await pushWelcome(db);
+    const { prunePushLog } = await import("./push-log");
+    await prunePushLog(db);
   } catch (err) {
     console.error("push welcome failed:", err instanceof Error ? err.message : err);
   }
