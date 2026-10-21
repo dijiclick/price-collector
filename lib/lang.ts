@@ -9,7 +9,7 @@
  * language resolves to it, matching what the app shipped before it was
  * multilingual.
  */
-export const APP_LANGS = ["tr", "en", "fr", "es", "zh"] as const;
+export const APP_LANGS = ["tr", "en", "fr", "es", "zh", "ja", "ko"] as const;
 
 export type AppLang = (typeof APP_LANGS)[number];
 
@@ -26,11 +26,14 @@ export const LOCALE_TAG: Record<AppLang, string> = {
   fr: "fr-FR",
   es: "es-ES",
   zh: "zh-CN",
+  ja: "ja-JP",
+  ko: "ko-KR",
 };
 
 /**
  * The language for server-written copy (push text, alert emails), which only
  * exists in Turkish and English. Anyone reading neither gets English: it is the
- * closer second language for a French, Spanish or Chinese speaker than Turkish.
+ * closer second language for a French, Spanish, Chinese, Japanese or Korean
+ * speaker than Turkish.
  */
 export const serverLang = (l: unknown): "tr" | "en" => (l === "tr" || l == null ? "tr" : "en");

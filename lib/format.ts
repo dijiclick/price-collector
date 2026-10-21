@@ -42,6 +42,9 @@ const SEPARATORS: Record<AppLang, { group: string; decimal: string }> = {
   fr: { group: "\u202f", decimal: "," },
   es: { group: ".", decimal: "," },
   zh: { group: ",", decimal: "." },
+  // Japanese and Korean write numbers the English way ("1,310.00").
+  ja: { group: ",", decimal: "." },
+  ko: { group: ",", decimal: "." },
 };
 
 /**
@@ -166,7 +169,7 @@ export const dateLocale = (): string => LOCALE_TAG[lang];
  */
 export function percent(n: number, opts: { off?: boolean } = {}, l: AppLang = lang): string {
   // Turkish leads with the sign; French puts a narrow no-break space before it
-  // ("61 %"); English, Spanish and Chinese write "61%".
+  // ("61 %"); English, Spanish, Chinese, Japanese and Korean write "61%".
   const body = l === "tr" ? `%${n}` : l === "fr" ? `${n}\u202f%` : `${n}%`;
   return opts.off ? `−${body}` : body;
 }

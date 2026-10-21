@@ -3,6 +3,8 @@ import { GROUP_LABELS_EN, SUBTYPE_LABELS_EN, TYPE_LABELS_EN } from "./productLab
 import { GROUP_LABELS_FR, SUBTYPE_LABELS_FR, TYPE_LABELS_FR } from "./productLabels.fr";
 import { GROUP_LABELS_ES, SUBTYPE_LABELS_ES, TYPE_LABELS_ES } from "./productLabels.es";
 import { GROUP_LABELS_ZH, SUBTYPE_LABELS_ZH, TYPE_LABELS_ZH } from "./productLabels.zh";
+import { GROUP_LABELS_JA, SUBTYPE_LABELS_JA, TYPE_LABELS_JA } from "./productLabels.ja";
+import { GROUP_LABELS_KO, SUBTYPE_LABELS_KO, TYPE_LABELS_KO } from "./productLabels.ko";
 import type { AppLang } from "./lang";
 
 type Labels = Record<string, string>;
@@ -12,9 +14,9 @@ type Labels = Record<string, string>;
  * key falls back to English, then Turkish — a French reader understands
  * "Coats" sooner than "Mont & Kaban".
  */
-const TYPE_LABELS: Partial<Record<AppLang, Labels>> = { en: TYPE_LABELS_EN, fr: TYPE_LABELS_FR, es: TYPE_LABELS_ES, zh: TYPE_LABELS_ZH };
-const GROUP_LABELS: Partial<Record<AppLang, Labels>> = { en: GROUP_LABELS_EN, fr: GROUP_LABELS_FR, es: GROUP_LABELS_ES, zh: GROUP_LABELS_ZH };
-const SUBTYPE_LABELS: Partial<Record<AppLang, Labels>> = { en: SUBTYPE_LABELS_EN, fr: SUBTYPE_LABELS_FR, es: SUBTYPE_LABELS_ES, zh: SUBTYPE_LABELS_ZH };
+const TYPE_LABELS: Partial<Record<AppLang, Labels>> = { en: TYPE_LABELS_EN, fr: TYPE_LABELS_FR, es: TYPE_LABELS_ES, zh: TYPE_LABELS_ZH, ja: TYPE_LABELS_JA, ko: TYPE_LABELS_KO };
+const GROUP_LABELS: Partial<Record<AppLang, Labels>> = { en: GROUP_LABELS_EN, fr: GROUP_LABELS_FR, es: GROUP_LABELS_ES, zh: GROUP_LABELS_ZH, ja: GROUP_LABELS_JA, ko: GROUP_LABELS_KO };
+const SUBTYPE_LABELS: Partial<Record<AppLang, Labels>> = { en: SUBTYPE_LABELS_EN, fr: SUBTYPE_LABELS_FR, es: SUBTYPE_LABELS_ES, zh: SUBTYPE_LABELS_ZH, ja: SUBTYPE_LABELS_JA, ko: SUBTYPE_LABELS_KO };
 
 /** A translated label, or undefined for Turkish (whose label is the source). */
 function translated(table: Partial<Record<AppLang, Labels>>, key: string, l: AppLang): string | undefined {
