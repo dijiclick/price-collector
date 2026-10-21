@@ -1,6 +1,7 @@
 import type { ProductRecord } from "../types";
 import type { CountryCode } from "../../../../lib/countries";
-import { SHOPIFY_STORES } from "../../../../lib/live-brands/shopify-sites";
+import { ALL_SHOPIFY as SHOPIFY_STORES } from "../../../../lib/live-brands/shopify-all";
+import { DTCA_BRANDS } from "./shopify-dtca";
 import { listShopify } from "./_shopify";
 
 export { SHOPIFY_STORES };
@@ -11,7 +12,13 @@ export { SHOPIFY_STORES };
  * Gymshark: uk.gymshark.com is headless (own adapter); the other markets'
  * *.shop.gymshark.com stores are plain Shopify.
  */
-const OWN_ENTRY = new Set(["gymshark"]);
+const OWN_ENTRY = new Set([
+  "gymshark",
+  // 2026-10-21: Reebok and JD Sports are Shopify only in US/CA (other markets
+  // have their own adapters, dispatched in registry-intl); the dtca module
+  // serves its brands' every market, incl. the Storefront-API ones.
+  "reebok", "jdsports", ...DTCA_BRANDS,
+]);
 
 export const shopifyStore = (brand: string) => SHOPIFY_STORES.find((s) => s.brand === brand)!;
 

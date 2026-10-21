@@ -62,7 +62,7 @@ export interface GroupMarket {
 
 export interface GroupBrand {
   brand: string;
-  engine: "scapi" | "sfra";
+  engine: "scapi" | "sfra" | "sfra-grid";
   origin: string;
   scapi?: ScapiClient;
   markets: Partial<Record<CountryCode, GroupMarket>>;
@@ -96,6 +96,8 @@ export const GROUP: Record<string, GroupBrand> = {
       // Turkey returns the whole range (full price too) — see FULL CATALOGUE above.
       TR: { siteId: "falconeri-tr", locale: "tr-TR", path: "tr", saleCgids: ["FAL_Sale_TR", "FAL_Women_Sale_TR", "FAL_Women", "FAL_Men"], fullCatalogue: true },
       CH: { siteId: "falconeri-ch", locale: "de-CH", path: "ch", saleCgids: ["FAL_Sale_CH", "FAL_Women_Sale_CH", "FAL_Women", "FAL_Men"] },
+      // EU (2026-10-21): the same deals-only walk; see falconeriEu().
+      ...falconeriEu(),
     },
   },
   intimissimi: {
@@ -111,7 +113,47 @@ export const GROUP: Record<string, GroupBrand> = {
       ...intimissimiEu(),
     },
   },
+  /**
+   * Tezenis (2026-10-21) is SFRA like Intimissimi, but its tiles are a different
+   * template and its markdowns do not sit in a sale category: Spain's 129
+   * reduced swimwear colours (14,99 → 9,00 €, `data-coupon="sale"`) live inside
+   * the normal range. So the walk is the whole catalogue — `Search-UpdateGrid?q=*`,
+   * pages of 200 (~3.5 MB, ~12 s each, ~1.7k colours = 9 pages) — keeping the
+   * tiles whose price block carries a `strike-through` list price.
+   *
+   * Only Spain is wired: on 2026-10-21 a full walk of IT (tezenis-eu/it_IT), DE,
+   * FR, AT (de_AT), NL (en_NL), BE (en_BE), PT and CH (de_CH) found no strike
+   * price at all (their promos are 3x2 / "4+1 gratis" basket offers). Add a market
+   * as `{ siteId: "tezenis-<cc>", locale, path: "<cc>", saleCgids: [] }` when its
+   * sale starts.
+   */
+  tezenis: {
+    brand: "tezenis",
+    engine: "sfra-grid",
+    origin: "https://www.tezenis.com",
+    markets: {
+      ES: { siteId: "tezenis-es", locale: "es_ES", path: "es", saleCgids: [] },
+    },
+  },
 };
+
+/**
+ * Falconeri's EU sites (`falconeri-<cc>`; NL in English). Same tree as CH; the
+ * walk keeps only the storefront's own strike prices — the Ultrasoft cashmere
+ * promotion on 2026-10-21 (198 → 179 € in IT/FR/ES/PT, 238 → 209 € in AT,
+ * 228 → 169 € in NL; 29–56 colours each). DE (`falconeri-de`), BE
+ * (`falconeri-be`, en-BE) and the UK (`falconeri-eu`, en-GB, path `uk`, GBP)
+ * had no strike price that day and are left out until they do.
+ */
+function falconeriEu(): Partial<Record<CountryCode, GroupMarket>> {
+  const rows: [CountryCode, string, string][] = [
+    ["IT", "falconeri-it", "it-IT"], ["FR", "falconeri-fr", "fr-FR"], ["ES", "falconeri-es", "es-ES"],
+    ["PT", "falconeri-pt", "pt-PT"], ["AT", "falconeri-at", "de-AT"], ["NL", "falconeri-nl", "en-NL"],
+  ];
+  return Object.fromEntries(
+    rows.map(([c, siteId, locale]) => [c, { siteId, locale, path: c.toLowerCase(), saleCgids: [`FAL_Sale_${c}`, `FAL_Women_Sale_${c}`, "FAL_Women", "FAL_Men"] }]),
+  );
+}
 
 /** Calzedonia's EU sites: `calzedonia-<cc>`, except Italy and Ireland, which share `calzedonia-eu`. */
 function calzedoniaEu(): Partial<Record<CountryCode, GroupMarket>> {
@@ -418,6 +460,99 @@ async function listSfra(b: GroupBrand, country: CountryCode, m: GroupMarket): Pr
   return deals.filter((r) => r.listPrice != null);
 }
 
+// ───────────────────────── SFRA grid (Tezenis) ─────────────────────────
+
+const GRID_PAGE = 200;
+const GRID_MAX_PAGES = Number(process.env.CALZEDONIA_GRID_MAX_PAGES ?? 15);
+
+/** Section from the tile's analytics path (`tezenis_women/tezenis_women_swimwear/…`). */
+function gridCategory(path: string): string | null {
+  const leaf = path.split("/").filter(Boolean).pop() ?? "";
+  const t = leaf.replace(/^[a-z]+_(women|woman|men|man|girls?|boys?|kids?)_?/, "").replace(/_/g, " ").trim();
+  return t || null;
+}
+
+/**
+ * Parse a Tezenis `Search-UpdateGrid` page into marked-down tiles. Pure.
+ * Price: `itemprop=price` is charged, the `strike-through` value in the same
+ * block is the shop's own list price; a tile without one is full price and
+ * dropped. Sizes and their stock come from the tile's quick-buy row (the same
+ * data `Product-Variation` returns): `notifyMe`/`disable` = sold out,
+ * `--lowStock` = low. The schema.org availability meta is "OutOfStock" on
+ * every tile and is ignored.
+ */
+export function parseGridTiles(html: string, b: GroupBrand, country: CountryCode): ProductRecord[] {
+  const out: ProductRecord[] = [];
+  const parts = html.split(/<div class="product" data-pid="/).slice(1);
+  for (const part of parts) {
+    const pid = part.slice(0, part.indexOf('"'));
+    const attr = (k: string) => part.match(new RegExp(`data-${k}="([^"]*)"`))?.[1] ?? "";
+    const link = part.match(/<a href="([^"]+)" class="main-product-link" aria-label="([^"]*)"/);
+    const pc = part.indexOf("price-container");
+    if (!pid || !link || pc < 0) continue;
+    const block = part.slice(pc, part.indexOf("cc-omnibusStack", pc) > 0 ? part.indexOf("cc-omnibusStack", pc) : pc + 3000);
+    const sales = Number(block.match(/itemprop=price content="(\d+(?:\.\d+)?)"/)?.[1]);
+    const list = Number(block.match(/class="[^"]*\bstrike-through\b[^"]*" content="(\d+(?:\.\d+)?)"/)?.[1]);
+    if (!Number.isFinite(sales) || sales <= 0 || !Number.isFinite(list) || list - sales <= 0.005) continue;
+    const sizes: SizeVariant[] = [];
+    const seen = new Set<string>();
+    const row = part.indexOf("quick-buy-sizes__row");
+    for (const m of (row > 0 ? part.slice(row, part.indexOf("</section>", row)) : "").matchAll(/<div class="(quick-buy-sizes-item[^"]*)"[^>]*>([\s\S]*?)<\/div>/g)) {
+      const label = decode(m[2].replace(/<[^>]+>/g, "")).trim();
+      if (!label || seen.has(label)) continue;
+      seen.add(label);
+      const cls = m[1];
+      sizes.push({ label, availability: /notifyMe|\bdisable\b/.test(cls) ? "out_of_stock" : /lowStock/.test(cls) ? "low_on_stock" : "in_stock" });
+    }
+    const imgs = [...part.matchAll(/<img class="tile-image[^"]*"\s+src="([^"]+)"/g)].map((x) => decode(x[1]));
+    const href = decode(link[1]);
+    out.push({
+      brand: b.brand,
+      country,
+      externalId: pid,
+      name: decode(link[2]).trim(),
+      url: href.startsWith("http") ? href : `${b.origin}${href}`,
+      imageUrl: imgs[0] ?? null,
+      images: cleanGallery(imgs, imgs[0] ?? null),
+      price: toMinor(sales),
+      listPrice: toMinor(list),
+      currency: COUNTRIES[country].currency,
+      inStock: sizes.length ? sizes.some((s) => s.availability !== "out_of_stock") : attr("item_availability") === "available",
+      category: gridCategory(attr("item_category")),
+      gender: genderOf(attr("item_category2") || attr("item_category")),
+      variants: sizes.length ? { colors: [], sizes } : null,
+      groupKey: `${b.brand}:${pid.split("_color_")[0]}`,
+      colorName: null,
+    });
+  }
+  return out;
+}
+
+async function listSfraGrid(b: GroupBrand, country: CountryCode, m: GroupMarket): Promise<ProductRecord[]> {
+  const out = new Map<string, ProductRecord>();
+  for (let page = 0, start = 0; ; page++, start += GRID_PAGE) {
+    // A walk cut short would silently drop deals: refuse instead.
+    if (page >= GRID_MAX_PAGES) throw new Error(`${b.brand}/${country}: over ${GRID_MAX_PAGES} grid pages — raise CALZEDONIA_GRID_MAX_PAGES`);
+    if (page > 0) await sleep(PAUSE_MS);
+    const url = `${b.origin}/on/demandware.store/Sites-${m.siteId}-Site/${m.locale}/Search-UpdateGrid?q=%2A&start=${start}&sz=${GRID_PAGE}`;
+    let html = "";
+    for (let attempt = 0; ; attempt++) {
+      try {
+        html = await getText(url, { country, timeoutMs: 60_000 });
+        break;
+      } catch (e) {
+        if (attempt >= 2) throw new Error(`${b.brand}/${country}: grid page ${start} failed (${(e as Error)?.message ?? e})`);
+        await sleep(2000 * (attempt + 1));
+      }
+    }
+    const tiles = (html.match(/<div class="product" data-pid="/g) ?? []).length;
+    if (page === 0 && !tiles) throw new Error(`${b.brand}/${country}: empty catalogue page`);
+    for (const r of parseGridTiles(html, b, country)) if (!out.has(r.externalId)) out.set(r.externalId, r);
+    if (tiles < GRID_PAGE) break;
+  }
+  return [...out.values()];
+}
+
 // ───────────────────────── entry point ─────────────────────────
 
 export async function listCalzedoniaGroup(slug: string, country: CountryCode): Promise<ProductRecord[]> {
@@ -425,7 +560,7 @@ export async function listCalzedoniaGroup(slug: string, country: CountryCode): P
   if (!b) throw new Error(`unknown Calzedonia-group brand ${slug}`);
   const m = b.markets[country];
   if (!m) return [];
-  const rows = b.engine === "scapi" ? await listScapi(b, country, m) : await listSfra(b, country, m);
+  const rows = b.engine === "scapi" ? await listScapi(b, country, m) : b.engine === "sfra-grid" ? await listSfraGrid(b, country, m) : await listSfra(b, country, m);
   if (m.fullCatalogue && rows.length > FULL_MAX_PRODUCTS) throw new Error(`${slug}/${country}: ${rows.length} products, over the cap of ${FULL_MAX_PRODUCTS}`);
   return [...rows.filter((r) => r.inStock), ...rows.filter((r) => !r.inStock)].slice(0, m.fullCatalogue ? FULL_MAX_PRODUCTS : MAX_PRODUCTS);
 }

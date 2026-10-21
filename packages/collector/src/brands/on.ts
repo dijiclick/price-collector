@@ -1,5 +1,5 @@
 /**
- * On (on.com) — US and Switzerland, through the Algolia index on.com's own
+ * On (on.com) — US, Switzerland, GB, the EU shops, AU, JP and HK, through the Algolia index on.com's own
  * product grids query (`algolia.on.com`, a first-party CNAME, with the public
  * search-only key the site ships). On has no sale URL of its own; every record
  * carries per-store pricing (`stores.us.price`, `basePrice`,
@@ -32,6 +32,27 @@ const HOST = "https://algolia.on.com";
 export const ON_MARKETS: Partial<Record<CountryCode, { index: string; store: string; site: string }>> = {
   US: { index: "US_products_production_v3", store: "us", site: "https://www.on.com/en-us" },
   CH: { index: "CH_products_production_v3", store: "ch", site: "https://www.on.com/de-ch" },
+  // 2026-10-21: Britain has its own index; the EU shops share one index with a
+  // `stores.<cc>` block per country (prices in that country's currency — SEK,
+  // DKK); Australia, Japan and Hong Kong have their own. All answered a runner
+  // (probe 39653951827). Site prefixes are the ones on.com itself answers 200
+  // (nl-nl, fi-fi, sv-se, da-dk redirect to en-*).
+  GB: { index: "UK_products_production_v3", store: "gb", site: "https://www.on.com/en-gb" },
+  DE: { index: "EU_products_production_v3", store: "de", site: "https://www.on.com/de-de" },
+  FR: { index: "EU_products_production_v3", store: "fr", site: "https://www.on.com/fr-fr" },
+  IT: { index: "EU_products_production_v3", store: "it", site: "https://www.on.com/it-it" },
+  ES: { index: "EU_products_production_v3", store: "es", site: "https://www.on.com/es-es" },
+  NL: { index: "EU_products_production_v3", store: "nl", site: "https://www.on.com/en-nl" },
+  BE: { index: "EU_products_production_v3", store: "be", site: "https://www.on.com/fr-be" },
+  AT: { index: "EU_products_production_v3", store: "at", site: "https://www.on.com/de-at" },
+  IE: { index: "EU_products_production_v3", store: "ie", site: "https://www.on.com/en-ie" },
+  PT: { index: "EU_products_production_v3", store: "pt", site: "https://www.on.com/pt-pt" },
+  FI: { index: "EU_products_production_v3", store: "fi", site: "https://www.on.com/en-fi" },
+  SE: { index: "EU_products_production_v3", store: "se", site: "https://www.on.com/en-se" },
+  DK: { index: "EU_products_production_v3", store: "dk", site: "https://www.on.com/en-dk" },
+  AU: { index: "AU_products_production_v3", store: "au", site: "https://www.on.com/en-au" },
+  JP: { index: "JP_products_production_v3", store: "jp", site: "https://www.on.com/ja-jp" },
+  HK: { index: "HK_products_production_v3", store: "hk", site: "https://www.on.com/en-hk" },
 };
 
 const SLICES = ["womens", "mens", "unisex"];

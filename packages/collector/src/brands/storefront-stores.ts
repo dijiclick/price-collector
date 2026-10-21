@@ -25,7 +25,12 @@ export const STOREFRONT_STORES: StorefrontStore[] = [
     brand: "skims",
     host: "skims.com",
     collection: "skims-sale",
-    sites: { US: "https://skims.com", CA: "https://skims.com/en-ca", GB: "https://skims.com/en-gb" },
+    sites: {
+      US: "https://skims.com", CA: "https://skims.com/en-ca", GB: "https://skims.com/en-gb",
+      // 2026-10-21: Markets price AUD/HKD/JPY/KRW/SGD (localization answers each).
+      // Links use the root: skims.com geolocates the visitor to their market.
+      AU: "https://skims.com", HK: "https://skims.com", JP: "https://skims.com", KR: "https://skims.com", SG: "https://skims.com",
+    },
     defaultGender: "kadin",
   },
   // Hydrogen. "Women's Clothing on Sale"; men's/kids' rows carry their own tags.
@@ -33,7 +38,7 @@ export const STOREFRONT_STORES: StorefrontStore[] = [
     brand: "fashionnova",
     host: "www.fashionnova.com",
     collection: "sale",
-    sites: { US: "https://www.fashionnova.com" },
+    sites: { US: "https://www.fashionnova.com", CA: "https://www.fashionnova.com" },
     defaultGender: "kadin",
   },
   // Slug is the full host word: a bare "elf" would also claim selfridges.com.
@@ -43,6 +48,16 @@ export const STOREFRONT_STORES: StorefrontStore[] = [
     brand: "elfcosmetics",
     host: "mbw1zp-yd.myshopify.com",
     sites: { US: "https://www.elfcosmetics.com" },
+  },
+  // Oh Polly's UK store (GB runs through /products.json, lib/live-brands/
+  // shopify-sites.ts). Ireland is its euro Market on eu.ohpolly.com: tokenless
+  // Storefront API with @inContext(IE) answers EUR prices (2026-10-21).
+  {
+    brand: "ohpolly",
+    host: "www.ohpolly.com",
+    collection: "sale",
+    sites: { IE: "https://eu.ohpolly.com" },
+    defaultGender: "kadin",
   },
   // One Shopify store, US at the root and Canada under /en-ca (CAD via Markets).
   {
@@ -66,3 +81,4 @@ export const storefrontAdapters = STOREFRONT_STORES.map((s) => ({
   brand: s.brand,
   listProducts: (country: CountryCode): Promise<ProductRecord[]> => listStorefront(s, country),
 }));
+export const listOhPollyIe = (country: CountryCode): Promise<ProductRecord[]> => listStorefront(byBrand("ohpolly"), country);

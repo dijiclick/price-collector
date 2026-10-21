@@ -15,6 +15,11 @@ export interface ShopifySite {
   /** Women-only labels: rows with no gender signal default to this. */
   defaultGender?: "kadin" | "erkek" | "cocuk" | null;
   maxProducts?: number;
+  /**
+   * Title/type pattern for rows to leave out of the feed: gift sets whose
+   * compare-at is the sum of the parts ("worth $284"), not a markdown.
+   */
+  skipTitle?: RegExp;
 }
 
 export const SHOPIFY_STORES: ShopifySite[] = [
@@ -38,6 +43,15 @@ export const SHOPIFY_STORES: ShopifySite[] = [
   { brand: "kyliecosmetics", sites: { US: "https://www.kyliecosmetics.com" } },
   { brand: "brownsshoes", sites: { CA: "https://www.brownsshoes.com" } },
   { brand: "glossier", sites: { US: "https://www.glossier.com" } },
+  // Added 2026-10-18 (US/CA round): each answered a GitHub runner (probe runs
+  // 39134646969 + 39134867271, no proxy) with /meta.json in USD/CAD, and the
+  // runner's /variants/<id>.json price matched products.json.
+  // Fenty: half its discounted rows are value sets priced against the parts.
+  { brand: "fentybeauty", sites: { US: "https://fentybeauty.com" }, skipTitle: /\b(sets?|duo|trio|kits?|vault|bundle|advent|value|\d+-piece)\b|^testing\b/i },
+  { brand: "baublebar", sites: { US: "https://www.baublebar.com" }, defaultGender: "kadin" },
+  // Verified the same day, not in lib/brands.ts yet (inert until listed there).
+  { brand: "petalandpup", sites: { US: "https://petalandpup.com" }, defaultGender: "kadin" },
+  { brand: "goodamerican", sites: { US: "https://www.goodamerican.com" }, defaultGender: "kadin" },
   // Canada
   { brand: "ardene", sites: { CA: "https://www.ardene.com" }, defaultGender: "kadin" },
   { brand: "lasenza", sites: { CA: "https://www.lasenza.com" }, defaultGender: "kadin" },
@@ -45,13 +59,19 @@ export const SHOPIFY_STORES: ShopifySite[] = [
   { brand: "reitmans", sites: { CA: "https://www.reitmans.com" }, defaultGender: "kadin" },
   { brand: "suzyshier", sites: { CA: "https://www.suzyshier.com" }, defaultGender: "kadin" },
   { brand: "laura", sites: { CA: "https://www.laura.ca" }, defaultGender: "kadin" },
+  // Added 2026-10-18, same runner checks. Bluenotes (YM Inc) left out: 99% of
+  // its catalogue carries a compare-at, mostly a flat 40% — a standing promo.
+  { brand: "penningtons", sites: { CA: "https://www.penningtons.com" }, defaultGender: "kadin" },
+  { brand: "frankandoak", sites: { CA: "https://www.frankandoak.com" } },
+  { brand: "callitspring", sites: { CA: "https://www.callitspring.com" } },
   // United Kingdom
-  { brand: "ohpolly", sites: { GB: "https://www.ohpolly.com" }, defaultGender: "kadin" },
+  // US sites (2026-10-18, runner-verified) run only once lib/brands.ts lists US.
+  { brand: "ohpolly", sites: { GB: "https://www.ohpolly.com", US: "https://us.ohpolly.com" }, defaultGender: "kadin" },
   // Australia
   { brand: "kookai", sites: { AU: "https://www.kookai.com.au" }, defaultGender: "kadin" },
   { brand: "dissh", sites: { AU: "https://www.dissh.com.au" }, defaultGender: "kadin" },
   { brand: "mimco", sites: { AU: "https://www.mimco.com.au" }, defaultGender: "kadin" },
-  { brand: "peppermayo", sites: { AU: "https://www.peppermayo.com" }, defaultGender: "kadin" },
+  { brand: "peppermayo", sites: { AU: "https://www.peppermayo.com", US: "https://us.peppermayo.com" }, defaultGender: "kadin" },
   { brand: "beginningboutique", sites: { AU: "https://www.beginningboutique.com.au" }, defaultGender: "kadin" },
   { brand: "decjuba", sites: { AU: "https://www.decjuba.com.au" }, defaultGender: "kadin" },
   { brand: "universalstore", sites: { AU: "https://www.universalstore.com" } },

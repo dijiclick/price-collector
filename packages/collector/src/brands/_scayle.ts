@@ -89,6 +89,29 @@ export const SCAYLE_SHOPS: Record<ScayleSlug, Partial<Record<CountryCode, Scayle
   },
 };
 
+/**
+ * The same two storefronts in other countries (2026-10-21). Each country is
+ * its own SCAYLE shop on its own domain, with the SAME category ids (sale
+ * trees 641/452 at s.Oliver, 10/1809 at TOM TAILOR — getRootCategories per
+ * shop) and the same attributes; only origin, shop id and TOM TAILOR's locale
+ * prefix differ. Prices come in the shop's currency (CHF in Switzerland).
+ */
+const SCAYLE_INTL: [ScayleSlug, CountryCode, string, number, string?][] = [
+  ["soliver", "AT", "https://www.soliver.at", 10015],
+  ["soliver", "CH", "https://www.soliver.ch", 10016],
+  ["soliver", "NL", "https://www.soliver.nl", 10020],
+  ["soliver", "BE", "https://www.soliver-online.be", 10018],
+  ["soliver", "FR", "https://www.soliver.fr", 10025],
+  ["tomtailor", "AT", "https://www.tom-tailor.at", 1504, "/de"],
+  ["tomtailor", "CH", "https://www.tom-tailor.ch", 1505, "/de"],
+  ["tomtailor", "NL", "https://www.tom-tailor.nl", 1502, "/nl"],
+  ["tomtailor", "BE", "https://www.tom-tailor.be", 1506, "/nl"],
+];
+for (const [slug, cc, origin, shopId, prefix] of SCAYLE_INTL) {
+  const de = SCAYLE_SHOPS[slug].DE!;
+  SCAYLE_SHOPS[slug][cc] = { ...de, origin, shopId, pagePrefix: prefix ?? de.pagePrefix };
+}
+
 const PER_PAGE = 100; // the RPC's ceiling
 const CAP = 1500;
 const PAUSE_MS = Number(process.env.SCAYLE_PAUSE_MS ?? 300);

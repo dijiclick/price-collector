@@ -28,8 +28,20 @@ const MAX_CALLS = 30;
 const CAP = Number(process.env.BIRKENSTOCK_MAX_PRODUCTS ?? 1500);
 const PAUSE_MS = Number(process.env.BIRKENSTOCK_PAUSE_MS ?? 700);
 
-export const birkGridUrl = (start: number) =>
-  `${HOST}/on/demandware.store/Sites-US-Site/en_US/Search-UpdateGrid?cgid=${CGID}&start=${start}&sz=${PAGE}`;
+/**
+ * Markets. Canada (2026-10-21): birkenstock.com/ca is the same SFRA build on
+ * `Sites-CA-Site/en_CA`, priced "C$" in CAD; its `last-chance` grid carries
+ * the markdowns (~440 styles) with the same tile markup.
+ */
+export const BIRK_MARKETS: Partial<Record<CountryCode, { site: string; locale: string; path: string }>> = {
+  US: { site: "Sites-US-Site", locale: "en_US", path: "us" },
+  CA: { site: "Sites-CA-Site", locale: "en_CA", path: "ca" },
+};
+
+export const birkGridUrl = (start: number, country: CountryCode = "US") => {
+  const m = BIRK_MARKETS[country] ?? BIRK_MARKETS.US!;
+  return `${HOST}/on/demandware.store/${m.site}/${m.locale}/Search-UpdateGrid?cgid=${CGID}&start=${start}&sz=${PAGE}`;
+};
 
 export const birkTiles = (html: string): string[] => splitTiles(html, /<div\s+class="b-product_tile grid-tile\b/);
 
@@ -52,7 +64,8 @@ export function mapBirkTile(tile: string, country: CountryCode = "US"): ProductR
   const a = jsonOf<any>(attrOf(open, "data-analytics") ?? "") ?? {};
   const pid = attrOf(open, "data-pid") ?? a.item_id;
   const name = decodeEntities(String(attrOf(open, "data-product-name") ?? a.item_name ?? "")).replace(/\s+/g, " ").trim();
-  const href = tile.match(/href="(\/us\/[^"?#]+\.html)"/)?.[1];
+  const path = (BIRK_MARKETS[country] ?? BIRK_MARKETS.US!).path;
+  const href = tile.match(new RegExp(`href="(/${path}/[^"?#]+\\.html)"`))?.[1];
   if (!pid || !name || !href) return null;
 
   const block = tile.match(/data-price-for="default"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? "";
@@ -90,12 +103,12 @@ export function mapBirkTile(tile: string, country: CountryCode = "US"): ProductR
 }
 
 export async function listBirkenstock(country: CountryCode): Promise<ProductRecord[]> {
-  if (country !== "US") return [];
+  if (!BIRK_MARKETS[country]) return [];
   const byId = new Map<string, ProductRecord>();
   let total = Infinity;
   for (let call = 0, start = 0; call < MAX_CALLS && start < total && byId.size < CAP; call++) {
     if (call > 0) await sleep(PAUSE_MS);
-    const html = await okGrid(birkGridUrl(start));
+    const html = await okGrid(birkGridUrl(start, country));
     if (call === 0) total = birkTotal(html) ?? total;
     const tiles = birkTiles(html);
     if (!tiles.length) break;

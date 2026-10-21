@@ -27,6 +27,8 @@ export const brand = "lovebonito";
 
 export const LOVEBONITO_MARKETS: Partial<Record<CountryCode, { storeCode: string; saleKey: string; path: string }>> = {
   SG: { storeCode: "sg", saleKey: "sale", path: "sg" },
+  // Hong Kong (2026-10-21): same service, store "hk", HKD; its sale page is /hk/sale-hk.
+  HK: { storeCode: "hk", saleKey: "sale-hk", path: "hk" },
 };
 
 const HOST = "https://www.lovebonito.com";

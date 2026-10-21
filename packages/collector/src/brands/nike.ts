@@ -29,12 +29,18 @@ const MAX_PAGES = Number(process.env.NIKE_MAX_PAGES ?? 40); // 2,000 products
  * 2,378, AU 91, CA 10). AE/SA answer too, but nike.ae/nike.sa are separate
  * franchise shops, so a nike.com url there would not be the shop's price.
  */
-export const NIKE_MARKETS: Partial<Record<CountryCode, { language: string; site: string }>> = {
+export const NIKE_MARKETS: Partial<Record<CountryCode, { language: string; site: string; marketplace?: string }>> = {
   TR: { language: "tr", site: "https://www.nike.com/tr" },
   US: { language: "en", site: "https://www.nike.com" },
   GB: { language: "en-GB", site: "https://www.nike.com/gb" },
-  CA: { language: "en-GB", site: "https://www.nike.com/ca" },
-  AU: { language: "en-GB", site: "https://www.nike.com/au" },
+  // Canada, 2026-10-21: the feed files Canada under marketplace `CAN` (what
+  // nike.com/ca's own wall sends); `CA` answers only ~10 sale threads, `CAN`
+  // ~2,445 in CAD with fullPrice and CA sizes.
+  CA: { language: "en-GB", site: "https://www.nike.com/ca", marketplace: "CAN" },
+  // Australia, 2026-10-21: Nike's own marketplace code is ASTLA (what nike.com/au's
+  // sale wall sends). `marketplace(AU)` answers only ~90 stale threads, 1% in
+  // stock; ASTLA ~1,450 discounted ACTIVE threads in AUD, ~96% available.
+  AU: { language: "en-GB", site: "https://www.nike.com/au", marketplace: "ASTLA" },
   CH: { language: "en-GB", site: "https://www.nike.com/ch" },
   NO: { language: "en-GB", site: "https://www.nike.com/no" },
   // EU, 2026-10-21: each market in its own site's language (the site's
@@ -66,7 +72,7 @@ export const NIKE_MARKETS: Partial<Record<CountryCode, { language: string; site:
 
 export function threadsUrl(extra: string[], anchor = 0, count = PAGE, country: CountryCode = "TR"): string {
   const m = NIKE_MARKETS[country] ?? NIKE_MARKETS.TR!;
-  const base = [`marketplace(${country})`, `language(${m.language})`, `channelId(${CHANNEL})`, "exclusiveAccess(true,false)"];
+  const base = [`marketplace(${m.marketplace ?? country})`, `language(${m.language})`, `channelId(${CHANNEL})`, "exclusiveAccess(true,false)"];
   const f = [...base, ...extra].map((x) => `filter=${encodeURIComponent(x)}`).join("&");
   return `${API}?${f}&anchor=${anchor}&count=${count}`;
 }

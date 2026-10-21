@@ -26,7 +26,26 @@ const PER_PAGE = 100;
 const MAX_PAGES = 20;
 const CAP = 1500;
 
-export const searchUrl = (page: number) => `${FF}?query=*&filter=is_sale%3Ayes&hitsPerPage=${PER_PAGE}&page=${page}`;
+export const searchUrl = (page: number, channel?: string) =>
+  `${channel ? FF.replace(/de-live$/, `${channel}-live`) : FF}?query=*&filter=is_sale%3Ayes&hitsPerPage=${PER_PAGE}&page=${page}`;
+
+/**
+ * Other markets (2026-10-21). FactFinder channels are per LANGUAGE (de, nl,
+ * fr, es, it, en — `at-live`/`ch-live` do not exist), but each carries that
+ * country shop's own prices: nl-live = marc-o-polo.com/nl-nl (NOT nl-be, which
+ * prices differently), es-live = es-es, it-live = it-it. fr-live is left out:
+ * its sale flags are mostly at full price, and the ~150 reduced colours left
+ * were 88% out of stock (2026-10-21). Austria
+ * has no channel; de-at prices equal de-de (8 of 8 sale styles checked on the
+ * product pages' JSON-LD, 2026-10-21), so AT reads de-live with de-at links.
+ * Switzerland (CHF) is in no channel and is not collected.
+ */
+export const MOP_MARKETS: Partial<Record<CountryCode, { channel: string; locale: string }>> = {
+  AT: { channel: "de", locale: "de-at" },
+  NL: { channel: "nl", locale: "nl-nl" },
+  ES: { channel: "es", locale: "es-es" },
+  IT: { channel: "it", locale: "it-it" },
+};
 
 const GENDER: Record<string, ProductRecord["gender"]> = { female: "kadin", male: "erkek" };
 
@@ -35,7 +54,9 @@ const slugify = (s: string) =>
   s.toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss").normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
 /** Map one hit (one colour). Pure. */
-export function mapMarcOPolo(hit: any): ProductRecord | null {
+export function mapMarcOPolo(hit: any, country: CountryCode = "DE"): ProductRecord | null {
+  const mk = MOP_MARKETS[country];
+  const site = mk ? SITE.replace(/de-de$/, mk.locale) : SITE;
   const mv = hit?.masterValues ?? {};
   const pid = String(mv.product_id ?? "").trim();
   const name = String(mv.name ?? "").trim();
@@ -63,10 +84,10 @@ export function mapMarcOPolo(hit: any): ProductRecord | null {
   const desc = String(mv.short_description ?? "").trim();
   return {
     brand: "marcopolo",
-    country: "DE",
+    country,
     externalId: pid,
     name: desc ? `${name} ${desc}` : name,
-    url: `${SITE}/p/${slugify(name) || "p"}-${pid}`,
+    url: `${site}/p/${slugify(name) || "p"}-${pid}`,
     imageUrl: img,
     price: toMinor(best.sale),
     listPrice: toMinor(best.reg),
@@ -82,16 +103,17 @@ export function mapMarcOPolo(hit: any): ProductRecord | null {
 }
 
 export async function listMarcOPolo(country: CountryCode, fetchPage: (u: string) => Promise<any> = (u) => getJson(u, { country, headers: { "x-ff-api-key": FF_KEY }, retries: 2 })): Promise<ProductRecord[]> {
-  if (country !== "DE") return [];
+  const mk = MOP_MARKETS[country];
+  if (country !== "DE" && !mk) return [];
   const byId = new Map<string, ProductRecord>();
   let pages = 1;
   for (let page = 1; page <= Math.min(pages, MAX_PAGES); page++) {
-    const d = await fetchPage(searchUrl(page));
+    const d = await fetchPage(searchUrl(page, mk?.channel));
     pages = Number(d?.paging?.pageCount ?? 0);
     const hits: any[] = Array.isArray(d?.hits) ? d.hits : [];
     if (!hits.length) break;
     for (const h of hits) {
-      const r = mapMarcOPolo(h);
+      const r = mapMarcOPolo(h, country);
       if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
     }
   }

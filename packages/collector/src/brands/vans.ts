@@ -29,8 +29,24 @@ import type { CountryCode } from "../../../../lib/countries";
 
 export const brand = "vans";
 
-const SITES: Partial<Record<CountryCode, { origin: string; saleCategory: string; currency: string }>> = {
+interface AccentSite { origin: string; saleCategory: string; currency: string; listPages?: number }
+const SITES: Partial<Record<CountryCode, AccentSite>> = {
   AU: { origin: "https://www.vans.com.au", saleCategory: "33", currency: "AUD" },
+};
+
+/**
+ * Other Accent Group (AU) shops on the same Magento/ScandiPWA stack, read with
+ * the same two passes (2026-10-21).
+ *
+ * Platypus (platypusshoes.com.au, multi-brand sneakers): Sale category 230,
+ * ~8,950 configurable products in 9 list pages, ~600 of them in stock (the
+ * in-stock ones sit mostly on the last page, so every page is read). Hype DC
+ * (hypedc.com) is the same group but DataDome-walled (403 from this Mac and
+ * from the Hetzner box), so it is not here.
+ */
+export const ACCENT_SITES: Record<string, Partial<Record<CountryCode, AccentSite>>> = {
+  vans: SITES,
+  platypus: { AU: { origin: "https://www.platypusshoes.com.au", saleCategory: "230", currency: "AUD", listPages: 10 } },
 };
 const CAP = 1500;
 const LIST_PAGE = 1000;
@@ -58,8 +74,8 @@ function genderOf(paths: string[]): ProductRecord["gender"] {
 const SIZE_CODES = new Set(["apparel21_size_code", "size"]);
 
 /** Map one detail item. Pure; null unless genuinely reduced. */
-export function mapVans(x: any, country: CountryCode = "AU"): ProductRecord | null {
-  const site = SITES[country];
+export function mapVans(x: any, country: CountryCode = "AU", slug = brand): ProductRecord | null {
+  const site = ACCENT_SITES[slug]?.[country];
   if (!site || !x?.sku || !x?.name || !x?.url_key) return null;
   const min = x?.price_range?.minimum_price;
   const now = num(min?.final_price?.value);
@@ -87,7 +103,7 @@ export function mapVans(x: any, country: CountryCode = "AU"): ProductRecord | nu
   const leaf = paths.filter((p) => p.startsWith("sale/")).sort((a, b) => b.length - a.length)[0];
 
   return {
-    brand,
+    brand: slug,
     country,
     externalId: String(x.sku),
     name: String(x.name).trim(),
@@ -106,7 +122,7 @@ export function mapVans(x: any, country: CountryCode = "AU"): ProductRecord | nu
   };
 }
 
-async function gql(origin: string, query: string, country: CountryCode): Promise<any> {
+async function gql(origin: string, query: string, country: CountryCode, slug = brand): Promise<any> {
   const d = await getJson<any>(`${origin}/graphql`, {
     method: "POST",
     body: JSON.stringify({ query }),
@@ -114,20 +130,22 @@ async function gql(origin: string, query: string, country: CountryCode): Promise
     country,
     timeoutMs: 60_000,
   });
-  if (!d?.data?.products) throw new Error(`vans/${country}: graphql answered ${JSON.stringify(d).slice(0, 200)}`);
+  if (!d?.data?.products) throw new Error(`${slug}/${country}: graphql answered ${JSON.stringify(d).slice(0, 200)}`);
   return d.data.products;
 }
 
-export async function listVans(country: CountryCode): Promise<ProductRecord[]> {
-  const site = SITES[country];
+export async function listVans(country: CountryCode, slug = brand): Promise<ProductRecord[]> {
+  const site = ACCENT_SITES[slug]?.[country];
   if (!site) return [];
+  const maxPages = site.listPages ?? 6;
 
   // Pass 1: which sale SKUs are in stock.
   const inStock: string[] = [];
   let seen = 0;
-  for (let page = 1, pages = 1; page <= pages && page <= 6; page++) {
-    const p = await gql(site.origin, listQuery(site.saleCategory, page), country);
+  for (let page = 1, pages = 1; page <= pages && page <= maxPages; page++) {
+    const p = await gql(site.origin, listQuery(site.saleCategory, page), country, slug);
     pages = Number(p?.page_info?.total_pages ?? 1);
+    if (site.listPages && pages > maxPages) throw new Error(`${slug}/${country}: sale category has ${pages} list pages, over ${maxPages}`);
     for (const it of p.items ?? []) {
       if (!it?.sku) continue;
       seen++;
@@ -139,15 +157,16 @@ export async function listVans(country: CountryCode): Promise<ProductRecord[]> {
   const byId = new Map<string, ProductRecord>();
   const skus = [...new Set(inStock)].slice(0, CAP);
   for (let i = 0; i < skus.length; i += DETAIL_BATCH) {
-    const p = await gql(site.origin, detailQuery(skus.slice(i, i + DETAIL_BATCH)), country);
+    const p = await gql(site.origin, detailQuery(skus.slice(i, i + DETAIL_BATCH)), country, slug);
     for (const it of p.items ?? []) {
-      const r = it ? mapVans(it, country) : null;
+      const r = it ? mapVans(it, country, slug) : null;
       if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
     }
   }
   const all = [...byId.values()];
-  if (!all.length) throw new Error(`vans/${country}: 0 discounted products (${seen} sale SKUs, ${skus.length} in stock)`);
+  if (!all.length) throw new Error(`${slug}/${country}: 0 discounted products (${seen} sale SKUs, ${skus.length} in stock)`);
   return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
 }
 
 export const listProducts = listVans;
+export const listPlatypus = (country: CountryCode) => listVans(country, "platypus");

@@ -1,5 +1,6 @@
 /**
- * ASICS United States (asics.com/us/en-us) — US only.
+ * ASICS United States (asics.com/us/en-us), plus GB and twelve EU shops
+ * (2026-10-21, see ASICS_MARKETS).
  *
  * Akamai answers every asics.com page with "Access Denied" to GitHub runners,
  * the Hetzner box and the Mac (probe run 39134299441, 2026-10-18). The
@@ -37,6 +38,39 @@ const CLIENT = "32c40d28-93fc-4889-a473-14543e1cbcb5";
 const SITE_ID = "asics-us";
 const HOST = `https://${SHORT}.api.commercecloud.salesforce.com`;
 const SALE_CGID = "AA60000000";
+
+/**
+ * GB + the EU shops (2026-10-21). The same SLAS client also logs in to two
+ * more channels of the org: `asics-uk` (GBP) and `asics-eu` (one EU site; the
+ * locale picks the path prefix and `currency` the price book — EUR, SEK, DKK).
+ * Both have no "Sale" tree; their markdowns are the `outlet` catalogue
+ * ("ASICS Outlet EU", asics.com/<cc>/<lang>/outlet/), 877 colours in GB and
+ * 736 in the EU on 2026-10-21, every one with a list price above the sale
+ * price on the shelf. The main `asics` catalogue carries no list prices at
+ * all there. Australia and Japan are other platforms (no channel in this
+ * org), not covered.
+ */
+export interface AsicsMarket { site: string; locale: string; currency: string; cgid: string; prefix: string }
+const EU = (locale: string, currency = "EUR"): AsicsMarket => ({
+  site: "asics-eu", locale, currency, cgid: "outlet", prefix: `${locale.slice(3).toLowerCase()}/${locale.toLowerCase()}`,
+});
+export const ASICS_MARKETS: Partial<Record<CountryCode, AsicsMarket>> = {
+  US: { site: SITE_ID, locale: "en-US", currency: "USD", cgid: SALE_CGID, prefix: "us/en-us" },
+  GB: { site: "asics-uk", locale: "en-GB", currency: "GBP", cgid: "outlet", prefix: "gb/en-gb" },
+  FR: EU("fr-FR"),
+  DE: EU("de-DE"),
+  IT: EU("it-IT"),
+  ES: EU("es-ES"),
+  NL: EU("nl-NL"),
+  BE: EU("fr-BE"),
+  AT: EU("de-AT"),
+  IE: EU("en-IE"),
+  PT: EU("pt-PT"),
+  FI: EU("fi-FI"),
+  SE: EU("sv-SE", "SEK"),
+  DK: EU("da-DK", "DKK"),
+};
+const US = ASICS_MARKETS.US!;
 const PER_PAGE = 100;
 const MAX_PAGES = 16;
 const SIZE_BATCH = 24;
@@ -48,13 +82,13 @@ const b64url = (buf: ArrayBuffer | Uint8Array) =>
   Buffer.from(buf as Uint8Array).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 /** SLAS public-client guest login (PKCE). Returns a shopper access token. */
-export async function guestToken(): Promise<string> {
+export async function guestToken(siteId = SITE_ID, country: CountryCode = "US"): Promise<string> {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
   const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
   const redirect = `${ORIGIN}/callback`;
   const q = new URLSearchParams({
     redirect_uri: redirect, response_type: "code", client_id: CLIENT, hint: "guest",
-    code_challenge: challenge, channel_id: SITE_ID,
+    code_challenge: challenge, channel_id: siteId,
   });
   // The answer is a 303, so this call cannot go through getJson (it follows redirects).
   const res = await fetch(`${HOST}/shopper/auth/v1/organizations/${ORG}/oauth2/authorize?${q}`, { redirect: "manual" });
@@ -67,22 +101,22 @@ export async function guestToken(): Promise<string> {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code, usid, code_verifier: verifier, grant_type: "authorization_code_pkce",
-      redirect_uri: redirect, client_id: CLIENT, channel_id: SITE_ID,
+      redirect_uri: redirect, client_id: CLIENT, channel_id: siteId,
     }).toString(),
-    country: "US",
+    country,
   });
   if (!tok?.access_token) throw new Error("asics: no SLAS token");
   return tok.access_token;
 }
 
-export function searchUrl(offset: number): string {
-  const q = new URLSearchParams({ siteId: SITE_ID, locale: "en-US", currency: "USD", limit: String(PER_PAGE), offset: String(offset) });
-  q.append("refine", `cgid=${SALE_CGID}`);
+export function searchUrl(offset: number, m: AsicsMarket = US): string {
+  const q = new URLSearchParams({ siteId: m.site, locale: m.locale, currency: m.currency, limit: String(PER_PAGE), offset: String(offset) });
+  q.append("refine", `cgid=${m.cgid}`);
   return `${HOST}/search/shopper-search/v1/organizations/${ORG}/product-search?${q}`;
 }
 
-export function productsUrl(ids: string[]): string {
-  const q = new URLSearchParams({ siteId: SITE_ID, locale: "en-US", currency: "USD", ids: ids.join(","), allImages: "false", expand: "availability,variations" });
+export function productsUrl(ids: string[], m: AsicsMarket = US): string {
+  const q = new URLSearchParams({ siteId: m.site, locale: m.locale, currency: m.currency, ids: ids.join(","), allImages: "false", expand: "availability,variations" });
   return `${HOST}/product/shopper-products/v1/organizations/${ORG}/products?${q}`;
 }
 
@@ -98,18 +132,20 @@ export function genderOf(h: any): ProductRecord["gender"] {
 }
 
 /** Map one product-search hit. Pure; null unless the shelf price is a real reduction. */
-export function mapAsics(h: any): ProductRecord | null {
+export function mapAsics(h: any, country: CountryCode = "US"): ProductRecord | null {
+  const mk = ASICS_MARKETS[country];
+  if (!mk) return null;
   const c = h?.c_custom;
   const id = String(h?.productId ?? "");
   const name = String(h?.productName ?? "").replace(/\s+/g, " ").trim();
   const path = typeof c?.absolutePath === "string" ? c.absolutePath : "";
-  if (!id || !name || !path.startsWith(`${ORIGIN}/us/en-us/`)) return null;
+  if (!id || !name || !path.startsWith(`${ORIGIN}/${mk.prefix}/`)) return null;
   if (c?.isGiftCard) return null;
   const m = c?.price?.model;
   const sale = Number(m?.sales?.value ?? h?.price);
   const list = Number(m?.list?.value);
   if (!(sale > 0) || !Number.isFinite(list) || !(list > sale)) return null;
-  if (h?.currency && h.currency !== "USD") return null;
+  if (h?.currency && h.currency !== mk.currency) return null;
 
   const photos: string[] = (Array.isArray(c?.images) ? c.images : []).filter((u: unknown): u is string => typeof u === "string" && u.startsWith("https://"));
   const first = photos[0] ?? (typeof h?.image?.link === "string" ? h.image.link : null);
@@ -120,7 +156,7 @@ export function mapAsics(h: any): ProductRecord | null {
 
   return {
     brand,
-    country: "US",
+    country,
     externalId: id,
     // Model names are upper case on the site itself ("GEL-KAYANO 31"); kept as shown.
     name,
@@ -129,7 +165,7 @@ export function mapAsics(h: any): ProductRecord | null {
     images: cleanGallery(photos, first),
     price: toMinor(sale),
     listPrice: toMinor(list),
-    currency: "USD",
+    currency: mk.currency,
     inStock: h?.orderable !== false,
     category,
     gender: genderOf(h),
@@ -158,8 +194,9 @@ export function sizesOf(p: any): SizeVariant[] {
 }
 
 export async function listAsics(country: CountryCode): Promise<ProductRecord[]> {
-  if (country !== "US") return [];
-  const token = await guestToken();
+  const m = ASICS_MARKETS[country];
+  if (!m) return [];
+  const token = await guestToken(m.site, country);
   const auth = { Authorization: `Bearer ${token}` };
   const byId = new Map<string, ProductRecord>();
   let hits = 0;
@@ -167,7 +204,7 @@ export async function listAsics(country: CountryCode): Promise<ProductRecord[]> 
   const problems: string[] = [];
   for (let page = 0; page < MAX_PAGES && page * PER_PAGE < total; page++) {
     if (page) await sleep(300);
-    const data = await getJson<any>(searchUrl(page * PER_PAGE), { headers: auth, country, retries: 2 }).catch((e) => {
+    const data = await getJson<any>(searchUrl(page * PER_PAGE, m), { headers: auth, country, retries: 2 }).catch((e) => {
       problems.push(`p${page}: ${String(e).slice(0, 100)}`);
       return null;
     });
@@ -175,18 +212,18 @@ export async function listAsics(country: CountryCode): Promise<ProductRecord[]> 
     total = Number(data.total ?? 0);
     for (const h of data.hits ?? []) {
       hits++;
-      const r = mapAsics(h);
+      const r = mapAsics(h, country);
       if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
     }
   }
-  if (!hits) throw new Error(`asics: the sale search returned no hits (${problems.slice(0, 3).join("; ") || `total ${total}`})`);
+  if (!hits) throw new Error(`asics/${country}: the sale search returned no hits (${problems.slice(0, 3).join("; ") || `total ${total}`})`);
 
   const rank = (r: ProductRecord) => (r.gender === "kadin" ? 0 : r.gender == null ? 1 : r.gender === "erkek" ? 2 : 3);
   const ordered = [...byId.values()].sort((a, b) => Number(b.inStock) - Number(a.inStock) || rank(a) - rank(b));
   const sizeIds = ordered.slice(0, SIZE_ROWS).map((r) => r.externalId);
   for (let i = 0; i < sizeIds.length; i += SIZE_BATCH) {
     await sleep(300);
-    const d = await getJson<any>(productsUrl(sizeIds.slice(i, i + SIZE_BATCH)), { headers: auth, country, retries: 1 }).catch(() => null);
+    const d = await getJson<any>(productsUrl(sizeIds.slice(i, i + SIZE_BATCH), m), { headers: auth, country, retries: 1 }).catch(() => null);
     for (const p of d?.data ?? []) {
       const r = byId.get(String(p?.id ?? ""));
       const sizes = sizesOf(p);

@@ -26,14 +26,47 @@ import { cleanGallery } from "../types";
 import { jaCategory } from "./_ja-category";
 
 export const brand = "globalwork";
+
+/**
+ * Other brands on the same `.st` mall (2026-10-21): Adastria's own labels and
+ * partner brands that sell officially through `.st`. Same API, same rules —
+ * only the `brandCodes` filter and the dot-st.com path change. `dir` is the
+ * brand's path on www.dot-st.com (also its image folder). `gender` only for
+ * single-gender labels; mixed labels stay unknown.
+ */
+export interface DotStBrand {
+  code: string;
+  dir: string;
+  gender?: ProductRecord["gender"];
+  /**
+   * Lifestyle labels that also sell home goods (lamps, mugs, towels): only
+   * rows whose name jaCategory() can type as clothing/shoes/bags/accessories
+   * are fetched and shipped. The listing carries no category of its own.
+   */
+  typedOnly?: true;
+}
+export const DOTST_BRANDS: Record<string, DotStBrand> = {
+  globalwork: { code: "0000100002", dir: "globalwork" },
+  nikoand: { code: "0000100016", dir: "nikoand" },
+  lowrysfarm: { code: "0000100001", dir: "lowrysfarm", gender: "kadin" },
+  studioclip: { code: "0000100017", dir: "studioclip", typedOnly: true },
+  nanouniverse: { code: "0000100196", dir: "nanouniverse" },
+  lepsim: { code: "0000100004", dir: "lepsim", gender: "kadin" },
+  bayflow: { code: "0000100021", dir: "bayflow" },
+  jeanasis: { code: "0000100003", dir: "jeanasis", gender: "kadin" },
+  rageblue: { code: "0000100007", dir: "rageblue", gender: "erkek" },
+  heather: { code: "0000100005", dir: "heather", gender: "kadin" },
+  apartbylowrys: { code: "0000100006", dir: "apartbylowrys", gender: "kadin" },
+  lakole: { code: "0000100026", dir: "lakole", typedOnly: true },
+  azulbymoussy: { code: "0000100213", dir: "azulbymoussy" },
+};
 const REGION = "ap-northeast-1";
 const POOL = "ap-northeast-1:3fca15e9-40b0-4b17-b508-7b68fa488fce";
 const HOST = "31vhpp15qh.execute-api.ap-northeast-1.amazonaws.com";
-const BRAND_CODE = "0000100002";
 const PER_PAGE = 100;
 const MAX_PAGES = 20;
 const DETAIL_LIMIT = Number(process.env.GLOBALWORK_DETAIL_LIMIT ?? 70);
-const SITE = "https://www.dot-st.com/globalwork/disp/item";
+const SITE = "https://www.dot-st.com";
 
 interface Creds { AccessKeyId: string; SecretKey: string; SessionToken: string }
 
@@ -101,7 +134,9 @@ export interface ListingRow { code: string; name: string; images?: string[]; col
  * One product from its listing row + its `/skus` answer. Pure. Null unless the
  * shop's own `originalPrice` is above the price of the colour the card shows.
  */
-export function mapItem(row: ListingRow, skus: any): ProductRecord | null {
+export function mapItem(row: ListingRow, skus: any, slug = brand): ProductRecord | null {
+  const b = DOTST_BRANDS[slug];
+  if (!b) return null;
   const list: any[] = Array.isArray(skus?.skus) ? skus.skus : [];
   if (!row?.code || !row?.name || list.length === 0) return null;
   // Secret (member) sale prices are not public markdowns.
@@ -125,11 +160,11 @@ export function mapItem(row: ListingRow, skus: any): ProductRecord | null {
   const colorName = rows[0]?.colorName ? String(rows[0].colorName).trim() : null;
   const img = row.images?.[0] ?? null;
   return {
-    brand,
+    brand: slug,
     country: "JP",
     externalId: colour ? `${row.code}-${colour}` : row.code,
     name: String(row.name).trim(),
-    url: `${SITE}/${row.code}/`,
+    url: `${SITE}/${b.dir}/disp/item/${row.code}/`,
     imageUrl: img,
     images: cleanGallery(row.images ?? [], img),
     price: price * 100,
@@ -138,30 +173,40 @@ export function mapItem(row: ListingRow, skus: any): ProductRecord | null {
     inStock: sizes.some((s) => s.availability !== "out_of_stock"),
     category: jaCategory(row.name),
     // The feed's genre filter lists most rows under both women and men
-    // (unisex lines), so gender is left unknown rather than guessed.
-    gender: null,
+    // (unisex lines), so gender is left unknown rather than guessed —
+    // except for a single-gender label (DOTST_BRANDS).
+    gender: b.gender ?? null,
     variants: sizes.length ? { colors: colorName ? [colorName] : [], sizes } : null,
-    groupKey: `globalwork:${row.code}`,
+    groupKey: `${slug}:${row.code}`,
     colorName,
   };
 }
 
 export async function listProducts(): Promise<ProductRecord[]> {
+  return listDotSt(brand);
+}
+
+/** One `.st` brand's reduced items (Japan only). */
+export async function listDotSt(slug: string): Promise<ProductRecord[]> {
+  const b = DOTST_BRANDS[slug];
+  if (!b) throw new Error(`dot-st: unknown brand ${slug}`);
+  const tag = slug === brand ? brand : `dot-st/${slug}`;
+  const wanted = (r: ListingRow) => r.discountRate > 0 && (!b.typedOnly || jaCategory(r.name) != null);
   const c = await guestCreds();
   const rows: ListingRow[] = [];
   let total = Infinity;
   for (let page = 1; rows.length < total && page <= MAX_PAGES; page++) {
-    const body = JSON.stringify({ brandCodes: [BRAND_CODE], categoryCodes: [], itemTypeCodes: ["2"], page, perPage: PER_PAGE });
+    const body = JSON.stringify({ brandCodes: [b.code], categoryCodes: [], itemTypeCodes: ["2"], page, perPage: PER_PAGE });
     const data = await api(c, "POST", "/items", "", body);
     total = Number(data?.count ?? 0);
     const got: ListingRow[] = data?.results ?? [];
     if (!got.length) break;
     rows.push(...got);
     // Only the first DETAIL_LIMIT reduced rows get a detail call; stop paging once we have them.
-    if (rows.filter((r) => r.discountRate > 0).length >= DETAIL_LIMIT) break;
+    if (rows.filter(wanted).length >= DETAIL_LIMIT) break;
   }
-  if (!rows.length) throw new Error("globalwork: empty sale listing");
-  const todo = rows.filter((r) => r.discountRate > 0).slice(0, DETAIL_LIMIT);
+  if (!rows.length) throw new Error(`${tag}: empty sale listing`);
+  const todo = rows.filter(wanted).slice(0, DETAIL_LIMIT);
   const out: ProductRecord[] = [];
   let failed = 0;
   for (let i = 0; i < todo.length; i += 4) {
@@ -169,11 +214,11 @@ export async function listProducts(): Promise<ProductRecord[]> {
     await Promise.all(batch.map(async (r) => {
       const skus = await api(c, "GET", `/items/${r.code}/skus`, "isGetOlderItem=false").catch(() => null);
       if (!skus) { failed++; return; }
-      const rec = mapItem(r, skus);
+      const rec = mapItem(r, skus, slug);
       if (rec) out.push(rec);
     }));
     await new Promise((res) => setTimeout(res, 250));
   }
-  if (failed > todo.length * 0.1) throw new Error(`globalwork: ${failed} of ${todo.length} detail calls failed`);
+  if (failed > todo.length * 0.1) throw new Error(`${tag}: ${failed} of ${todo.length} detail calls failed`);
   return [...out.filter((r) => r.inStock), ...out.filter((r) => !r.inStock)];
 }

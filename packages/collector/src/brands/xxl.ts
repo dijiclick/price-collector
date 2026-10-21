@@ -38,14 +38,28 @@ const VISIBILITY =
   'excl custom.isReleased {"false"} excl price [-infinity, 0.0]';
 export const XXL_WOMEN_RULE = `rule incl custom.pim_mandatory_user_string {"Dame"} ${VISIBILITY}`;
 
-export function xxlUrl(skip: number, keys: { customer: string; session: string }): string {
+interface XxlMarket { market: string; locale: string; site: string; rule: string; pageReference: string }
+
+/**
+ * 2026-10-21: xxl.se and xxl.fi run on the same Elevate cluster (their home
+ * pages carry the same `elevateClusterApi.baseURL`); only `market`/`locale`
+ * and the localized "user" facet value change ("Dam" 1,564 / "Naiset" 1,565
+ * women's products, measured). FI prices in EUR, SE in SEK.
+ */
+export const XXL_MARKETS: Partial<Record<CountryCode, XxlMarket>> = {
+  NO: { market: "NO", locale: "nb-NO", site: SITE, rule: XXL_WOMEN_RULE, pageReference: "/dame/salg" },
+  SE: { market: "SE", locale: "sv-SE", site: "https://www.xxl.se", rule: XXL_WOMEN_RULE.replace('{"Dame"}', '{"Dam"}'), pageReference: "/dam/rea" },
+  FI: { market: "FI", locale: "fi-FI", site: "https://www.xxl.fi", rule: XXL_WOMEN_RULE.replace('{"Dame"}', '{"Naiset"}'), pageReference: "/naiset/ale" },
+};
+
+export function xxlUrl(skip: number, keys: { customer: string; session: string }, m: XxlMarket = XXL_MARKETS.NO!): string {
   const q = new URLSearchParams({
-    market: "NO",
-    locale: "nb-NO",
+    market: m.market,
+    locale: m.locale,
     customerKey: keys.customer,
     sessionKey: keys.session,
     touchpoint: "desktop",
-    pageReference: "/dame/salg",
+    pageReference: m.pageReference,
     channels: "ONLINE",
     sort: "DISCOUNT",
     limit: String(PAGE),
@@ -73,7 +87,7 @@ function sizesOf(variants: any[]): SizeVariant[] {
 }
 
 /** Map one Elevate product (a colour of a product group). Pure. */
-export function mapXxl(p: any, groupKey: string | null, country: CountryCode = "NO"): ProductRecord | null {
+export function mapXxl(p: any, groupKey: string | null, country: CountryCode = "NO", site: string = SITE): ProductRecord | null {
   const title = String(p?.title ?? "").trim();
   const link = typeof p?.link === "string" ? p.link : null;
   if (!p?.key || !title || !link) return null;
@@ -100,7 +114,7 @@ export function mapXxl(p: any, groupKey: string | null, country: CountryCode = "
     country,
     externalId: String(p.key),
     name,
-    url: `${SITE}${link.split("?")[0]}`,
+    url: `${site}${link.split("?")[0]}`,
     imageUrl: imgs[0] ?? p?.imageInfo?.thumbnail ?? null,
     images: cleanGallery(imgs, imgs[0] ?? null),
     price: toMinor(pick.price),
@@ -115,16 +129,17 @@ export function mapXxl(p: any, groupKey: string | null, country: CountryCode = "
 }
 
 export async function listXxl(country: CountryCode): Promise<ProductRecord[]> {
-  if (country !== "NO") return [];
+  const m = XXL_MARKETS[country];
+  if (!m) return [];
   const keys = { customer: randomUUID(), session: randomUUID() };
-  const body = JSON.stringify({ primaryList: { include: true, productRules: XXL_WOMEN_RULE } });
+  const body = JSON.stringify({ primaryList: { include: true, productRules: m.rule } });
   const byId = new Map<string, ProductRecord>();
   for (let page = 0; page < MAX_PAGES; page++) {
     if (page > 0) await sleep(PAUSE_MS);
-    const d = await getJson<any>(xxlUrl(page * PAGE, keys), {
+    const d = await getJson<any>(xxlUrl(page * PAGE, keys, m), {
       method: "POST",
       body,
-      headers: { "Content-Type": "text/plain;charset=UTF-8", Origin: SITE, Referer: `${SITE}/` },
+      headers: { "Content-Type": "text/plain;charset=UTF-8", Origin: m.site, Referer: `${m.site}/` },
       country,
     });
     const groups: any[] = d?.primaryList?.productGroups ?? [];
@@ -134,7 +149,7 @@ export async function listXxl(country: CountryCode): Promise<ProductRecord[]> {
       const prods: any[] = g?.products ?? [];
       const gk = prods.length > 1 && g?.key ? `xxl:${g.key}` : null;
       for (const p of prods) {
-        const r = mapXxl(p, gk, country);
+        const r = mapXxl(p, gk, country, m.site);
         if (r && r.listPrice != null) {
           reduced++;
           if (!byId.has(r.externalId)) byId.set(r.externalId, r);

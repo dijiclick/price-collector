@@ -55,8 +55,13 @@ export function idsFromSitemap(xml: string, country: CountryCode = "TR"): Map<st
   const en = `/${cc}/en/`;
   // Turkey keeps its Turkish urls (the live sweep's names are Turkish); every
   // other market is collected in English, so its English url wins.
+  // Gulf sitemaps list each product in Arabic (`/ae/ar/…`) and in English
+  // without a language segment (`/ae/women/…`): the English one wins there.
+  const ar = `/${cc}/ar/`;
   const better = (url: string, prev: string) =>
-    country === "TR" ? !url.includes(en) && prev.includes(en) : url.includes(en) && !prev.includes(en);
+    country === "TR"
+      ? !url.includes(en) && prev.includes(en)
+      : (url.includes(en) && !prev.includes(en)) || (prev.includes(ar) && !url.includes(ar));
   const out = new Map<string, string>();
   for (const m of xml.matchAll(/<loc>([^<]+)<\/loc>/g)) {
     const url = m[1].trim().replace(/&amp;/g, "&");
@@ -192,15 +197,34 @@ async function sitemapXml(url: string): Promise<string> {
   return buf[0] === 0x1f && buf[1] === 0x8b ? gunzipSync(buf).toString("utf8") : buf.toString("utf8");
 }
 
+/**
+ * Gulf markets (2026-10-21). Saudi Arabia is open for sale (its own store and
+ * catalogue, SAR) but publishes no product sitemap; its range is the UAE one
+ * (32 of 40 sampled UAE ids resolve in the Saudi catalogue), so it reads the UAE
+ * sitemap's ids and builds its own urls. Qatar and Kuwait stores are listed but
+ * `isOpenForSale: false` (resolveMarket throws). Home goods (`/ae/home/…`) are
+ * out of scope and skipped in these markets; TR/ES/PT keep their whole range.
+ */
+const SITEMAP_FROM: Partial<Record<CountryCode, CountryCode>> = { SA: "AE" };
+const GULF: ReadonlySet<CountryCode> = new Set<CountryCode>(["AE", "SA"]);
+
+/** A Gulf sitemap url in the home section (`/ae/home/…`, `/ae/ar/home/…`). Pure. */
+export const isHomeUrl = (url: string): boolean => /lefties\.com\/[a-z]{2}\/(?:[a-z]{2}\/)?home\//.test(url);
+
 export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
   const m = await resolveMarket(SITE, country);
   const index = await getText(SITEMAP_INDEX);
-  const cc = country.toLowerCase();
+  const source = SITEMAP_FROM[country] ?? country;
+  const cc = source.toLowerCase();
   const maps = [...index.matchAll(/<loc>([^<]*sitemap-products-lf-([a-z]{2})-\d+\.xml(?:\.gz)?)<\/loc>/g)].filter((x) => x[2] === cc).map((x) => x[1]);
   if (!maps.length) throw new Error(`lefties/${country}: no product sitemap for this market`);
-  const urls = new Map<string, string>();
-  for (const sm of maps) for (const [id, u] of idsFromSitemap(await sitemapXml(sm), country)) urls.set(id, u);
+  let urls = new Map<string, string>();
+  for (const sm of maps) for (const [id, u] of idsFromSitemap(await sitemapXml(sm), source)) urls.set(id, u);
+  if (GULF.has(country)) urls = new Map([...urls].filter(([, u]) => !isHomeUrl(u)));
   const ids = [...urls.keys()];
+  // A borrowed sitemap's urls point at the other market; mapProduct then
+  // builds this market's url from the product's own slug.
+  if (source !== country) urls = new Map();
 
   const chunks: string[][] = [];
   for (let i = 0; i < ids.length; i += BATCH) chunks.push(ids.slice(i, i + BATCH));

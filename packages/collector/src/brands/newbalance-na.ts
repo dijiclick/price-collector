@@ -73,6 +73,13 @@ export const NB_MARKETS: Partial<Record<CountryCode, NbMarket>> = {
   PT: EU("https://www.newbalance.pt", "pt_PT"),
   FI: EU("https://fi.newbalance.eu", "fi_FI"),
   DK: EU("https://dk.newbalance.eu", "da_DK", "DKK"),
+  // Britain (2026-10-21) is its own site, `Sites-NBUK-Site` (GBP), on the same
+  // markup; no sale category answers (cgid=sale → 0), so it walks the whole
+  // range like the EU shops — ~3,400–3,500 tiles (start=3300 full, 3600 empty;
+  // probes 39655522243 / 39655617493), hence 38 pages. Runner 200 (probes
+  // 39653951827, 39654819380: 18 of 57 colours in the first 24 tiles reduced,
+  // ~1 s a page); 403 from the Mac and Hetzner.
+  GB: { ...EU("https://www.newbalance.co.uk", "en_GB", "GBP"), site: "Sites-NBUK-Site", maxPages: 38 },
 };
 
 const PAGE = 100;

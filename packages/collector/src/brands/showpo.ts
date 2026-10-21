@@ -20,5 +20,28 @@ export const SHOWPO: SaleStore = {
   gender: "kadin",
 };
 
+/**
+ * US + Canada (2026-10-21): showpo.com/us and /ca are a second Shopify store,
+ * `showpo-uscadrow-prod` (US/CA/rest of world), with its own public token in
+ * the /us/ page HTML. `@inContext(country: US|CA)` prices it in USD / CAD;
+ * same "sale" collection with compare-at prices.
+ */
+export const SHOWPO_NA: Partial<Record<CountryCode, SaleStore>> = Object.fromEntries(
+  (["US", "CA"] as const).map((cc) => [
+    cc,
+    {
+      ...SHOWPO,
+      apiHost: "showpo-uscadrow-prod.myshopify.com",
+      token: process.env.SHOWPO_NA_STOREFRONT_TOKEN ?? "a43d30fe3356833cfa5eb14f16717aca",
+      tokenPage: `https://www.showpo.com/${cc.toLowerCase()}/`,
+      productUrl: (h: string) => `https://www.showpo.com/${cc.toLowerCase()}/products/${h}`,
+    },
+  ]),
+);
+
 export const listShowpo = (country: CountryCode): Promise<ProductRecord[]> =>
-  country === "AU" ? listSaleStore(SHOWPO, country) : Promise.resolve([]);
+  country === "AU"
+    ? listSaleStore(SHOWPO, country)
+    : SHOWPO_NA[country]
+      ? listSaleStore(SHOWPO_NA[country]!, country)
+      : Promise.resolve([]);

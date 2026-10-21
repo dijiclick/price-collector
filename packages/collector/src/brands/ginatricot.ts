@@ -35,6 +35,9 @@ export const GINATRICOT_MARKETS: Partial<Record<CountryCode, { siteKey: string; 
   DE: { siteKey: "ss-unbxd-auk-prod-ginatricot-de73331773041373", apiKey: "ecaef10895dc1985a602dfbef67b79ff", saleId: "124894" },
   FR: { siteKey: "ss-unbxd-auk-prod-ginatricot-fr73331773038896", apiKey: "2a0e2f5606d0b13d1db9121e81dbb6e5", saleId: "124894" },
   AT: { siteKey: "ss-unbxd-auk-prod-ginatricot-at73331773038029", apiKey: "a9d3d4647a3dde29787d57181b6b8d50", saleId: "124894" },
+  // The "EU" storefront (ginatricot.com/eu, EUR, "customers all over Europe") serves every EU country without its own site.
+  BE: { siteKey: "ss-unbxd-auk-prod-ginatricot-eu73331773038202", apiKey: "5162337a60bb5ea3efaff3a08836199d", saleId: "124894" },
+  IE: { siteKey: "ss-unbxd-auk-prod-ginatricot-eu73331773038202", apiKey: "5162337a60bb5ea3efaff3a08836199d", saleId: "124894" },
 };
 
 const ROWS = 100;

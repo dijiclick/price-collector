@@ -1,5 +1,5 @@
 /**
- * Decathlon (FR, ES, IT, NL, BE, TR, DE, PT, AT) — the mobile app's own API.
+ * Decathlon (FR, ES, IT, NL, BE, TR, DE, PT, AT, GB, CH) — the mobile app's own API.
  *
  * Every Decathlon storefront (decathlon.fr, .es, .com.tr, …) answers curl, the
  * Mac and GitHub runners alike with a Cloudflare challenge (`cf-mitigated:
@@ -80,6 +80,12 @@ export const MARKETS: Partial<Record<CountryCode, Market>> = {
   DE: { locale: "de-DE", currency: "EUR", host: "https://www.decathlon.de" },
   PT: { locale: "pt-PT", currency: "EUR", host: "https://www.decathlon.pt" },
   AT: { locale: "de-AT", currency: "EUR", host: "https://www.decathlon.at", saleTree: true },
+  // 2026-10-21: the same BFF answers en-GB and de-CH (runner probe 39653951827,
+  // catalog/home 200 for both). GB product URLs are slugged (variants pass
+  // only); Switzerland's websiteUrl is the R-p form. German names for CH (the
+  // larger language region; fr-CH/it-CH are the same catalogue).
+  GB: { locale: "en-GB", currency: "GBP", host: "https://www.decathlon.co.uk" },
+  CH: { locale: "de-CH", currency: "CHF", host: "https://www.decathlon.ch", rpUrl: true },
 };
 
 const PAGE = 40; // the server's maximum

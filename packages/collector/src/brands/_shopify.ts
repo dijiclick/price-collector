@@ -47,6 +47,7 @@ export function mapShopify(store: ShopifyStore, country: CountryCode, site: stri
   const vs: any[] = p?.variants ?? [];
   if (!p?.id || !p?.title || !vs.length) return null;
   if (/gift ?card|hediye ?kart/i.test(`${p.title} ${p.product_type ?? ""}`)) return null;
+  if (store.skipTitle?.test(`${p.title} | ${p.product_type ?? ""}`)) return null;
   const priced = vs
     .map((v) => ({ v, price: parseFloat(v.price), cmp: parseFloat(v.compare_at_price) }))
     .filter((x) => Number.isFinite(x.price) && x.price > 0 && x.price < MAX_PRICE);

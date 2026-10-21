@@ -26,6 +26,16 @@ export const BREUNINGER_TREES: { path: string; gender: "kadin" | "erkek"; pages:
   { path: "/de/damen/sale/", gender: "kadin", pages: 10 },
   { path: "/de/herren/sale/", gender: "erkek", pages: 6 },
 ];
+/**
+ * Austria and Switzerland (2026-10-21): the same shop under /at/ (EUR,
+ * "Bestpreis" Omnibus labels like Germany) and /ch/ (CHF, "CHF 1'195.50"; no
+ * Omnibus in Switzerland, so the struck price is labelled "Ursprünglich" in a
+ * `data-test-navi-product-old-price` block instead).
+ */
+export const BREUNINGER_MARKETS: Partial<Record<CountryCode, { prefix: string; currency: string; lang: string }>> = {
+  AT: { prefix: "/at", currency: "EUR", lang: "de-AT,de;q=0.9" },
+  CH: { prefix: "/ch", currency: "CHF", lang: "de-CH,de;q=0.9" },
+};
 const CAP = 1500;
 const PAUSE_MS = Number(process.env.BREUNINGER_PAUSE_MS ?? 600);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -49,6 +59,13 @@ export function euroCents(s: string): number | null {
   return Number(m[1].replace(/\./g, "")) * 100 + Number((m[2] ?? "0").padEnd(2, "0"));
 }
 
+/** "CHF 100" / "CHF 1'195.50" → cents; null for anything else. */
+export function chfCents(s: string): number | null {
+  const m = decode(s).match(/^CHF\s*([\d']+)(?:\.(\d{1,2}))?$/);
+  if (!m) return null;
+  return Number(m[1].replace(/'/g, "")) * 100 + Number((m[2] ?? "0").padEnd(2, "0"));
+}
+
 export interface BreuningerTile {
   syan: string;
   colorId: string;
@@ -62,7 +79,8 @@ export interface BreuningerTile {
 }
 
 /** Every reduced tile on a list page. Pure. */
-export function parseTiles(html: string): BreuningerTile[] {
+export function parseTiles(html: string, currency: string = "EUR"): BreuningerTile[] {
+  const money = currency === "CHF" ? chfCents : euroCents;
   const starts = [...html.matchAll(/<a href="[^"]*" data-product-link /g)].map((m) => m.index!);
   const out: BreuningerTile[] = [];
   for (let i = 0; i < starts.length; i++) {
@@ -74,10 +92,12 @@ export function parseTiles(html: string): BreuningerTile[] {
     const name = seg.match(/data-test-navi-product-name-text>([^<]*)</)?.[1];
     // The first price block belongs to the main link (the active colour).
     const now = seg.match(/data-test-navi-product-current-price[^>]*>\s*<ins>([^<]*)<\/ins>/)?.[1];
-    const ref = seg.match(/data-test-navi-product-reference-price\s*>([^<]*)<wbr><del>([^<]*)<\/del>/);
+    const ref = currency === "CHF"
+      ? seg.match(/data-test-navi-product-(?:reference|old)-price\s*>([^<]*)<wbr><del>([^<]*)<\/del>/)
+      : seg.match(/data-test-navi-product-reference-price\s*>([^<]*)<wbr><del>([^<]*)<\/del>/);
     if (!brand || !name || !now || !ref || !REAL_REFERENCE.test(decode(ref[1]))) continue;
-    const price = euroCents(now);
-    const was = euroCents(ref[2]);
+    const price = money(now);
+    const was = money(ref[2]);
     if (price == null || was == null || !(was > price) || price <= 0) continue;
     const img = seg.match(/<img src="(https:\/\/cms\.brnstc\.de\/[^"]+)"[^>]*data-test-navi-product-image/)?.[1] ?? null;
     // This colour's article carries the sellable sizes.
@@ -96,11 +116,11 @@ export function parseTiles(html: string): BreuningerTile[] {
   return out;
 }
 
-export function toRecord(t: BreuningerTile, gender: ProductRecord["gender"]): ProductRecord {
+export function toRecord(t: BreuningerTile, gender: ProductRecord["gender"], country: CountryCode = "DE"): ProductRecord {
   const name = t.name.toLowerCase().startsWith(t.brand.toLowerCase()) ? t.name : `${t.brand} ${t.name}`;
   return {
     brand: "breuninger",
-    country: "DE",
+    country,
     externalId: `${t.syan}-${t.colorId}`,
     name,
     url: t.url,
@@ -108,7 +128,7 @@ export function toRecord(t: BreuningerTile, gender: ProductRecord["gender"]): Pr
     images: cleanGallery([t.image], t.image),
     price: t.price,
     listPrice: t.was,
-    currency: "EUR",
+    currency: BREUNINGER_MARKETS[country]?.currency ?? "EUR",
     // A tile without sellable sizes listed is still on the shelf (one-size goods).
     inStock: t.sizes == null || t.sizes.length > 0,
     maker: t.brand,
@@ -121,11 +141,13 @@ export function toRecord(t: BreuningerTile, gender: ProductRecord["gender"]): Pr
   };
 }
 
-export async function listBreuninger(country: CountryCode, fetchHtml: (u: string) => Promise<string> = (u) => getText(u, { country, timeoutMs: 60_000, headers: { "Accept-Language": "de-DE,de;q=0.9" } })): Promise<ProductRecord[]> {
-  if (country !== "DE") return [];
+export async function listBreuninger(country: CountryCode, fetchHtml: (u: string) => Promise<string> = (u) => getText(u, { country, timeoutMs: 60_000, headers: { "Accept-Language": BREUNINGER_MARKETS[country]?.lang ?? "de-DE,de;q=0.9" } })): Promise<ProductRecord[]> {
+  const mk = BREUNINGER_MARKETS[country];
+  if (country !== "DE" && !mk) return [];
+  const trees = mk ? BREUNINGER_TREES.map((t) => ({ ...t, path: t.path.replace(/^\/de\//, `${mk.prefix}/`) })) : BREUNINGER_TREES;
   const byId = new Map<string, ProductRecord>();
   let calls = 0;
-  for (const tree of BREUNINGER_TREES) {
+  for (const tree of trees) {
     for (let page = 1; page <= tree.pages; page++) {
       if (calls++) await sleep(PAUSE_MS);
       let html: string;
@@ -135,11 +157,11 @@ export async function listBreuninger(country: CountryCode, fetchHtml: (u: string
         if (byId.size === 0 && page === 1) throw err;
         break;
       }
-      const tiles = parseTiles(html);
-      if (page === 1 && tiles.length === 0 && tree === BREUNINGER_TREES[0]) throw new Error("breuninger: no reduced tiles on the sale page (markup changed?)");
+      const tiles = parseTiles(html, mk?.currency);
+      if (page === 1 && tiles.length === 0 && tree === trees[0]) throw new Error("breuninger: no reduced tiles on the sale page (markup changed?)");
       let fresh = 0;
       for (const t of tiles) {
-        const r = toRecord(t, tree.gender);
+        const r = toRecord(t, tree.gender, country);
         if (byId.has(r.externalId)) continue;
         byId.set(r.externalId, r);
         fresh++;

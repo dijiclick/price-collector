@@ -49,8 +49,24 @@ const SECTIONS: { slug: string; pages: number; gender: Gender }[] = [
   { slug: "perfumeria", pages: 16, gender: null },
 ];
 
-export const pageUrl = (slug: string, page: number): string =>
-  `${API}/${slug}/${DISCOUNT}/${page > 1 ? `${page}/` : ""}`;
+/**
+ * Portugal (2026-10-21): elcorteingles.pt runs the same firefly API behind the
+ * same crawler-UA wall, with Portuguese category slugs; its `_base_url` is an
+ * absolute URL (Spain's is a path). Marketplace (`MP_`) cards are dropped the
+ * same way.
+ */
+const PT = {
+  site: "https://www.elcorteingles.pt",
+  lang: "pt-PT,pt;q=0.9",
+  sections: [
+    { slug: "moda-mulher", pages: 24, gender: "kadin" },
+    { slug: "moda-homem", pages: 16, gender: "erkek" },
+    { slug: "perfumaria-e-cosmetica", pages: 16, gender: null },
+  ] as { slug: string; pages: number; gender: Gender }[],
+};
+
+export const pageUrl = (slug: string, page: number, country: CountryCode = "ES"): string =>
+  `${country === "PT" ? `${PT.site}/api/firefly/vuestore/products_list` : API}/${slug}/${DISCOUNT}/${page > 1 ? `${page}/` : ""}`;
 
 const clean = (s: unknown): string => (typeof s === "string" ? s.replace(/\s+/g, " ").trim() : "");
 const num = (v: unknown): number => (typeof v === "number" ? v : Number(v));
@@ -58,8 +74,8 @@ const num = (v: unknown): number => (typeof v === "number" ? v : Number(v));
 /** Beauty has no section gender: read it from the category path or the title. Pure. */
 export function beautyGender(category: string[], title: string): Gender {
   const t = `${category.join(" ")} ${title}`.toLowerCase();
-  const men = /\bhombre\b/.test(t);
-  const women = /\bmujer\b/.test(t);
+  const men = /\b(?:hombre|homem)\b/.test(t);
+  const women = /\b(?:mujer|mulher)\b/.test(t);
   return men === women ? null : men ? "erkek" : "kadin";
 }
 
@@ -107,7 +123,7 @@ export function mapEci(p: any, category: string[] = [], sectionGender: Gender = 
     country,
     externalId: String(p.id),
     name,
-    url: `${SITE}${p._base_url}`,
+    url: /^https?:\/\//.test(p._base_url) ? p._base_url : `${country === "PT" ? PT.site : SITE}${p._base_url}`,
     imageUrl: images?.[0] ?? null,
     images,
     price: toMinor(num(pick.sale_price)),
@@ -123,14 +139,14 @@ export function mapEci(p: any, category: string[] = [], sectionGender: Gender = 
 }
 
 /** One listing page, through the first crawler UA the wall accepts. */
-async function fetchPage(slug: string, page: number): Promise<any> {
+async function fetchPage(slug: string, page: number, country: CountryCode = "ES"): Promise<any> {
   let last: unknown;
   for (const ua of AGENTS) {
     try {
-      return await getJson<any>(pageUrl(slug, page), {
-        country: "ES",
+      return await getJson<any>(pageUrl(slug, page, country), {
+        country,
         retries: 1,
-        headers: { "User-Agent": ua, "Accept-Language": "es-ES,es;q=0.9" },
+        headers: { "User-Agent": ua, "Accept-Language": country === "PT" ? PT.lang : "es-ES,es;q=0.9" },
       });
     } catch (err) {
       last = err;
@@ -139,19 +155,19 @@ async function fetchPage(slug: string, page: number): Promise<any> {
   throw last;
 }
 
-/** Register as `listElCorteIngles(country)`. ES only. */
+/** Register as `listElCorteIngles(country)`. ES and PT. */
 export async function listElCorteIngles(country: CountryCode): Promise<ProductRecord[]> {
-  if (country !== "ES") return [];
+  if (country !== "ES" && country !== "PT") return [];
   const byId = new Map<string, ProductRecord>();
   let first = true;
-  for (const { slug, pages, gender } of SECTIONS) {
+  for (const { slug, pages, gender } of country === "PT" ? PT.sections : SECTIONS) {
     let last = pages;
     for (let page = 1; page <= last; page++) {
       if (!first) await sleep(PAUSE_MS);
       first = false;
       let d: any;
       try {
-        d = (await fetchPage(slug, page))?.data;
+        d = (await fetchPage(slug, page, country))?.data;
       } catch (err) {
         // One bad page must not cost the other sections.
         console.warn(`elcorteingles: ${slug} p${page} failed: ${(err as Error).message}`);

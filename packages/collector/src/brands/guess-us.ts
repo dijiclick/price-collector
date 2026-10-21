@@ -33,13 +33,13 @@ export function usImageUrl(objectID: string): string {
   return `https://img.guess.com/image/upload/f_auto,q_auto,fl_strip_profile,w_640,ar_2:3,c_fill/v1/NA/Style/ECOMM/${objectID}`;
 }
 
-/** A US hit → a record, or null unless it is a real markdown. */
-export function mapUsHit(h: any): ProductRecord | null {
-  const r = mapHit(h, US_MARKET);
+/** A US (or CA) hit → a record, or null unless it is a real markdown. */
+export function mapUsHit(h: any, m: Market = US_MARKET): ProductRecord | null {
+  const r = mapHit(h, m);
   if (!r || r.listPrice == null || r.listPrice <= r.price) return null;
   return {
     ...r,
-    url: h.url ? `${SITE}${h.url}` : `${SITE}/en-us/`,
+    url: h.url ? `${SITE}${h.url}` : `${SITE}/${m.path}/`,
     imageUrl: usImageUrl(r.externalId),
   };
 }
@@ -81,4 +81,50 @@ export async function listGuessUs(country: CountryCode): Promise<ProductRecord[]
   const mixed: ProductRecord[] = [];
   for (let i = 0; mixed.length < inStock.length; i++) for (const g of groups.values()) if (g[i]) mixed.push(g[i]);
   return [...mixed, ...all.filter((r) => !r.inStock)].slice(0, CAP);
+}
+
+/**
+ * GUESS — Canada (2026-10-21). Same Algolia app, index `production__products__en_CA`
+ * (~4,250 products, every hit `currencyCode: "CAD"`). Canada does NOT set
+ * `isSale` (12 hits) — its markdowns live in the site's own Sale / Promotion /
+ * Last Chance / Mid-Season Sale categories (`categories.id`, e.g.
+ * `Guess-Women-Sale#…`), whose rows carry `master_price` < `master_price_retail`:
+ * the price guess.com/en-ca itself shows (PDP strikes the retail, JSON-LD offer
+ * = master_price). The category ids are read from the facet at run time (only
+ * the top level of each sale tree, which already holds its sub-shelves), one
+ * query per category; each must stay under Algolia's 1,000-hit window or we throw.
+ */
+export const CA_MARKET: Market = { country: "CA", index: "production__products__en_CA", path: "en-ca", currency: "CAD" };
+const CA_SALE_ROOT = /^[A-Za-z]+(?:-(?:Women|Men|Kids))?-(?:Sale|Promotion|LastChance|MidSeasonSale)#/;
+
+/** The top-level sale/promotion category ids from a `categories.id` facet. Pure. */
+export function caSaleCategories(facet: Record<string, number> | undefined): string[] {
+  return Object.keys(facet ?? {}).filter((k) => CA_SALE_ROOT.test(k));
+}
+
+export async function listGuessCa(country: CountryCode): Promise<ProductRecord[]> {
+  if (country !== "CA") return [];
+  const search = (params: string) =>
+    getJson<any>(`https://${APP_ID}-dsn.algolia.net/1/indexes/${CA_MARKET.index}/query`, {
+      country,
+      method: "POST",
+      headers: { "X-Algolia-Application-Id": APP_ID, "X-Algolia-API-Key": API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ params }),
+    });
+  const head = await search(`query=&hitsPerPage=0&maxValuesPerFacet=1000&facets=${encodeURIComponent(JSON.stringify(["categories.id"]))}`);
+  const cats = caSaleCategories(head?.facets?.["categories.id"]);
+  if (!cats.length) throw new Error("guess/CA: no sale categories in the index");
+  if (cats.length > 20) throw new Error(`guess/CA: ${cats.length} sale categories, over the request budget`);
+  const byId = new Map<string, ProductRecord>();
+  for (const cat of cats) {
+    const d = await search(`query=&hitsPerPage=${PER_PAGE}&page=0&facetFilters=${encodeURIComponent(JSON.stringify([[`categories.id:${cat}`]]))}`);
+    if (Number(d?.nbHits ?? 0) > PER_PAGE) throw new Error(`guess/CA: ${cat} has ${d.nbHits} hits, over the ${PER_PAGE} window`);
+    for (const h of d?.hits ?? []) {
+      if (h?.guess_gender === "Home") continue;
+      const r = mapUsHit(h, CA_MARKET);
+      if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
+    }
+  }
+  const all = [...byId.values()];
+  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
 }

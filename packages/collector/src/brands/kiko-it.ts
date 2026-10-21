@@ -1,5 +1,6 @@
 /**
- * KIKO Milano, Italy (kikocosmetics.com/it-it) — EUR. Added 2026-10-21.
+ * KIKO Milano, Italy (kikocosmetics.com/it-it) — EUR. Added 2026-10-21;
+ * ES PT FR DE AT NL BE IE GB CH the same day (see KIKO_MARKETS).
  *
  * Not the Turkish store's platform (`kiko.ts`, Akinon): the EU site is a
  * Next.js front on New Black's EVA, and its catalogue search is Algolia — app
@@ -26,9 +27,26 @@ const APP = "S6XPHBOA7P";
 const KEY = "19c2c0483072a7a0ab5e61bddba918ad";
 const SITE = "https://www.kikocosmetics.com";
 
-/** Market → EVA org unit / locale / path. Only Italy is verified. */
-export const KIKO_MARKETS: Partial<Record<CountryCode, { index: string; path: string }>> = {
+/**
+ * Market → Algolia index (`<EVA org unit>_<locale>`, org unit from each locale
+ * page's `__NEXT_DATA__`) / path / currency. The rest of Europe added
+ * 2026-10-21: every index answered with ~415 struck shades out of ~2.2k (GB
+ * 198 of 1,850), the same ~30% markdown the product pages show. Belgium is one
+ * org unit (660) in nl/fr; Switzerland one (944) in de/fr/it — the German
+ * index is the fuller one (418 vs 392).
+ */
+export const KIKO_MARKETS: Partial<Record<CountryCode, { index: string; path: string; currency?: string }>> = {
   IT: { index: "286_it-IT", path: "it-it" },
+  ES: { index: "657_es-ES", path: "es-es" },
+  PT: { index: "972_pt-PT", path: "pt-pt" },
+  FR: { index: "100_fr-FR", path: "fr-fr" },
+  DE: { index: "917_de-DE", path: "de-de" },
+  AT: { index: "1063_de-AT", path: "de-at" },
+  NL: { index: "663_nl-NL", path: "nl-nl" },
+  BE: { index: "660_nl-BE", path: "nl-be" },
+  IE: { index: "1069_en-IE", path: "en-ie" },
+  GB: { index: "666_en-GB", path: "en-gb", currency: "GBP" },
+  CH: { index: "944_de-CH", path: "de-ch", currency: "CHF" },
 };
 
 const ATTRS = "objectID,name,slug,prices,stockStatus,baseBackendId,baseProduct,color,categories,images,prodlast_hier_custom_ba_5,code";
@@ -60,7 +78,7 @@ export function mapKikoIt(h: any, country: CountryCode = "IT"): ProductRecord | 
     images: image ? [image] : null,
     price: toMinor(price),
     listPrice: toMinor(was),
-    currency: "EUR",
+    currency: m.currency ?? "EUR",
     inStock: h.stockStatus === true,
     category: line ? line.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()) : null,
     gender: null,

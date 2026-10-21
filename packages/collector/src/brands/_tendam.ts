@@ -1,7 +1,9 @@
 /**
  * Tendam group — Women'secret, Springfield and Cortefiel (Spain), one
  * Salesforce Commerce Cloud stack behind Cloudflare: Sites-WS / Sites-SPF /
- * Sites-CTF on womensecret.com, myspringfield.com and cortefiel.com.
+ * Sites-CTF on womensecret.com, myspringfield.com and cortefiel.com; Pedro del
+ * Hierro (pedrodelhierro.com) since 2026-10-21. Spain `/es/es`, Portugal `/pt/pt`
+ * (PT has its own EUR prices, often higher than ES).
  *
  * There is no third-party search provider (Einstein/CQuotient only), so the
  * feed is the storefront's own listing HTML. A listing path takes SFRA's
@@ -32,15 +34,18 @@ import { toMinor } from "../normalize";
 import type { CountryCode } from "../../../../lib/countries";
 import { decodeEntities, jsonOf } from "./_sfcchtml";
 
-export type TendamBrand = "womensecret" | "springfield" | "cortefiel";
+export type TendamBrand = "womensecret" | "springfield" | "cortefiel" | "pedrodelhierro";
 
 export const TENDAM: Record<TendamBrand, { origin: string; house: string }> = {
   womensecret: { origin: "https://womensecret.com", house: "Women'secret" },
   springfield: { origin: "https://myspringfield.com", house: "Springfield" },
   cortefiel: { origin: "https://cortefiel.com", house: "Cortefiel" },
+  // Same SFCC stack and tile markup (2026-10-21); its ES and PT sale shelves are
+  // "precios-especiales" / "precos-especiais(-pt)".
+  pedrodelhierro: { origin: "https://pedrodelhierro.com", house: "Pedro del Hierro" },
 };
 /** Storefront path per market. */
-const MARKETS: Partial<Record<CountryCode, string>> = { ES: "/es/es" };
+const MARKETS: Partial<Record<CountryCode, string>> = { ES: "/es/es", PT: "/pt/pt" };
 
 const PAGE = 60;
 const MAX_REQUESTS = 40;
@@ -63,21 +68,35 @@ export function euros(s: string | undefined | null): number {
 const SALE = /\/(?:[a-z-]+\/)*(?:promociones|rebajas)\/[a-z0-9-]+(?:\/[a-z0-9-]+)*|\/(?:mujer|hombre)\/precios-especiales(?:-marcas)?/;
 const MULTIBUY = /\d+-por-\d+|\d+x\d+|unidad-al|de-dos-en-dos|packs?-/;
 const NOT_ADULT = /\/(?:ninos?|ninas?|nino|nina|teen|hogar|home|deporte-ninos)(?:\/|-|$)|-(?:nino|nina|ninos|ninas|teen|hogar)(?:\/|$)/;
+/**
+ * Portugal (2026-10-21): same shelves in Portuguese — "promocoes/…",
+ * Springfield's "promotion(s)/last-minute-prices…", "precos-especiais(-pt|-marcas)";
+ * "preco-especial/2x25" and "2a-unidade-a-50" are multi-buy; "criancas",
+ * "kids-5-14-anos/menin[ao]" and "casa" are kids/home.
+ */
+const SALE_PT = /\/(?:[a-z0-9-]+\/)*(?:promocoes|promotions?)\/[a-z0-9-]+(?:\/[a-z0-9-]+)*|\/(?:mulher|homem)\/precos-especiais(?:-[a-z]+)*/;
+const MULTIBUY_PT = /\d+-por-\d+|\d+x\d+|unidade-a|packs?-/;
+const NOT_ADULT_PT = /\/(?:criancas?|menin[ao]s?|kids[a-z0-9-]*|teen|casa|home)(?:\/|-|$)|-(?:menin[ao]s?|criancas?|casa|teen)(?:\/|$)/;
+const RULES: Record<string, { sale: RegExp; multibuy: RegExp; notAdult: RegExp; bare: RegExp }> = {
+  es: { sale: SALE, multibuy: MULTIBUY, notAdult: NOT_ADULT, bare: /\/promociones$|\/rebajas$/ },
+  pt: { sale: SALE_PT, multibuy: MULTIBUY_PT, notAdult: NOT_ADULT_PT, bare: /\/promocoes$|\/promotions?$/ },
+};
 
 /** Sale listing paths linked from a brand homepage, women's first. Pure. */
 export function saleListings(homeHtml: string, prefix: string): string[] {
+  const rules = RULES[prefix.split("/")[2] ?? "es"] ?? RULES.es;
   const out = new Set<string>();
   for (const m of homeHtml.matchAll(/href="(?:https:\/\/[a-z.]+)?(\/[a-z]{2}\/[a-z]{2}\/[^"?#]+)"/g)) {
     const path = m[1].replace(/\/+$/, "");
     if (!path.startsWith(prefix + "/")) continue;
     const rest = path.slice(prefix.length);
-    if (!SALE.test(rest) || MULTIBUY.test(rest) || NOT_ADULT.test(rest)) continue;
-    if (/\/promociones$|\/rebajas$/.test(rest)) continue;
+    if (!rules.sale.test(rest) || rules.multibuy.test(rest) || rules.notAdult.test(rest)) continue;
+    if (rules.bare.test(rest)) continue;
     out.add(path);
   }
   const list = [...out];
   // The house's own shelves before guest-brand ones; women's before men's.
-  const rank = (p: string) => (/guest|marcas/.test(p) ? 10 : 0) + (/mujer/.test(p) ? 0 : /hombre/.test(p) ? 1 : 2);
+  const rank = (p: string) => (/guest|marcas/.test(p) ? 10 : 0) + (/mujer|mulher/.test(p) ? 0 : /hombre|homem/.test(p) ? 1 : 2);
   return list.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 }
 
@@ -88,14 +107,14 @@ export function tendamTiles(html: string): string[] {
 
 /** The audience a sale listing path names, if any. Pure. */
 export function listingGender(path: string): ProductRecord["gender"] {
-  return /mujer/.test(path) ? "kadin" : /hombre/.test(path) ? "erkek" : null;
+  return /mujer|mulher/.test(path) ? "kadin" : /hombre|homem/.test(path) ? "erkek" : null;
 }
 
 /** Who a storefront section ("mujer", "men", "teen") is for. Pure. */
 export function sectionGender(section: string): ProductRecord["gender"] | undefined {
-  if (/^(mujer|women|woman)$/.test(section)) return "kadin";
-  if (/^(hombre|men|man)$/.test(section)) return "erkek";
-  if (/^(ninos?|ninas?|teen|kids)$/.test(section)) return "cocuk";
+  if (/^(mujer|women|woman|mulher)$/.test(section)) return "kadin";
+  if (/^(hombre|men|man|homem)$/.test(section)) return "erkek";
+  if (/^(ninos?|ninas?|teen|kids|criancas|kids-5-14-anos)$/.test(section)) return "cocuk";
   return undefined;
 }
 
@@ -150,14 +169,15 @@ export function mapTendamTile(
   };
 }
 
-/** Register as `listTendam("womensecret" | "springfield" | "cortefiel", country)`. ES only. */
+/** Register as `listTendam("womensecret" | "springfield" | "cortefiel" | "pedrodelhierro", country)`. ES and PT. */
 export async function listTendam(brand: TendamBrand, country: CountryCode): Promise<ProductRecord[]> {
   const prefix = MARKETS[country];
   if (!prefix) return [];
   const { origin } = TENDAM[brand];
   // TENDAM_UA: a non-browser UA skips womensecret.com's geo redirect when testing from outside Spain/the US.
   const ua: Record<string, string> = process.env.TENDAM_UA ? { "User-Agent": process.env.TENDAM_UA } : {};
-  const opts = { country, timeoutMs: 60_000, headers: { "Accept-Language": "es-ES,es;q=0.9", ...ua } };
+  const lang = country === "PT" ? "pt-PT,pt;q=0.9" : "es-ES,es;q=0.9";
+  const opts = { country, timeoutMs: 60_000, headers: { "Accept-Language": lang, ...ua } };
   const home = await getText(`${origin}${prefix}`, opts);
   const listings = saleListings(home, prefix).slice(0, MAX_LISTINGS);
   if (!listings.length) throw new Error(`${brand}/${country}: no sale listing linked from the homepage`);

@@ -1,5 +1,6 @@
 /**
- * Varner group (Cubus, Bik Bok, Carlings) — Norway, DISCOUNTED rows only —
+ * Varner group (Cubus, Bik Bok, Carlings, Dressmann, Volt) — Norway, Sweden,
+ * Finland (2026-10-21; Volt NO/FI only), DISCOUNTED rows only —
  * through each brand's Voyado Elevate storefront cluster (2026-10-11).
  *
  * The storefronts sit behind Cloudflare (403 on HTML for plain requests), but
@@ -27,13 +28,28 @@ export interface VarnerBrand {
   categoryAttr: string;
   genderAttr?: string;
   defaultGender: ProductRecord["gender"];
+  /** Markets the brand sells online through this cluster (NO when absent). */
+  markets?: CountryCode[];
 }
 
 export const VARNER: Record<string, VarnerBrand> = {
   cubus: { slug: "cubus", cluster: "w51327962", site: "https://cubus.com", categoryAttr: "productmaincategory", genderAttr: "searchdepartment", defaultGender: null },
   bikbok: { slug: "bikbok", cluster: "wd4ecf775", site: "https://bikbok.com", categoryAttr: "productmaincategory", defaultGender: "kadin" },
-  carlings: { slug: "carlings", cluster: "webe08586", site: "https://carlings.com", categoryAttr: "mainCategory", defaultGender: null },
+  // 2026-10-21: Carlings' live pages carry cluster w3615D94A (`apptusLocal.clusterId`
+  // in the HTML); webe08586 still answers but with zero reduced products.
+  carlings: { slug: "carlings", cluster: "w3615d94a", site: "https://carlings.com", categoryAttr: "productmaincategory", genderAttr: "searchdepartment", defaultGender: null, markets: ["NO", "SE", "FI"] },
+  dressmann: { slug: "dressmann", cluster: "w5ab6f674", site: "https://dressmann.com", categoryAttr: "productmaincategory", genderAttr: "searchdepartment", defaultGender: "erkek", markets: ["NO", "SE", "FI"] },
+  volt: { slug: "volt", cluster: "wb5149640", site: "https://voltfashion.com", categoryAttr: "productmaincategory", genderAttr: "searchdepartment", defaultGender: null, markets: ["NO", "FI"] },
 };
+
+/** Elevate market + locale per country; one cluster serves all of a brand's markets. */
+export const VARNER_MARKETS: Partial<Record<CountryCode, { market: string; locale: string; pageReference: string }>> = {
+  NO: { market: "NO", locale: "nb-NO", pageReference: "/no/sale" },
+  SE: { market: "SE", locale: "sv-SE", pageReference: "/sv/rea" },
+  FI: { market: "FI", locale: "fi-FI", pageReference: "/fi/ale" },
+};
+/** Cubus and Bik Bok ship SE + FI too (2026-10-21). */
+for (const k of ["cubus", "bikbok"]) VARNER[k].markets = ["NO", "SE", "FI"];
 
 const PAGE = 100;
 const MAX_PAGES = Number(process.env.VARNER_MAX_PAGES ?? 20);
@@ -43,14 +59,15 @@ export const VARNER_DISCOUNT_RULE = "rule incl discount [1,100]";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const n = (x: unknown): number => (typeof x === "number" ? x : parseFloat(String(x ?? "")));
 
-export function varnerUrl(b: VarnerBrand, skip: number, keys: { customer: string; session: string }): string {
+export function varnerUrl(b: VarnerBrand, skip: number, keys: { customer: string; session: string }, country: CountryCode = "NO"): string {
+  const m = VARNER_MARKETS[country] ?? VARNER_MARKETS.NO!;
   const q = new URLSearchParams({
-    market: "NO",
-    locale: "nb-NO",
+    market: m.market,
+    locale: m.locale,
     customerKey: keys.customer,
     sessionKey: keys.session,
     touchpoint: "DESKTOP",
-    pageReference: "/no/sale",
+    pageReference: m.pageReference,
     sort: "DISCOUNT",
     limit: String(PAGE),
     skip: String(skip),
@@ -92,7 +109,23 @@ export function varnerGender(dept: string | null, link: string, fallback: Produc
   if (has("baby", "barn", "gutt", "jente", "barneklar", "babyklar")) return "cocuk";
   if (has("dame", "dameklar")) return "kadin";
   if (has("herre", "herreklar")) return "erkek";
+  // Swedish / Finnish link words (SE, FI markets).
+  if (has("lapset", "vauvat", "pojat", "tytot", "flicka", "pojke")) return "cocuk";
+  if (has("dam", "naiset", "nainen")) return "kadin";
+  if (has("herr", "miehet", "mies")) return "erkek";
   return fallback;
+}
+
+/** Elevate category ids are English run-together words: "TOPSANDTSHIRTS" → "Tops and t-shirts". */
+const CAT_WORDS: Record<string, string> = {
+  TOPSANDTSHIRTS: "Tops and t-shirts", SWEATERSHOODIES: "Sweaters and hoodies", SWEATERSANDCARDIGANS: "Sweaters and cardigans",
+  SHIRTSANDBLOUSES: "Shirts and blouses", JACKETSANDCOATS: "Jackets and coats", DRESSESANDSKIRTS: "Dresses and skirts",
+  UNDERWEARANDSOCKS: "Underwear and socks", BLAZERSANDSUITS: "Blazers and suits", SPORTSWEAR: "Sportswear", NIGHTWEAR: "Nightwear",
+  SWIMWEAR: "Swimwear", LOUNGEWEAR: "Loungewear",
+};
+export function varnerCategory(id: string | null | undefined): string | null {
+  if (!id || !/^[A-Z]+$/.test(id)) return null;
+  return CAT_WORDS[id] ?? id[0] + id.slice(1).toLowerCase();
 }
 
 /** Map one Elevate product (one colour of a product group). Pure. */
@@ -127,7 +160,8 @@ export function mapVarner(b: VarnerBrand, p: any, groupKey: string | null, count
     listPrice: Number.isFinite(pick.list) && pick.list > pick.price ? toMinor(pick.list) : null,
     currency: COUNTRIES[country].currency,
     inStock: p.inStock === true || vs.some((v) => v?.inStock === true),
-    category: cat?.label || null,
+    // NO keeps the Norwegian label; SE/FI labels are Swedish/Finnish, so they get the English id.
+    category: country === "NO" ? cat?.label || null : varnerCategory(cat?.id) ?? (cat?.label || null),
     gender: varnerGender(dept?.id ?? null, link, b.defaultGender),
     variants: sizes.length ? { colors: [], sizes } : null,
     groupKey,
@@ -136,13 +170,13 @@ export function mapVarner(b: VarnerBrand, p: any, groupKey: string | null, count
 
 export async function listVarner(slug: string, country: CountryCode): Promise<ProductRecord[]> {
   const b = VARNER[slug];
-  if (!b || country !== "NO") return [];
+  if (!b || !(b.markets ?? ["NO"]).includes(country) || !VARNER_MARKETS[country]) return [];
   const keys = { customer: randomUUID(), session: randomUUID() };
   const body = JSON.stringify({ primaryList: { include: true, productRules: VARNER_DISCOUNT_RULE } });
   const byId = new Map<string, ProductRecord>();
   for (let page = 0; page < MAX_PAGES; page++) {
     if (page > 0) await sleep(PAUSE_MS);
-    const d = await getJson<any>(varnerUrl(b, page * PAGE, keys), {
+    const d = await getJson<any>(varnerUrl(b, page * PAGE, keys, country), {
       method: "POST",
       body,
       headers: { "Content-Type": "text/plain;charset=UTF-8", Origin: b.site, Referer: `${b.site}/` },
@@ -169,3 +203,5 @@ export async function listVarner(slug: string, country: CountryCode): Promise<Pr
 export const listCubus = (country: CountryCode) => listVarner("cubus", country);
 export const listBikbok = (country: CountryCode) => listVarner("bikbok", country);
 export const listCarlings = (country: CountryCode) => listVarner("carlings", country);
+export const listDressmann = (country: CountryCode) => listVarner("dressmann", country);
+export const listVolt = (country: CountryCode) => listVarner("volt", country);

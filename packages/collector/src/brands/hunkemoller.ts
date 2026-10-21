@@ -34,15 +34,24 @@ const CAP = 1500;
 const PAUSE_MS = Number(process.env.HUNKEMOLLER_PAUSE_MS ?? 500);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-interface Market { origin: string; site: string; locale: string }
+interface Market { origin: string; site: string; locale: string; currency?: string }
 
 export const HUNKEMOLLER_MARKETS: Partial<Record<CountryCode, Market>> = {
   NL: { origin: "https://www.hunkemoller.nl", site: "hunkemoller", locale: "nl-NL" },
   BE: { origin: "https://www.hunkemoller.be", site: "hunkemoller-be", locale: "nl-BE" },
+  // 2026-10-21: same org, one site per country domain (siteId from each home page).
+  DE: { origin: "https://www.hunkemoller.de", site: "hunkemoller-de", locale: "de-DE" },
+  AT: { origin: "https://www.hunkemoller.at", site: "hunkemoller-at", locale: "de-AT" },
+  FR: { origin: "https://www.hunkemoller.fr", site: "hunkemoller-fr", locale: "fr-FR" },
+  ES: { origin: "https://www.hunkemoller.es", site: "hunkemoller-es", locale: "es-ES" },
+  CH: { origin: "https://www.hunkemoller.ch", site: "hunkemoller-ch", locale: "de-CH", currency: "CHF" },
+  SE: { origin: "https://www.hunkemoller.se", site: "hunkemoller-se", locale: "sv-SE", currency: "SEK" },
+  NO: { origin: "https://www.hunkemoller.no", site: "hunkemoller-no", locale: "no-NO", currency: "NOK" },
+  DK: { origin: "https://www.hunkemoller.dk", site: "hunkemoller-dk", locale: "da-DK", currency: "DKK" },
 };
 
 /** Root categories that hold the markdowns. */
-const SALE_NAME = /^(sale|outlet|soldes)$/i;
+const SALE_NAME = /^(sale|outlet|soldes|rebajas|rea|salg|udsalg)$/i;
 
 /** Dutch/French product words → an English type the classifier knows. First match wins. */
 const TYPES: [RegExp, string][] = [
@@ -67,6 +76,17 @@ const TYPES: [RegExp, string][] = [
   [/jarretel|garter|porte-jarretelles/i, "Suspender belt"],
   [/slipper|pantoffel|chausson/i, "Slippers"],
   [/tas|sac|bag/i, "Bag"],
+  // DE/ES/FR/Nordic words (2026-10-21), after the Dutch ones so NL/BE keep their matches.
+  [/badeanzug|bañador|badedrakt|baddräkt|badedragt/i, "Swimsuit"],
+  [/kleid|kjole|klänning|vestido/i, "Dress"],
+  [/skirt|\brock\b|skjørt|kjol\b|falda|nederdel/i, "Skirt"],
+  [/sujetador|bh\b/i, "Bra"],
+  [/streng|thong/i, "Thong"],
+  [/braguita|brasile|truss|trosa|truse|höschen/i, "Briefs"],
+  [/strumpfhose|strømpebuks|strumpbyx|stocking|medias/i, "Tights"],
+  [/\bhose\b|strandhose|pantal|bukse|byxor/i, "Trousers"],
+  [/jakke|jacke|chaqueta|jacka/i, "Jacket"],
+  [/antifaz|augenbinde|ögonbindel|øjenmaske|sovemaske|eye mask/i, "Sleep mask"],
 ];
 export function hunkemollerType(name: string): string | null {
   for (const [re, t] of TYPES) if (re.test(name)) return t;
@@ -144,7 +164,7 @@ export function hunkemollerSearchUrl(m: Market, cgid: string, offset: number): s
     refine: `cgid=${cgid}`,
     limit: String(PAGE),
     offset: String(offset),
-    currency: "EUR",
+    currency: m.currency ?? "EUR",
     locale: m.locale,
     expand: "prices,images",
     perPricebook: "true",
@@ -152,7 +172,7 @@ export function hunkemollerSearchUrl(m: Market, cgid: string, offset: number): s
   return `${API}/search/shopper-search/v1/organizations/${ORG}/product-search?${q}`;
 }
 
-/** Register as `listHunkemoller(country)`. NL, BE. */
+/** Register as `listHunkemoller(country)`. NL BE DE AT FR ES CH SE NO DK. */
 export async function listHunkemoller(country: CountryCode): Promise<ProductRecord[]> {
   const m = HUNKEMOLLER_MARKETS[country];
   if (!m) return [];

@@ -52,8 +52,19 @@ export function markdownOf(price: any): { price: number; list: number } | null {
   return now != null && was != null && now < was ? { price: now, list: was } : null;
 }
 
+/**
+ * Markets. Canada (2026-10-21): the same API with `site=ToryBurch_CA` prices
+ * every swatch in CAD (`price.currency`), ~700 sale styles; PDPs live under
+ * /en-ca/.
+ */
+export const TORY_MARKETS: Partial<Record<CountryCode, { site: string; locale: string }>> = {
+  US: { site: "ToryBurch_US", locale: "en-us" },
+  CA: { site: "ToryBurch_CA", locale: "en-ca" },
+};
+
 /** Map one product (a style) to its marked-down colours. Pure. */
 export function mapToryProduct(p: any, country: CountryCode = "US"): ProductRecord[] {
+  const loc = (TORY_MARKETS[country] ?? TORY_MARKETS.US!).locale;
   const id = String(p?.id ?? "");
   const name = String(p?.name ?? "").replace(/\s+/g, " ").trim();
   if (!id || !name) return [];
@@ -64,6 +75,8 @@ export function mapToryProduct(p: any, country: CountryCode = "US"): ProductReco
     const m = markdownOf(s?.price);
     const colourNo = String(s?.colorNumber ?? "");
     if (!m || !colourNo) continue;
+    // A swatch priced in another market's currency is never stored as this one's.
+    if (country !== "US" && s?.price?.currency !== COUNTRIES[country].currency) continue;
     const codes: string[] = (Array.isArray(s.images) ? s.images : []).filter((c: unknown): c is string => typeof c === "string" && /^[A-Za-z0-9_]+$/.test(c));
     const photos = codes.map(photo);
     const colour = typeof s.colorName === "string" && s.colorName.trim() ? titleCase(s.colorName.trim()) : null;
@@ -72,7 +85,7 @@ export function mapToryProduct(p: any, country: CountryCode = "US"): ProductReco
       country,
       externalId: `${id}-${colourNo}`,
       name,
-      url: path ? `${SITE}/en-us/${path}/${id}.html?color=${encodeURIComponent(colourNo)}` : `${SITE}/en-us/${id}.html?color=${encodeURIComponent(colourNo)}`,
+      url: path ? `${SITE}/${loc}/${path}/${id}.html?color=${encodeURIComponent(colourNo)}` : `${SITE}/${loc}/${id}.html?color=${encodeURIComponent(colourNo)}`,
       imageUrl: photos[0] ?? null,
       images: cleanGallery(photos, photos[0] ?? null),
       price: toMinor(m.price),
@@ -89,17 +102,18 @@ export function mapToryProduct(p: any, country: CountryCode = "US"): ProductReco
   return out;
 }
 
-export const pageUrl = (offset: number) =>
-  `${API}/categories/${CATEGORY}/products?site=ToryBurch_US&limit=${PAGE}&offset=${offset}`;
+export const pageUrl = (offset: number, country: CountryCode = "US") =>
+  `${API}/categories/${CATEGORY}/products?site=${(TORY_MARKETS[country] ?? TORY_MARKETS.US!).site}&limit=${PAGE}&offset=${offset}`;
 
 export async function listToryBurch(country: CountryCode): Promise<ProductRecord[]> {
-  if (country !== "US") return [];
+  const m = TORY_MARKETS[country];
+  if (!m) return [];
   const byId = new Map<string, ProductRecord>();
   for (let page = 0; page < MAX_PAGES; page++) {
     if (page) await sleep(PAUSE_MS);
-    const j = await getJson<any>(pageUrl(page * PAGE), {
+    const j = await getJson<any>(pageUrl(page * PAGE, country), {
       country,
-      headers: { "x-api-key": API_KEY, Locale: "en-us", Referer: `${SITE}/en-us/sale/view-all/` },
+      headers: { "x-api-key": API_KEY, Locale: m.locale, Referer: `${SITE}/${m.locale}/sale/view-all/` },
     });
     const products: any[] = j?.products ?? [];
     for (const p of products) for (const r of mapToryProduct(p, country)) if (!byId.has(r.externalId)) byId.set(r.externalId, r);

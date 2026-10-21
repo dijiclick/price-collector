@@ -48,6 +48,7 @@ export const RITUALS_MARKETS: Partial<Record<CountryCode, Market>> = {
   DK: { cc: "dk", lang: "da", currency: "DKK" },
   GB: { cc: "gb", lang: "en", currency: "GBP" },
   CH: { cc: "ch", lang: "de", currency: "CHF" },
+  NO: { cc: "no", lang: "no", currency: "NOK" },
 };
 
 /** Top-level sections / category slugs that are not personal care. */
@@ -103,7 +104,7 @@ export function mapRitualsHit(h: any, country: CountryCode, m: Market): ProductR
   };
 }
 
-/** Register as `listRituals(country)`. NL BE DE AT FR ES IT PT IE FI SE DK GB CH. */
+/** Register as `listRituals(country)`. NL BE DE AT FR ES IT PT IE FI SE DK GB CH NO. */
 export async function listRituals(country: CountryCode): Promise<ProductRecord[]> {
   const m = RITUALS_MARKETS[country];
   if (!m) return [];

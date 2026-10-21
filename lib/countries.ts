@@ -174,34 +174,35 @@ export const COUNTRIES = {
     proxyExit: "no", minPrice: 5000, buckets: [50000, 150000],
     dateLocale: "en-NO", launched: true,
   },
-  // Wave 2/3 (2026-10-21). Collected, not offered until each has ~20 working
-  // brands. Prices are stored ×100 for EVERY currency, including the ones with
+  // Wave 2/3 (2026-10-21). QA KW KR SG launched the same day (12.6k / 12.3k /
+  // 9.3k / 7.4k in-stock deals on the first sweep); JP launched later the same day
+  // once it reached 21 shops; HK (9) still held. Prices are stored ×100 for EVERY currency, including the ones with
   // no minor unit (JPY, KRW) and the 3-decimal KWD (rounded to hundredths);
   // lib/format.ts prints JPY/KRW without decimals.
   QA: {
     currency: "QAR", symbol: "QAR", symbolBefore: true,
     proxyExit: "qa", minPrice: 1000, buckets: [10000, 30000],
-    dateLocale: "en-QA", launched: false,
+    dateLocale: "en-QA", launched: true,
   },
   KW: {
     currency: "KWD", symbol: "KWD", symbolBefore: true,
     proxyExit: "kw", minPrice: 100, buckets: [1000, 3000],
-    dateLocale: "en-KW", launched: false,
+    dateLocale: "en-KW", launched: true,
   },
   JP: {
     currency: "JPY", symbol: "¥", symbolBefore: true,
     proxyExit: "jp", minPrice: 50000, buckets: [500000, 1500000],
-    dateLocale: "ja-JP", launched: false,
+    dateLocale: "ja-JP", launched: true,
   },
   KR: {
     currency: "KRW", symbol: "₩", symbolBefore: true,
     proxyExit: "kr", minPrice: 500000, buckets: [3000000, 10000000],
-    dateLocale: "ko-KR", launched: false,
+    dateLocale: "ko-KR", launched: true,
   },
   SG: {
     currency: "SGD", symbol: "S$", symbolBefore: true,
     proxyExit: "sg", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-SG", launched: false,
+    dateLocale: "en-SG", launched: true,
   },
   HK: {
     currency: "HKD", symbol: "HK$", symbolBefore: true,

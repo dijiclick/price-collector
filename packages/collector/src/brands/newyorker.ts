@@ -31,6 +31,28 @@ const CAP = 1500;
 /** Markets whose feed we read: the API takes the country as a filter. */
 const MARKETS: Partial<Record<CountryCode, string>> = { DE: "de" };
 
+/**
+ * Other markets (2026-10-21): the same API with `filters[country]=<cc>`. Each
+ * answers in its own currency (CHF, SEK, DKK, NOK, else EUR). Names: German
+ * for AT/CH, French for FR, English elsewhere (what newyorker.de/<cc>/ shows;
+ * the feed has no Dutch/Spanish/Italian/Portuguese/Nordic text). The site's
+ * product page lives under /<cc>/products/.
+ */
+export const NY_MARKETS: Partial<Record<CountryCode, { code: string; lang: string; currency: string }>> = {
+  AT: { code: "at", lang: "DE", currency: "EUR" },
+  CH: { code: "ch", lang: "DE", currency: "CHF" },
+  FR: { code: "fr", lang: "FR", currency: "EUR" },
+  NL: { code: "nl", lang: "EN", currency: "EUR" },
+  BE: { code: "be", lang: "EN", currency: "EUR" },
+  ES: { code: "es", lang: "EN", currency: "EUR" },
+  IT: { code: "it", lang: "EN", currency: "EUR" },
+  PT: { code: "pt", lang: "EN", currency: "EUR" },
+  SE: { code: "se", lang: "EN", currency: "SEK" },
+  DK: { code: "dk", lang: "EN", currency: "DKK" },
+  FI: { code: "fi", lang: "EN", currency: "EUR" },
+  NO: { code: "no", lang: "EN", currency: "NOK" },
+};
+
 export const queryUrl = (market: string, offset: number): string =>
   `${API}?offset=${offset}&limit=${PAGE}&filters%5Bcountry%5D=${market}&filters%5Bsale%5D=true`;
 
@@ -40,7 +62,13 @@ const imageUrl = (key: string) => `${IMG}/${key}?res=high&frame=2_3`;
 
 /** Map one item to its reduced colours. Pure. */
 export function mapNewYorker(item: any, country: CountryCode): ProductRecord[] {
-  const desc = (Array.isArray(item?.descriptions) ? item.descriptions : []).find((d: any) => d?.language === "DE")?.description;
+  const intl = NY_MARKETS[country];
+  const descs: any[] = Array.isArray(item?.descriptions) ? item.descriptions : [];
+  const desc = intl
+    ? (descs.find((d: any) => d?.language === intl.lang && String(d?.description ?? "").trim()) ?? descs.find((d: any) => d?.language === "EN" && String(d?.description ?? "").trim()))?.description
+    : descs.find((d: any) => d?.language === "DE")?.description;
+  const currency = intl?.currency ?? "EUR";
+  const site = intl ? `${SITE}/${intl.code}` : SITE;
   const name = String(desc ?? "").trim();
   if (!name) return [];
   const variants: any[] = Array.isArray(item?.variants) ? item.variants : [];
@@ -51,7 +79,7 @@ export function mapNewYorker(item: any, country: CountryCode): ProductRecord[] {
     const price = Number(v?.current_price);
     const was = Number(v?.original_price);
     if (!pid || !vid || v?.sale !== true || !(price > 0) || !(was > price)) continue;
-    if (v?.currency && v.currency !== "EUR") continue;
+    if (v?.currency && v.currency !== currency) continue;
     const imgs = (Array.isArray(v.images) ? v.images : [])
       .filter((im: any) => typeof im?.key === "string" && im.key)
       .sort((a: any, b: any) => Number(a.position ?? 0) - Number(b.position ?? 0))
@@ -62,12 +90,12 @@ export function mapNewYorker(item: any, country: CountryCode): ProductRecord[] {
       country,
       externalId: `${pid}-${vid}`,
       name,
-      url: `${SITE}/products/#/detail/${pid}/${vid}`,
+      url: `${site}/products/#/detail/${pid}/${vid}`,
       imageUrl: imgs[0] ?? null,
       images: cleanGallery(imgs, imgs[0] ?? null),
       price: toMinor(price),
       listPrice: toMinor(was),
-      currency: "EUR",
+      currency,
       inStock: true,
       // NEW YORKER's in-house brands (Amisu, Censored, FB Sister, Smog, ...).
       maker: typeof item.brand === "string" && item.brand.trim() && item.brand !== "Accessoires" ? item.brand.trim() : null,
@@ -82,7 +110,7 @@ export function mapNewYorker(item: any, country: CountryCode): ProductRecord[] {
 }
 
 export async function listNewYorker(country: CountryCode, fetchPage: (u: string) => Promise<any> = (u) => getJson(u, { country, headers: { "User-Agent": "okhttp/4.12.0" }, retries: 2 })): Promise<ProductRecord[]> {
-  const market = MARKETS[country];
+  const market = MARKETS[country] ?? NY_MARKETS[country]?.code;
   if (!market) return [];
   const byId = new Map<string, ProductRecord>();
   let total = Infinity;

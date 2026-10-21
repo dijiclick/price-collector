@@ -139,6 +139,18 @@ export const MUSINSA_STORES: Record<string, string> = {
   spao: "spao",
   topten: "topten",
   "8seconds": "8seconds",
+  // 2026-10-21 (double-the-brands round): Korean labels whose Musinsa store is
+  // their main online shop. Share of each store's tops carrying a strike, sale
+  // vs all (category 001): MUSINSA STANDARD 1,019/2,283, MIXXO 499/642, WHO.A.U
+  // 54/106, andar 12/183, Matin Kim 7 of 100, thisisneverthat 686/902.
+  // XEXYMIX (720/750) and COVERNAT (1,096/1,191) strike almost their whole
+  // catalogue — a permanent 정가, not a markdown — and are deliberately absent.
+  musinsastandard: "musinsastandard",
+  mixxo: "mixxo",
+  whoau: "whoau",
+  andar: "andar",
+  matinkim: "matinkim",
+  thisisneverthat: "thisisneverthat",
 };
 
 /**

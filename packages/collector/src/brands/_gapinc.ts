@@ -95,10 +95,15 @@ export const GAPINC: Record<GapIncSlug, GapBrand> = {
       CA: { site: "https://bananarepublic.gapcanada.ca", cids: BR_CIDS },
     },
   },
-  // Athleta closed its Canadian site; US only.
+  // Canada (2026-10-21): athleta.gapcanada.ca is live again and the API answers
+  // `market=ca` on the same sale ids in CAD (Venice Jogger: 119.00 CA vs 98.00 US
+  // regular; ~1,925 + 325 sale colours).
   athleta: {
     code: "at",
-    markets: { US: { site: "https://athleta.gap.com", cids: [["1023728", "kadin"], ["1073226", "cocuk"]] } },
+    markets: {
+      US: { site: "https://athleta.gap.com", cids: [["1023728", "kadin"], ["1073226", "cocuk"]] },
+      CA: { site: "https://athleta.gapcanada.ca", cids: [["1023728", "kadin"], ["1073226", "cocuk"]] },
+    },
   },
   gapfactory: {
     code: "gapfs",

@@ -121,6 +121,7 @@ export function mapRackCard(card: string, slice: Pick<RackSlice, "gender" | "cat
     currency: "USD",
     inStock: true,
     category: slice.category,
+    maker: brandName || null,
     gender: slice.gender,
     variants: null,
     groupKey: null,

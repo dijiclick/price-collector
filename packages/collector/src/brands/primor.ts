@@ -40,8 +40,29 @@ const CAP = 1500;
 const PAUSE_MS = Number(process.env.PRIMOR_PAUSE_MS ?? 300);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export const primorUrl = (term: string, start: number): string =>
-  `${API}?query=${encodeURIComponent(term)}&lang=es&rows=${ROWS}&start=${start}&filter=facetAvailability:true`;
+/**
+ * Portugal and France (2026-10-21): the same Empathy instance serves
+ * pt.primor.eu/pt_pt and fr.primor.eu/fr_fr through `lang=pt` / `lang=fr`
+ * (links carry that host), searched with the local words for the same shelves.
+ */
+export const PRIMOR_MARKETS: Partial<Record<CountryCode, { lang: string; host: string; terms: string[]; acceptLanguage: string }>> = {
+  ES: { lang: "es", host: "https://www.primor.eu", terms: PRIMOR_TERMS, acceptLanguage: "es-ES,es;q=0.9" },
+  PT: {
+    lang: "pt",
+    host: "https://pt.primor.eu",
+    terms: ["perfume", "maquilhagem", "facial", "cabelo", "corporal", "estojo", "homem"],
+    acceptLanguage: "pt-PT,pt;q=0.9",
+  },
+  FR: {
+    lang: "fr",
+    host: "https://fr.primor.eu",
+    terms: ["parfum", "maquillage", "visage", "cheveux", "corps", "coffret", "homme"],
+    acceptLanguage: "fr-FR,fr;q=0.9",
+  },
+};
+
+export const primorUrl = (term: string, start: number, lang = "es"): string =>
+  `${API}?query=${encodeURIComponent(term)}&lang=${lang}&rows=${ROWS}&start=${start}&filter=facetAvailability:true`;
 
 const clean = (s: unknown): string => (typeof s === "string" ? s.replace(/\s+/g, " ").trim() : "");
 const AMOUNT = /^(recarga\s+)?\d[\d.,]*\s*(ml|l|cl|g|gr|kg|mg|ud\.?|uds\.?|unidades?)\b/i;
@@ -49,9 +70,9 @@ const AMOUNT = /^(recarga\s+)?\d[\d.,]*\s*(ml|l|cl|g|gr|kg|mg|ud\.?|uds\.?|unida
 /** "Perfumes de Hombre" → erkek, "Perfumes de Mujer" → kadin, kids → cocuk, else unisex. Pure. */
 export function primorGender(categories: unknown): ProductRecord["gender"] {
   const c = (Array.isArray(categories) ? categories : []).join(" | ").toLowerCase();
-  if (/beb[eé]s|niñ[oa]s|infantil/.test(c)) return "cocuk";
-  const w = /\bmujer\b/.test(c);
-  const m = /\bhombre\b/.test(c);
+  if (/beb[eé]s|niñ[oa]s|infantil|crian[cç]as|enfants?\b|b[ée]b[ée]s?\b/.test(c)) return "cocuk";
+  const w = /\b(?:mujer|mulher|femme)\b/.test(c);
+  const m = /\b(?:hombre|homem|homme)\b/.test(c);
   if (w && !m) return "kadin";
   if (m && !w) return "erkek";
   return null;
@@ -82,7 +103,8 @@ export function mapPrimor(p: any, country: CountryCode = "ES"): ProductRecord[] 
     const was = Number(v?.price);
     if (!v?.variantId || !Number.isFinite(price) || price <= 0) continue;
     if (!Number.isFinite(was) || was <= price) continue;
-    const url = typeof v.link === "string" && v.link.startsWith("https://www.primor.eu/") ? v.link : null;
+    const host = (PRIMOR_MARKETS[country] ?? PRIMOR_MARKETS.ES!).host;
+    const url = typeof v.link === "string" && v.link.startsWith(`${host}/`) ? v.link : null;
     if (!url) continue;
     const inStock = String(v.availability) === "true";
     const label = clean(v.variantValue);
@@ -116,11 +138,12 @@ export function mapPrimor(p: any, country: CountryCode = "ES"): ProductRecord[] 
   return out;
 }
 
-/** Register as `listPrimor(country)`. ES only (primor.eu/es_es). */
+/** Register as `listPrimor(country)`. ES (primor.eu/es_es), PT and FR. */
 export async function listPrimor(country: CountryCode): Promise<ProductRecord[]> {
-  if (country !== "ES") return [];
+  const market = PRIMOR_MARKETS[country];
+  if (!market) return [];
   const byId = new Map<string, ProductRecord>();
-  const next = new Map<string, number>(PRIMOR_TERMS.map((t) => [t, 0]));
+  const next = new Map<string, number>(market.terms.map((t) => [t, 0]));
   let requests = 0;
   let inStock = 0;
   while (next.size && requests < MAX_REQUESTS && inStock < CAP) {
@@ -128,9 +151,9 @@ export async function listPrimor(country: CountryCode): Promise<ProductRecord[]>
       if (requests >= MAX_REQUESTS || inStock >= CAP) break;
       if (requests > 0) await sleep(PAUSE_MS);
       requests++;
-      const d = await getJson<any>(primorUrl(term, start), {
+      const d = await getJson<any>(primorUrl(term, start, market.lang), {
         country,
-        headers: { "Accept-Language": "es-ES,es;q=0.9", Origin: "https://www.primor.eu", Referer: "https://www.primor.eu/" },
+        headers: { "Accept-Language": market.acceptLanguage, Origin: market.host, Referer: `${market.host}/` },
       });
       const rows: any[] = d?.catalog?.content ?? [];
       const total = Number(d?.catalog?.numFound) || 0;

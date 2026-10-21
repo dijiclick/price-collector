@@ -219,7 +219,13 @@ interface SfccSite {
 
 export const PVH_SFCC: Record<PvhBrand, Partial<Record<CountryCode, SfccSite>>> = {
   calvinklein: { US: { host: "https://www.calvinklein.us", site: "PVHCKUS", locale: "en_US", cgid: "Tier_0000010" } },
-  tommyhilfiger: { US: { host: "https://usa.tommy.com", site: "PVHTHUS", locale: "en_US", cgid: "Tier_18819388" } },
+  // Canada (2026-10-21): ca.tommy.com is the same SFRA build (`PVHTHCA`); the
+  // US sale category id serves the Canadian sale grid, priced "$54.50 CAD".
+  // Turkish IPs get 403 there; a GitHub runner gets 200 with tiles (probe 39652544828).
+  tommyhilfiger: {
+    US: { host: "https://usa.tommy.com", site: "PVHTHUS", locale: "en_US", cgid: "Tier_18819388" },
+    CA: { host: "https://ca.tommy.com", site: "PVHTHCA", locale: "en_CA", cgid: "Tier_18819388" },
+  },
 };
 
 /** Akamai lets mobile Safari through where desktop Chrome, okhttp and curl get 403. */
@@ -327,6 +333,11 @@ async function listSfcc(brand: PvhBrand, country: CountryCode): Promise<ProductR
       headers: { "User-Agent": IPHONE_UA, "X-Requested-With": "XMLHttpRequest", Accept: "text/html, */*; q=0.01" },
     });
     const tiles = tilesOf(html);
+    // Canada's grid names its currency on every price ("$54.50 CAD"); a page
+    // without it would be another market's list.
+    if (country === "CA" && page === 0 && tiles.length && !/class="value"[^>]*>\s*\$[\d.,]+\s*CAD\b/.test(html)) {
+      throw new Error(`pvh ${brand}/CA: sale grid not priced in CAD`);
+    }
     tilesSeen += tiles.length;
     let fresh = 0;
     for (const t of tiles) {

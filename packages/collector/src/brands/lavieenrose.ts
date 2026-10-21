@@ -49,7 +49,18 @@ export function coveoConfigOf(html: string): CoveoConfig | null {
   }
 }
 
-export function mapLaVieEnRose(raw: any): ProductRecord | null {
+/**
+ * The storefronts on this Coveo organisation. Bikini Village (2026-10-21) is
+ * La Vie en Rose's swimwear chain: same org, same document shape, its own
+ * source `bikinivillage-en-CA-CAD` (4,505 live colourways, 2,106 discounted,
+ * 885 of them in stock) and its own token page.
+ */
+export interface CoveoShop { brand: string; site: string; source: string }
+const LVER: CoveoShop = { brand: "lavieenrose", site: SITE, source: SOURCE };
+export const BIKINI_VILLAGE: CoveoShop = { brand: "bikinivillage", site: "https://www.bikinivillage.com", source: "bikinivillage-en-CA-CAD" };
+
+export function mapLaVieEnRose(raw: any, shop: CoveoShop = LVER): ProductRecord | null {
+  const SITE = shop.site;
   const price = Number(raw?.final_price);
   const full = Number(raw?.full_price);
   const id = String(raw?.product_code ?? raw?.permanentid ?? "");
@@ -67,7 +78,7 @@ export function mapLaVieEnRose(raw: any): ProductRecord | null {
   const men = raw.gender_men === "true";
   const cat = typeof raw.tracking_category === "string" ? raw.tracking_category.split("/").pop()!.trim() : null;
   return {
-    brand: "lavieenrose",
+    brand: shop.brand,
     country: "CA",
     externalId: id,
     name: String(raw.title ?? "").trim(),
@@ -81,17 +92,26 @@ export function mapLaVieEnRose(raw: any): ProductRecord | null {
     category: cat || null,
     gender: women && !men ? "kadin" : men && !women ? "erkek" : null,
     variants: sizes.length || raw.color_name ? { colors: raw.color_name ? [String(raw.color_name)] : [], sizes } : null,
-    groupKey: raw.style_number ? `lavieenrose:${raw.style_number}` : null,
+    groupKey: raw.style_number ? `${shop.brand}:${raw.style_number}` : null,
     colorName: raw.color_name ?? null,
   };
 }
 
 export async function listLaVieEnRose(country: CountryCode = "CA"): Promise<ProductRecord[]> {
+  return listCoveoShop(LVER, TOKEN_PAGE, country);
+}
+
+/** Bikini Village (CA): the sister store's own sale page carries the same kind of token. */
+export async function listBikiniVillage(country: CountryCode = "CA"): Promise<ProductRecord[]> {
+  return listCoveoShop(BIKINI_VILLAGE, `${BIKINI_VILLAGE.site}/en/sale`, country);
+}
+
+async function listCoveoShop(shop: CoveoShop, tokenPage: string, country: CountryCode): Promise<ProductRecord[]> {
   if (country !== "CA") return [];
-  const cfg = coveoConfigOf(await getText(TOKEN_PAGE, { country: "CA" }));
-  if (!cfg) throw new Error("lavieenrose/CA: no CoveoConfig on the sale page");
+  const cfg = coveoConfigOf(await getText(tokenPage, { country: "CA" }));
+  if (!cfg) throw new Error(`${shop.brand}/CA: no CoveoConfig on the sale page`);
   const out: ProductRecord[] = [];
-  const aq = `@source=="${SOURCE}" @discount_percentage>0 @product_status==(ReadyForPublish,New)`;
+  const aq = `@source=="${shop.source}" @discount_percentage>0 @product_status==(ReadyForPublish,New)`;
   for (let first = 0; first < CAP; first += PAGE) {
     const data = await getJson<any>(`${cfg.platformUrl}/rest/search/v2?organizationId=${encodeURIComponent(cfg.organizationId)}`, {
       method: "POST",
@@ -102,7 +122,7 @@ export async function listLaVieEnRose(country: CountryCode = "CA"): Promise<Prod
     });
     const results: any[] = data?.results ?? [];
     for (const r of results) {
-      const rec = mapLaVieEnRose(r?.raw);
+      const rec = mapLaVieEnRose(r?.raw, shop);
       if (rec) out.push(rec);
     }
     if (results.length < PAGE || first + PAGE >= Number(data?.totalCount ?? 0)) break;

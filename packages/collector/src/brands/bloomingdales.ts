@@ -1,5 +1,7 @@
 /**
- * Bloomingdale's Dubai (bloomingdales.ae, Al Tayer) — UAE only.
+ * Bloomingdale's Dubai (bloomingdales.ae, Al Tayer) — UAE, and since
+ * 2026-10-21 Kuwait (bloomingdales.com.kw: the same SCAPI org and public
+ * client, site `BloomingDales_KW`, prices in KWD).
  *
  * Measured 2026-10-11: a Salesforce PWA Kit storefront whose page config
  * publishes the public SCAPI client (`commerceAPI.parameters` in the HTML).
@@ -23,11 +25,14 @@ import { getJson } from "../http";
 import { toMinor } from "../normalize";
 import type { CountryCode } from "../../../../lib/countries";
 
-const SITE = "https://bloomingdales.ae";
+/** Per market: storefront, SCAPI site id, locale and the currency it prices in. */
+export const BLOOMINGDALES_MARKETS: Partial<Record<CountryCode, { site: string; siteId: string; locale: string; currency: string }>> = {
+  AE: { site: "https://bloomingdales.ae", siteId: "BloomingDales_AE", locale: "en-AE", currency: "AED" },
+  KW: { site: "https://bloomingdales.com.kw", siteId: "BloomingDales_KW", locale: "en-KW", currency: "KWD" },
+};
 const SHORT = "cfcgu8kp";
 const ORG = "f_ecom_bljm_prd";
 const CLIENT = "a527050f-fa90-4a90-9950-8edd4cd5eb53";
-const SITE_ID = "BloomingDales_AE";
 const HOST = `https://${SHORT}.api.commercecloud.salesforce.com`;
 const PER_PAGE = 100;
 
@@ -43,29 +48,31 @@ export const slugify = (s: string) =>
   s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 /** Map one product-search hit. Pure. */
-export function mapBloomingdales(h: any, gender: ProductRecord["gender"]): ProductRecord | null {
+export function mapBloomingdales(h: any, gender: ProductRecord["gender"], country: CountryCode = "AE"): ProductRecord | null {
+  const m = BLOOMINGDALES_MARKETS[country];
+  if (!m) return null;
   const sale = Number(h?.c_price?.sales?.value ?? h?.price);
   const list = Number(h?.c_price?.list?.value);
   const id = String(h?.productId ?? "");
   const rep = String(h?.c_represented_product_id ?? h?.representedProduct?.id ?? "");
   const title = String(h?.c_name_en ?? h?.productName ?? "").replace(/\s+/g, " ").trim();
   if (!id || !rep || !title || !(sale > 0)) return null;
-  if (h?.currency && h.currency !== "AED") return null;
+  if (h?.currency && h.currency !== m.currency) return null;
   const brand = h?.c_brand ? String(h.c_brand).trim() : "";
   const imgs: string[] = (h?.c_images ?? []).map((i: any) => i?.absURL ?? i?.url).filter((u: unknown) => typeof u === "string");
   const first = h?.c_image?.absURL ?? imgs[0] ?? h?.image?.disBaseLink ?? null;
   const colour = (h?.c_colors ?? []).find((c: any) => c?.selected)?.text ?? null;
   return {
     brand: "bloomingdales",
-    country: "AE",
+    country,
     externalId: id,
     name: brand ? `${brand} ${title}` : title,
-    url: `${SITE}/${slugify(`${brand} ${title}`)}-${rep}.html`,
+    url: `${m.site}/${slugify(`${brand} ${title}`)}-${rep}.html`,
     imageUrl: first,
     images: cleanGallery(imgs, first),
     price: toMinor(sale),
     listPrice: Number.isFinite(list) && list > sale ? toMinor(list) : null,
-    currency: "AED",
+    currency: m.currency,
     inStock: h?.orderable !== false && h?.c_nonBuyable !== true,
     category: null,
     gender,
@@ -80,17 +87,18 @@ function b64url(buf: ArrayBuffer | Uint8Array): string {
 }
 
 /** SLAS public-client guest login (PKCE). Returns a shopper access token. */
-export async function guestToken(): Promise<string> {
+export async function guestToken(country: CountryCode = "AE"): Promise<string> {
+  const { site, siteId } = BLOOMINGDALES_MARKETS[country]!;
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
   const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
-  const redirect = `${SITE}/callback`;
+  const redirect = `${site}/callback`;
   const q = new URLSearchParams({
     redirect_uri: redirect, response_type: "code", client_id: CLIENT, hint: "guest",
-    code_challenge: challenge, channel_id: SITE_ID,
+    code_challenge: challenge, channel_id: siteId,
   });
   // A 303 is the answer here, so this one call cannot go through getJson.
   const res = await fetch(`${HOST}/shopper/auth/v1/organizations/${ORG}/oauth2/authorize?${q}`, { redirect: "manual" });
-  const loc = new URL(res.headers.get("location") ?? "", SITE);
+  const loc = new URL(res.headers.get("location") ?? "", site);
   const code = loc.searchParams.get("code");
   const usid = loc.searchParams.get("usid");
   if (!code || !usid) throw new Error(`bloomingdales: SLAS authorize gave ${res.status}`);
@@ -99,16 +107,17 @@ export async function guestToken(): Promise<string> {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code, usid, code_verifier: verifier, grant_type: "authorization_code_pkce",
-      redirect_uri: redirect, client_id: CLIENT, channel_id: SITE_ID,
+      redirect_uri: redirect, client_id: CLIENT, channel_id: siteId,
     }).toString(),
-    country: "AE",
+    country,
   });
   if (!tok?.access_token) throw new Error("bloomingdales: no SLAS token");
   return tok.access_token;
 }
 
-export function searchUrl(refine: string, offset: number): string {
-  const q = new URLSearchParams({ siteId: SITE_ID, locale: "en-AE", currency: "AED", limit: String(PER_PAGE), offset: String(offset) });
+export function searchUrl(refine: string, offset: number, country: CountryCode = "AE"): string {
+  const m = BLOOMINGDALES_MARKETS[country]!;
+  const q = new URLSearchParams({ siteId: m.siteId, locale: m.locale, currency: m.currency, limit: String(PER_PAGE), offset: String(offset) });
   q.append("refine", "cgid=sale-public");
   q.append("refine", refine);
   return `${HOST}/search/shopper-search/v1/organizations/${ORG}/product-search?${q}`;
@@ -117,19 +126,19 @@ export function searchUrl(refine: string, offset: number): string {
 export const brand = "bloomingdales";
 
 export async function listProducts(country: CountryCode): Promise<ProductRecord[]> {
-  if (country !== "AE") return [];
-  const token = await guestToken();
+  if (!BLOOMINGDALES_MARKETS[country]) return [];
+  const token = await guestToken(country);
   const byId = new Map<string, ProductRecord>();
   for (const w of WALKS) {
     for (let page = 0; page < w.pages; page++) {
-      const data = await getJson<any>(searchUrl(w.refine, page * PER_PAGE), {
+      const data = await getJson<any>(searchUrl(w.refine, page * PER_PAGE, country), {
         headers: { Authorization: `Bearer ${token}` },
         country,
         retries: 1,
       }).catch(() => null);
       const hits: any[] = data?.hits ?? [];
       for (const h of hits) {
-        const r = mapBloomingdales(h, w.gender);
+        const r = mapBloomingdales(h, w.gender, country);
         if (r && r.listPrice != null && !byId.has(r.externalId)) byId.set(r.externalId, r);
       }
       if (hits.length < PER_PAGE) break;

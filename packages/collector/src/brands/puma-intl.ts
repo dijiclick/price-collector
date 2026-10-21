@@ -1,5 +1,5 @@
 /**
- * PUMA outside Turkey (US, CA, GB, CH) through the storefront's own GraphQL.
+ * PUMA outside Turkey (US, CA, GB, CH, the EU shops, AU) through the storefront's own GraphQL.
  *
  * tr.puma.com is a local distributor's Magento shop (brands/puma.ts); every
  * other market here runs PUMA's global headless storefront ("nitro", Next.js +
@@ -20,8 +20,8 @@
  *   aliased into one request, for a rotating random subset each run (the upsert
  *   keeps variants an earlier run found, so coverage accumulates).
  *
- * Australia (au.puma.com) is a separate SFCC SiteGenesis shop without this API
- * and is not covered here.
+ * Australia (au.puma.com) used to be a separate SFCC SiteGenesis shop; since
+ * at least 2026-10-21 it runs this same storefront and API (AU below).
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -57,6 +57,9 @@ export const PUMA_MARKETS: Partial<Record<CountryCode, { host: string; locale: s
   PT: { host: "eu.puma.com", locale: "en-PT", site: "https://eu.puma.com/pt/en" },
   FI: { host: "eu.puma.com", locale: "en-FI", site: "https://eu.puma.com/fi/en" },
   DK: { host: "eu.puma.com", locale: "en-DK", site: "https://eu.puma.com/dk/en" },
+  // Australia moved onto the same nitro storefront (2026-10-21): guestLogon
+  // 200 from a runner (probe 39653951827), sale ≈1,500+ colourways, AUD.
+  AU: { host: "au.puma.com", locale: "en-AU", site: "https://au.puma.com/au/en" },
 };
 
 export const LISTING_QUERY = `query CategoryPLP($url: String!, $offset: Int!, $limit: Int!) {

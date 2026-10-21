@@ -112,6 +112,12 @@ export const ADIDAS_MARKETS: Partial<Record<CountryCode, { lang: string; collect
   // (SG ~4,400 rows in SGD, HK ~3,800 in HKD; HK's `sale` is empty).
   SG: { lang: "en-SG", collection: "outlet", site: "https://www.adidas.com.sg" },
   HK: { lang: "en-HK", collection: "outlet", site: "https://www.adidas.com.hk/en" },
+  // Gulf, 2026-10-21: en-AE / en-SA / en-KW each answer their own AED/SAR/KWD
+  // catalogue; there `outlet` is only a text search (collection_match false) and
+  // `sale` is the collection, as in Japan. en-QA is refused (428) — no Qatar.
+  AE: { lang: "en-AE", collection: "sale", site: "https://www.adidas.ae/en" },
+  SA: { lang: "en-SA", collection: "sale", site: "https://www.adidas.com.sa/en" },
+  KW: { lang: "en-KW", collection: "sale", site: "https://www.adidas.com.kw/en" },
 };
 
 export function appHeaders(country: CountryCode, ua: string = appUa()): Record<string, string> {

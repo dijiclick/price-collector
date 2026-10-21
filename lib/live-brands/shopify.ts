@@ -7,7 +7,8 @@
 import type { LiveProduct } from "../live-lookup";
 import { COUNTRIES, type CountryCode } from "../countries";
 import { UA } from "../live-http";
-import { SHOPIFY_STORES, type ShopifySite } from "./shopify-sites";
+import type { ShopifySite } from "./shopify-sites";
+import { ALL_SHOPIFY as SHOPIFY_STORES } from "./shopify-all";
 
 const bare = (h: string) => h.toLowerCase().replace(/^www\./, "");
 

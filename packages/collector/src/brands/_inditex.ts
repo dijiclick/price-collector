@@ -43,6 +43,12 @@ export interface InditexMarket {
   currency: string;
   /** Accept-Language for the HTML fallback. */
   acceptLanguage: string;
+  /**
+   * Multiplier to our ×100 integers. Absent (= 1) where the store prices in
+   * hundredths (`currencyDecimals` -2, every market before 2026-10-21); 100 for
+   * a no-minor-unit store (KRW/JPY, `currencyDecimals` 0: "39900" = ₩39,900).
+   */
+  priceScale?: number;
 }
 
 interface StoreLanguage {
@@ -135,7 +141,9 @@ export function currencyFromStoreDetail(detail: any, country: CountryCode, domai
   if (got !== want) {
     throw new Error(`${domain}: ${country} store prices in ${got ?? "unknown currency"}, expected ${want}`);
   }
-  if (locale?.currencyDecimals !== -2) {
+  // KRW/JPY stores report whole units (`currencyDecimals` 0); resolveMarket scales them.
+  const wholeUnits = locale?.currencyDecimals === 0 && (got === "KRW" || got === "JPY");
+  if (locale?.currencyDecimals !== -2 && !wholeUnits) {
     throw new Error(
       `${domain}: ${country} currencyDecimals ${locale?.currencyDecimals}, expected -2 (prices in hundredths)`,
     );
@@ -189,7 +197,10 @@ export async function resolveMarket(
     if (country === "TR") return { ...partial, currency: "TRY" };
     throw err;
   }
-  return { ...partial, currency: currencyFromStoreDetail(detail, country, site.domain) };
+  const currency = currencyFromStoreDetail(detail, country, site.domain);
+  return detail?.details?.locale?.currencyDecimals === 0
+    ? { ...partial, currency, priceScale: 100 }
+    : { ...partial, currency };
 }
 
 interface InditexCategory {
@@ -590,7 +601,7 @@ export function pickVariants(detail: any): ProductVariants | null {
 
 export function mapProduct(
   site: Pick<InditexSite, "brand" | "domain">,
-  m: Pick<InditexMarket, "country" | "urlPrefix" | "currency">,
+  m: Pick<InditexMarket, "country" | "urlPrefix" | "currency" | "priceScale">,
   p: any,
   category: string | null,
   gender: ProductRecord["gender"] = null,
@@ -619,6 +630,12 @@ export function mapProduct(
     }
   }
   if (!Number.isFinite(price)) return null;
+  // KRW/JPY stores (see InditexMarket.priceScale); 1 everywhere else.
+  const k = m.priceScale ?? 1;
+  if (k !== 1) {
+    price *= k;
+    if (listPrice != null) listPrice *= k;
+  }
 
   const name: string | undefined = real?.name ?? p.name;
   if (!name) return null;

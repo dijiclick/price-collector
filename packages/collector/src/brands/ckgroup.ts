@@ -38,6 +38,8 @@ interface Shop {
   step: number;
   /** Markets with a deals category (Pedro HK has none: no sale, no exclusive deals). */
   markets: CountryCode[];
+  /** Markets served from their own domain instead of `host` (same SFCC org, same grid). */
+  hosts?: Partial<Record<CountryCode, string>>;
   cats: { cgid: string; gender: ProductRecord["gender"] }[];
 }
 
@@ -46,7 +48,16 @@ export const CKGROUP: Record<CkGroupSlug, Shop> = {
     host: "https://www.charleskeith.com",
     code: "ck",
     step: 18,
-    markets: ["SG", "HK"],
+    markets: ["SG", "HK", "AE", "SA", "QA", "KW", "AU", "KR"],
+    // AU and KR added 2026-10-21: same grid, AUD / KRW ("₩119,900"), English locale.
+    // Gulf, 2026-10-21: UAE/Saudi/Qatar each have their own domain (the
+    // charleskeith.com path answers "technical problems" for ae/qa); Kuwait
+    // stays on charleskeith.com. Same `mcsale` grid, same 18-tile step.
+    hosts: {
+      AE: "https://www.charleskeith.ae",
+      SA: "https://www.charleskeith.sa",
+      QA: "https://www.charleskeith.qa",
+    },
     cats: [{ cgid: "mcsale", gender: "kadin" }],
   },
   pedro: {
@@ -65,7 +76,18 @@ export const CKGROUP: Record<CkGroupSlug, Shop> = {
 export const CKGROUP_MARKETS: Partial<Record<CountryCode, { cc: string; locale: string }>> = {
   SG: { cc: "sg", locale: "en_SG" },
   HK: { cc: "hk", locale: "en_HK" },
+  AE: { cc: "ae", locale: "en_AE" },
+  SA: { cc: "sa", locale: "en_SA" },
+  QA: { cc: "qa", locale: "en_QA" },
+  KW: { cc: "kw", locale: "en_KW" },
+  // Charles & Keith only (Pedro AU/HK have no strikethrough category; their
+  // "Promotions" page is editorial, 2026-10-21).
+  AU: { cc: "au", locale: "en_AU" },
+  KR: { cc: "kr", locale: "en_KR" },
 };
+
+/** The shop's host for a market. */
+const hostOf = (s: Shop, country: CountryCode): string => s.hosts?.[country] ?? s.host;
 
 /** Steps per request: C&K 180 tiles (~9 MB), Pedro 192. */
 const STEPS = (s: Shop) => Math.floor(200 / s.step);
@@ -79,7 +101,7 @@ export function gridUrl(slug: CkGroupSlug, country: CountryCode, cgid: string, i
   const s = CKGROUP[slug];
   const m = CKGROUP_MARKETS[country]!;
   const k = STEPS(s);
-  return `${s.host}/on/demandware.store/Sites-${s.code}-${m.cc}-Site/${m.locale}/Search-UpdateGrid?cgid=${cgid}&page=${1 + i * k}&sz=${s.step * k}`;
+  return `${hostOf(s, country)}/on/demandware.store/Sites-${s.code}-${m.cc}-Site/${m.locale}/Search-UpdateGrid?cgid=${cgid}&page=${1 + i * k}&sz=${s.step * k}`;
 }
 
 /** "S$1,075.90" / "HK$ 899.00" → 1075.9 / 899. */
@@ -132,7 +154,7 @@ export function parseGrid(
     if (!name) continue;
     const colour = altParts.length >= 3 ? altParts[altParts.length - 2] : null;
     const href = c.match(/class="full-pdp-link[^"]*"[^>]*href="([^"]+)"/)?.[1] ?? c.match(/href="(\/[a-z]{2}\/[^"]+\.html)"/)?.[1];
-    const url = typeof ga.item_url === "string" && ga.item_url.startsWith("http") ? ga.item_url : href ? `${shop.host}${href}` : null;
+    const url = typeof ga.item_url === "string" && ga.item_url.startsWith("http") ? ga.item_url : href ? `${hostOf(shop, country)}${href}` : null;
     if (!url) continue;
     const avail = c.match(/data-availability="([^"]+)"/)?.[1];
     out.push({

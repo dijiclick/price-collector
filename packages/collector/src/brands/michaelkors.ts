@@ -70,12 +70,46 @@ interface Market {
 const EU_EDGES = ["https://www.michaelkors.global", "https://www.michaelkors.co.uk", "https://www.michaelkors.eu"];
 const others = (api: string) => EU_EDGES.filter((h) => h !== api);
 
+/**
+ * The euro stores (2026-10-21): one SFCC site per country (mk_de, mk_fr, mk_it,
+ * mk_es, mk_nl, mk_be, mk_at, mk_ie) on the same Akamai realm as CH/UK. DE/FR/
+ * IT/ES have their own domains; NL/BE/AT/IE live on michaelkors.eu. Every
+ * edge refuses a call now and then (michaelkors.it and .global 403'd mk_it while
+ * .eu served it, same minute), so each market tries its own domain, then the
+ * other EU edges. Only the local locale is served (`en_DE` falls back to
+ * German), so names are in the market's language and the product type comes
+ * from `categoryEu` (a word list per language) instead of the English last word.
+ */
+function EU_MARKETS(): Partial<Record<CountryCode, Market>> {
+  const eu = "https://www.michaelkors.eu";
+  const edges = [eu, ...EU_EDGES.filter((h) => h !== eu)];
+  const mk = (host: string, site: string, locale: string): Market => ({
+    host,
+    api: host,
+    site,
+    locale,
+    mirrors: edges.filter((h) => h !== host),
+    outletMixed: false,
+  });
+  return {
+    DE: mk("https://www.michaelkors.de", "mk_de", "de_DE"),
+    FR: mk("https://www.michaelkors.fr", "mk_fr", "fr_FR"),
+    IT: mk("https://www.michaelkors.it", "mk_it", "it_IT"),
+    ES: mk("https://www.michaelkors.es", "mk_es", "es_ES"),
+    NL: mk(eu, "mk_nl", "nl_NL"),
+    BE: mk(eu, "mk_be", "nl_BE"),
+    AT: mk(eu, "mk_at", "de_AT"),
+    IE: mk(eu, "mk_ie", "en_IE"),
+  };
+}
+
 export const MK_MARKETS: Partial<Record<CountryCode, Market>> = {
   US: { host: "https://www.michaelkors.com", api: "https://www.michaelkors.com", site: "mk_us", locale: "en_US", outletMixed: true },
   CA: { host: "https://www.michaelkors.com", api: "https://www.michaelkors.com", site: "mk_ca", locale: "en_CA", outletMixed: true },
   GB: { host: "https://www.michaelkors.co.uk", api: "https://www.michaelkors.global", site: "mk_uk", locale: "en_GB", mirrors: others("https://www.michaelkors.global"), outletMixed: false },
   CH: { host: "https://www.michaelkors.eu", api: "https://www.michaelkors.global", site: "mk_ch", locale: "en_CH", mirrors: others("https://www.michaelkors.global"), outletMixed: false },
   AU: { host: "https://www.michaelkors.global", api: "https://www.michaelkors.global", site: "mk_anz", locale: "en_AU", mirrors: others("https://www.michaelkors.global"), outletMixed: false },
+  ...EU_MARKETS(),
 };
 
 /** Safari carries no client hints, so Akamai has nothing to find inconsistent. */
@@ -143,6 +177,12 @@ export function decodeEntities(s: string): string {
   return s
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
     .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    // Accented letters in the euro stores' names ("&agrave;", "&ecirc;", "&szlig;").
+    .replace(/&([A-Za-z])(acute|grave|circ|uml|tilde|cedil|ring);/g, (_, l: string, k: string) =>
+      (l + ({ acute: "\u0301", grave: "\u0300", circ: "\u0302", uml: "\u0308", tilde: "\u0303", cedil: "\u0327", ring: "\u030a" } as Record<string, string>)[k]).normalize("NFC"),
+    )
+    .replace(/&szlig;/g, "ß")
+    .replace(/&euro;/g, "€")
     .replace(/&pound;/g, "£")
     .replace(/&eacute;/g, "é")
     .replace(/&egrave;/g, "è")
@@ -223,8 +263,52 @@ export function parseGrid(html: string): Tile[] {
   return out;
 }
 
-/** The product type MK's names end with ("… Crossbody Bag", "… Kitten Mule"). */
-function categoryOf(name: string): string | null {
+/**
+ * Product type from a German/French/Italian/Spanish/Dutch MK name, in English
+ * ("Henkeltasche Emilia Small …" → "Bag"). First match wins, so wallets come
+ * before bags (Brieftasche) and watches before jewellery. Pure.
+ */
+const EU_TYPES: [RegExp, string][] = [
+  [/portemonnaie|geldb[öo]rse|brieftasche|kartenetui|portefeuille|porte-cartes|porte-monnaie|cartera|billetera|monedero|tarjetero|portafoglio|portacarte|portamonete|portemonnee|pasjeshouder|wallet/, "Wallet"],
+  [/smartwatch|\buhr\b|uhren|montre|reloj|orologio|horloge/, "Watch"],
+  [/rucksack|sac à dos|mochila|zaino|rugzak|backpack/, "Backpack"],
+  [/tasche|\bsacs?\b|bolso|borsa|\btas\b|shopper|\btote\b|clutch|crossbody|pochette|satchel|\bhobo\b|bandouli[èe]re|bandolera|tracolla|riñonera|marsupio|banane|cabas/, "Bag"],
+  [/sneaker|basket|zapatilla|turnschuh/, "Sneaker"],
+  [/stiefel|stiefelette|\bbottes?\b|bottine|\bbotas?\b|botín|botines|stivale|stivaletto|tronchetto|laars|enkellaars/, "Boot"],
+  [/sandal|spartiate|espadrille|alpargata|pantolette|\bmule|ciabatta|slipper|zueco|clog|tongs?\b|chancla/, "Sandal"],
+  [/pumps?\b|escarpin|salón|décolleté|\bhakken|tacón/, "Pump"],
+  [/loafer|mokassin|mocassin|mocasín|instapper/, "Loafer"],
+  [/ballerin|bailarina|\bbabies\b|chaussure plate|\bflats?\b|merceditas/, "Flat"],
+  [/combinaison|overall|jumpsuit|mono\b|tuta\b/, "Jumpsuit"],
+  [/kleid|\brobe\b|vestido|vestito|\babito\b|\bjurk/, "Dress"],
+  [/mantel|manteau|abrigo|cappotto|\bjas\b|parka|trench|daunen|doudoune|plumífero|piumino/, "Coat"],
+  [/jacke|blouson|\bveste\b|chaqueta|cazadora|giacca|giubbotto|\bjack\b|blazer|americana/, "Jacket"],
+  [/pullover|strick|\bpull\b|jersey|maglione|maglia|\btrui\b|cardigan|sweatshirt|sweat|hoodie|felpa|sudadera/, "Sweater"],
+  [/bluse|blouse|blusa|hemd|chemise|camisa|chemisier|camicia|overhemd|t-shirt|\btop\b|tee-shirt|camiseta|polo|\bhaut\b|débardeur|tanktop|canotta|bodysuit|\bbody\b|corsage|bustier/, "Top"],
+  [/\brock\b|\bjupe\b|falda|gonna|\brok\b/, "Skirt"],
+  [/\bhose\b|pantalon|pantalón|pantaloni|broek|\bjeans?\b|vaqueros?\b|legging|shorts?\b|bermuda/, "Pants"],
+  [/halskette|\bkette\b|collier|\bcollar\b|collana|ketting|anhänger|pendentif|colgante|ciondolo|hanger/, "Necklace"],
+  [/armband|armreif|bracelet|pulsera|brazalete|bracciale/, "Bracelet"],
+  [/ohrring|ohrstecker|boucles? d.oreilles|\bcréoles|pendientes|orecchini|oorbel|oorknop/, "Earrings"],
+  [/\bring\b|\bbague|anillo|anello/, "Ring"],
+  [/sonnenbrille|lunettes|gafas|occhiali|zonnebril/, "Sunglasses"],
+  [/schal|écharpe|foulard|bufanda|pañuelo|sciarpa|sjaal/, "Scarf"],
+  [/mütze|bonnet|gorro|berretto|cappello|\bhut\b|chapeau|sombrero|\bmuts\b|\bpet\b|\bcap\b|\bbob\b|cagoule|balaclava|passamontagna|pasamontañas|fischerhut|bucket/, "Hat"],
+  [/handschuh|\bgants\b|guantes|guanti|handschoen/, "Gloves"],
+  [/gürtel|ceinture|cinturón|cintura|\briem\b/, "Belt"],
+  [/schlüssel|porte-clés|llavero|portachiavi|sleutelhanger|taschenanhänger|charm/, "Keychain"],
+];
+
+export function categoryEu(name: string): string | null {
+  const n = name.toLowerCase();
+  for (const [re, type] of EU_TYPES) if (re.test(n)) return type;
+  return null;
+}
+
+/** The product type MK's names end with ("… Crossbody Bag", "… Kitten Mule"); non-English stores use `categoryEu`. */
+function categoryOf(name: string, country?: CountryCode): string | null {
+  const locale = country ? MK_MARKETS[country]?.locale : undefined;
+  if (locale && !locale.startsWith("en_")) return categoryEu(name);
   const last = name.replace(/[^A-Za-z\s-]/g, " ").trim().split(/\s+/).pop();
   return last && last.length > 2 ? last[0].toUpperCase() + last.slice(1) : null;
 }
@@ -252,7 +336,7 @@ export function mapTile(tile: Tile, country: CountryCode, men: Set<string>): Pro
     listPrice: toMinor(tile.list),
     currency: COUNTRIES[country].currency,
     inStock: true,
-    category: categoryOf(tile.name),
+    category: categoryOf(tile.name, country),
     gender: men.has(tile.pid) ? "erkek" : "kadin",
     variants: null,
     groupKey: null,
@@ -297,7 +381,7 @@ export function mapVariation(tile: Tile, json: any, country: CountryCode, men: S
     listPrice: toMinor(list),
     currency,
     inStock,
-    category: categoryOf(tile.name),
+    category: categoryOf(tile.name, country),
     gender: men.has(tile.pid) ? "erkek" : "kadin",
     variants: sizes.length ? { colors: colourName ? [colourName] : [], sizes } : null,
     groupKey: null,

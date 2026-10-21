@@ -48,7 +48,21 @@ export function pageBody(pageNumber: number): string {
   });
 }
 
-export const pageUrl = () => `${API}?${new URLSearchParams({ rfk_account: "dswus_prod", banner: "dswus", uri: URI })}`;
+/**
+ * Markets. Canada (2026-10-21): dsw.ca runs the same storefront on its own
+ * gateway `api.dsw.ca` with account `dswca_prod` / banner `dswca` (read from
+ * dsw.ca's env config and main bundle). Like api.dsw.com it refuses Turkish IPs
+ * and answers a GitHub runner (probe 39652272653: 200). Prices are CAD.
+ */
+export const DSW_MARKETS: Partial<Record<CountryCode, { site: string; api: string; account: string; banner: string }>> = {
+  US: { site: SITE, api: API, account: "dswus_prod", banner: "dswus" },
+  CA: { site: "https://www.dsw.ca", api: "https://api.dsw.ca/content/api/v3/page", account: "dswca_prod", banner: "dswca" },
+};
+
+export const pageUrl = (country: CountryCode = "US") => {
+  const m = DSW_MARKETS[country] ?? DSW_MARKETS.US!;
+  return `${m.api}?${new URLSearchParams({ rfk_account: m.account, banner: m.banner, uri: URI })}`;
+};
 
 const num = (x: unknown): number | null => {
   const n = Number(x);
@@ -99,7 +113,7 @@ export function mapDswProduct(p: any, country: CountryCode = "US"): ProductRecor
     country,
     externalId: colour ? `${id}-${colour}` : id,
     name: full,
-    url: `${SITE}/product/${slugOf(full)}/${id}${colour ? `?activeColor=${encodeURIComponent(colour)}` : ""}`,
+    url: `${(DSW_MARKETS[country] ?? DSW_MARKETS.US!).site}/product/${slugOf(full)}/${id}${colour ? `?activeColor=${encodeURIComponent(colour)}` : ""}`,
     imageUrl: image,
     images: cleanGallery([image], image),
     price: toMinor(now),
@@ -115,15 +129,16 @@ export function mapDswProduct(p: any, country: CountryCode = "US"): ProductRecor
 }
 
 export async function listDsw(country: CountryCode): Promise<ProductRecord[]> {
-  if (country !== "US") return [];
+  const m = DSW_MARKETS[country];
+  if (!m) return [];
   const byId = new Map<string, ProductRecord>();
   let inStock = 0;
   for (let page = 1; page <= MAX_PAGES && inStock < CAP; page++) {
     if (page > 1) await sleep(PAUSE_MS);
-    const j = await getJson<any>(pageUrl(), {
+    const j = await getJson<any>(pageUrl(country), {
       method: "POST",
       country,
-      headers: { "Content-Type": "application/json", Origin: SITE, Referer: `${SITE}${URI}` },
+      headers: { "Content-Type": "application/json", Origin: m.site, Referer: `${m.site}${URI}` },
       body: pageBody(page),
     });
     const w = (j?.widgets ?? []).find((x: any) => x?.id === "list_products");

@@ -21,6 +21,7 @@
 import type { ProductRecord } from "../types";
 import { getText } from "../http";
 import type { CountryCode } from "../../../../lib/countries";
+import { listBonprixIntl } from "./bonprix-intl";
 
 const SITE = "https://www.bonprix.de";
 export const BONPRIX_TREES: { path: string; gender: "kadin" | "erkek"; pages: number }[] = [
@@ -113,7 +114,7 @@ export function toRecord(c: BonprixCard, gender: ProductRecord["gender"], inStoc
 }
 
 export async function listBonprix(country: CountryCode, fetchHtml: (u: string) => Promise<string> = (u) => getText(u, { country, timeoutMs: 60_000, headers: { "Accept-Language": "de-DE,de;q=0.9" } })): Promise<ProductRecord[]> {
-  if (country !== "DE") return [];
+  if (country !== "DE") return listBonprixIntl(country);
   const byId = new Map<string, ProductRecord>();
   let calls = 0;
   for (const tree of BONPRIX_TREES) {

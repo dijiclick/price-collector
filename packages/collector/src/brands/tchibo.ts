@@ -34,6 +34,18 @@ export const TCHIBO_TREES: { path: string; gender: "kadin" | "erkek" }[] = [
   { path: "/categories/sale/herren", gender: "erkek" },
 ];
 
+/**
+ * Tchibo Austria and Switzerland (2026-10-21): the same storefront, same sale
+ * paths and payload on tchibo.at / tchibo.ch. Prices are in cents of the
+ * shop's currency (`currencyCode` "EUR_AT" / "CHF"); both carry the 30-day
+ * `bestPriceAmount` too.
+ */
+export const TCHIBO_MARKETS: Partial<Record<CountryCode, { site: string; currency: string; lang: string }>> = {
+  DE: { site: SITE, currency: "EUR", lang: "de-DE,de;q=0.9" },
+  AT: { site: "https://www.tchibo.at", currency: "EUR", lang: "de-AT,de;q=0.9" },
+  CH: { site: "https://www.tchibo.ch", currency: "CHF", lang: "de-CH,de;q=0.9" },
+};
+
 const WRAPPERS = new Set(["ShallowReactive", "Reactive", "Ref", "ShallowRef"]);
 
 /** Nuxt's payload is devalue-flattened: every value is an index into one array. */
@@ -72,12 +84,16 @@ export function categoryResults(html: string): { numFound: number; items: any[] 
 const SIZE_STATE: Record<string, SizeVariant["availability"]> = { AVAILABLE: "in_stock", UNAVAILABLE: "out_of_stock", BACK_IN_STOCK_REGISTRATION_POSSIBLE: "out_of_stock" };
 
 /** Map one item (one colour). Pure. Null unless it is cheaper than its 30-day low. */
-export function mapTchibo(it: any, gender: ProductRecord["gender"]): ProductRecord | null {
+export function mapTchibo(it: any, gender: ProductRecord["gender"], country: CountryCode = "DE"): ProductRecord | null {
+  const mk = TCHIBO_MARKETS[country] ?? TCHIBO_MARKETS.DE!;
+  const site = mk.site;
   const id = it?.id;
   const view = typeof it?.productViewUrl === "string" ? it.productViewUrl : "";
   const title = String(it?.title ?? "").trim();
   const price = Number(it?.price?.current);
   if (!id || !view.startsWith("/") || !title || !(price > 0)) return null;
+  const cc = String(it.price?.currencyCode ?? "");
+  if (country !== "DE" && cc && !cc.startsWith(mk.currency)) return null;
   const best = Number(it.price?.bestPriceAmount);
   const old = Number(it.price?.old);
   // The Omnibus reference when Tchibo gives one, else its original price.
@@ -89,22 +105,22 @@ export function mapTchibo(it: any, gender: ProductRecord["gender"]): ProductReco
   const sizes: SizeVariant[] = dims
     .filter((d) => typeof d?.name === "string" && d.name.trim())
     .map((d) => ({ label: d.name.trim(), availability: SIZE_STATE[String(d.availability)] ?? "out_of_stock" }));
-  const img = (u: unknown) => (typeof u === "string" && u.startsWith("/") ? `${SITE}${u}` : null);
+  const img = (u: unknown) => (typeof u === "string" && u.startsWith("/") ? `${site}${u}` : null);
   const lead = img(it.imageUrlMediumSize) ?? img(it.imageUrlSmallSize);
   const mood = img(it.moodImageUrl);
   const siblings = Array.isArray(it.webshopProduct?.siblingProducts) ? it.webshopProduct.siblingProducts.length : 0;
   const colorName = String(it.webshopProduct?.dimensionValue ?? "").trim() || (title.includes(", ") ? title.split(", ").pop()!.trim() : null);
   return {
     brand: "tchibo",
-    country: "DE",
+    country,
     externalId: colour ? `${id}-${colour}` : String(id),
     name: title,
-    url: `${SITE}${view}`,
+    url: `${site}${view}`,
     imageUrl: lead,
     images: cleanGallery([lead, mood], lead),
     price,
     listPrice: was,
-    currency: "EUR",
+    currency: mk.currency,
     inStock: it.availability === "AVAILABLE" && (sizes.length === 0 || sizes.some((s) => s.availability === "in_stock")),
     category: null,
     gender,
@@ -115,18 +131,19 @@ export function mapTchibo(it: any, gender: ProductRecord["gender"]): ProductReco
   };
 }
 
-export async function listTchibo(country: CountryCode, fetchHtml: (u: string) => Promise<string> = (u) => getText(u, { country, timeoutMs: 120_000, headers: { "Accept-Language": "de-DE,de;q=0.9" } })): Promise<ProductRecord[]> {
-  if (country !== "DE") return [];
+export async function listTchibo(country: CountryCode, fetchHtml: (u: string) => Promise<string> = (u) => getText(u, { country, timeoutMs: 120_000, headers: { "Accept-Language": TCHIBO_MARKETS[country]?.lang ?? "de-DE,de;q=0.9" } })): Promise<ProductRecord[]> {
+  const mk = TCHIBO_MARKETS[country];
+  if (!mk) return [];
   const byId = new Map<string, ProductRecord>();
   let seen = 0;
   for (const tree of TCHIBO_TREES) {
-    const res = categoryResults(await fetchHtml(`${SITE}${tree.path}?page=${PAGES}&sort=relevance`));
+    const res = categoryResults(await fetchHtml(`${mk.site}${tree.path}?page=${PAGES}&sort=relevance`));
     // A page without the payload means the storefront changed shape: fail the
     // brand (stored rows stay) rather than sweep every row out as delisted.
     if (!res) throw new Error(`tchibo: no category payload on ${tree.path}`);
     seen += res.items.length;
     for (const it of res.items) {
-      const r = mapTchibo(it, tree.gender);
+      const r = mapTchibo(it, tree.gender, country);
       if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
     }
   }

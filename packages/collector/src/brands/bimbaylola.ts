@@ -22,7 +22,14 @@ import type { CountryCode } from "../../../../lib/countries";
 import { jsonOf } from "./_sfcchtml";
 
 const ORIGIN = "https://www.bimbaylola.com";
-const MARKETS: Partial<Record<CountryCode, string>> = { ES: "/es_es" };
+const MARKETS: Partial<Record<CountryCode, string>> = { ES: "/es_es", PT: "/pt_pt", FR: "/fr_fr" };
+/**
+ * Portugal and France (2026-10-21): the same store. Portugal's sale shelves are
+ * "…-saldos(-3)" / "malas-sale"; France only runs the legal "soldes" periods
+ * (nothing linked on 2026-10-21, so FR returns [] until a soldes shelf appears).
+ */
+const SALE_WORD: Partial<Record<CountryCode, RegExp>> = { PT: /saldos|-sale$/, FR: /soldes/ };
+const LANGS: Partial<Record<CountryCode, string>> = { PT: "pt-PT,pt;q=0.9", FR: "fr-FR,fr;q=0.9" };
 const PAGE = 48;
 const MAX_REQUESTS = 30;
 const CAP = 1500;
@@ -31,10 +38,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const clean = (s: unknown): string => (typeof s === "string" ? s.replace(/\s+/g, " ").trim() : "");
 
 /** Sale listing paths linked from the homepage. Pure. */
-export function bylSaleListings(home: string, prefix: string): string[] {
+export function bylSaleListings(home: string, prefix: string, sale: RegExp = /rebajas/): string[] {
   const out = new Set<string>();
   for (const m of home.matchAll(/href="(?:https:\/\/www\.bimbaylola\.com)?(\/[a-z]{2}_[a-z]{2}\/[a-z0-9-]+)"/g)) {
-    if (m[1].startsWith(prefix + "/") && /rebajas/.test(m[1])) out.add(m[1]);
+    if (m[1].startsWith(prefix + "/") && sale.test(m[1])) out.add(m[1]);
   }
   return [...out].sort();
 }
@@ -42,7 +49,12 @@ export function bylSaleListings(home: string, prefix: string): string[] {
 /** "/es_es/prenda-exterior-rebajas-3" → "prenda exterior"; the generic shelf → null. Pure. */
 export function shelfOf(path: string): string | null {
   const slug = path.split("/").pop() ?? "";
-  const s = slug.replace(/-?rebajas(-\d+)?$/, "").replace(/^rebajas-?/, "").replace(/-/g, " ").trim();
+  const s = slug
+    .replace(/-?rebajas(-\d+)?$/, "")
+    .replace(/^rebajas-?/, "")
+    .replace(/-?(?:saldos|soldes)(-\d+)?$|-sale$/, "")
+    .replace(/-/g, " ")
+    .trim();
   return s && s !== "top productos" ? s : null;
 }
 
@@ -99,12 +111,12 @@ export function mapByl(p: any, shelf: string | null = null, country: CountryCode
   };
 }
 
-/** Register as `listBimbaYLola(country)`. ES only. */
+/** Register as `listBimbaYLola(country)`. ES, PT, FR. */
 export async function listBimbaYLola(country: CountryCode): Promise<ProductRecord[]> {
   const prefix = MARKETS[country];
   if (!prefix) return [];
-  const opts = { country, timeoutMs: 60_000, headers: { "Accept-Language": "es-ES,es;q=0.9" } };
-  const listings = bylSaleListings(await getText(`${ORIGIN}${prefix}/`, opts), prefix);
+  const opts = { country, timeoutMs: 60_000, headers: { "Accept-Language": LANGS[country] ?? "es-ES,es;q=0.9" } };
+  const listings = bylSaleListings(await getText(`${ORIGIN}${prefix}/`, opts), prefix, SALE_WORD[country]);
   if (!listings.length) return []; // no sale running
   const byId = new Map<string, ProductRecord>();
   const next = new Map<string, number>(listings.map((l) => [l, 0]));

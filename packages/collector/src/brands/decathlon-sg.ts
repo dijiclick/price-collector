@@ -1,5 +1,5 @@
 /**
- * Decathlon Singapore (decathlon.sg), 2026-10-21 — a separate platform from the
+ * Decathlon Singapore (decathlon.sg) and Australia (decathlon.com.au), 2026-10-21 — a separate platform from the
  * European shops `decathlon.ts` reads: Decathlon APAC's own Next.js storefront
  * ("chopper"), whose search runs on Algolia. The app id and search-only key are
  * public, in the page's `__NEXT_DATA__` runtimeConfig
@@ -26,10 +26,19 @@ import type { CountryCode } from "../../../../lib/countries";
 
 export const brand = "decathlon";
 
-const APP_ID = "LR431A4C5G";
-const API_KEY = "059b7b67675acd819ce0776ae86a7e6c"; // public search-only key from decathlon.sg
-const INDEX = "prod_pim_v3_index_discount_desc";
-const SITE = "https://www.decathlon.sg";
+/**
+ * Australia (decathlon.com.au, 2026-10-21) runs the same APAC storefront with
+ * its own Algolia app and a v1 index of the same shape (`runtimeConfig` of the
+ * home page; runner probe 39653951827 → 200). AUD; ~670 women / ~650 men /
+ * ~360 kids Decathlon-sold reduced models, each under one 1,000-hit page.
+ */
+export interface ApacMarket { appId: string; apiKey: string; index: string; site: string; currency: string }
+export const APAC_MARKETS: Partial<Record<CountryCode, ApacMarket>> = {
+  // public search-only key from decathlon.sg
+  SG: { appId: "LR431A4C5G", apiKey: "059b7b67675acd819ce0776ae86a7e6c", index: "prod_pim_v3_index_discount_desc", site: "https://www.decathlon.sg", currency: "SGD" },
+  // public search-only key from decathlon.com.au
+  AU: { appId: "TBG2XI2W65", apiKey: "ffff07c0e0d6e37017276947efe43b6f", index: "prod_pim_v1_index_discount_desc", site: "https://www.decathlon.com.au", currency: "AUD" },
+};
 const HITS = 1000; // Algolia's default paginationLimitedTo
 const CAP = 1500;
 
@@ -60,11 +69,13 @@ export function queryBody(facet: string[]): string {
 
 /** Map one hit. Pure; null unless Decathlon's own price is reduced. */
 export function mapHit(h: any, gender: ProductRecord["gender"], country: CountryCode = "SG"): ProductRecord | null {
+  const m = APAC_MARKETS[country];
+  if (!m) return null;
   const price = Number(h?.price);
   const was = Number(h?.priceBeforeDiscount);
   if (!h?.objectID || !h?.name_en || !h?.url_en) return null;
   if (!(price > 0 && was > price)) return null;
-  if (h.currency && h.currency !== "SGD") throw new Error(`decathlon/${country}: hit priced in ${h.currency}`);
+  if (h.currency && h.currency !== m.currency) throw new Error(`decathlon/${country}: hit priced in ${h.currency}`);
   const imgs: string[] = [h.smallUrl, ...(h.otherImages ?? [])].filter((u: unknown): u is string => typeof u === "string");
   const colour = typeof h.colorName_en === "string" && h.colorName_en.trim() ? h.colorName_en.split(",").map((s: string) => s.trim()).join(" / ") : null;
   return {
@@ -72,12 +83,12 @@ export function mapHit(h: any, gender: ProductRecord["gender"], country: Country
     country,
     externalId: String(h.modelId ?? h.objectID),
     name: String(h.name_en).trim(),
-    url: `${SITE}${h.url_en}`,
+    url: `${m.site}${h.url_en}`,
     imageUrl: imgs[0] ?? null,
     images: cleanGallery(imgs, imgs[0] ?? null),
     price: toMinor(price),
     listPrice: toMinor(was),
-    currency: "SGD",
+    currency: m.currency,
     inStock: h.available !== false && h.availability !== "Unavailable",
     category: typeof h.productNature_en === "string" ? h.productNature_en : null,
     gender,
@@ -89,13 +100,14 @@ export function mapHit(h: any, gender: ProductRecord["gender"], country: Country
 }
 
 export async function listDecathlonSg(country: CountryCode): Promise<ProductRecord[]> {
-  if (country !== "SG") return [];
+  const m = APAC_MARKETS[country];
+  if (!m) return [];
   const byId = new Map<string, ProductRecord>();
   for (const g of GENDER_GROUPS) {
-    const d = await getJson<any>(`https://${APP_ID}-dsn.algolia.net/1/indexes/${INDEX}/query`, {
+    const d = await getJson<any>(`https://${m.appId}-dsn.algolia.net/1/indexes/${m.index}/query`, {
       method: "POST",
       country,
-      headers: { "X-Algolia-Application-Id": APP_ID, "X-Algolia-API-Key": API_KEY, "Content-Type": "application/json" },
+      headers: { "X-Algolia-Application-Id": m.appId, "X-Algolia-API-Key": m.apiKey, "Content-Type": "application/json" },
       body: queryBody(g.facet),
     });
     if (!Array.isArray(d?.hits)) throw new Error(`decathlon/${country}: malformed Algolia answer`);

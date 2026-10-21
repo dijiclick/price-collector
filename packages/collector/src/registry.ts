@@ -3,7 +3,7 @@ import { DEFAULT_COUNTRY, isCountry, type CountryCode } from "../../../lib/count
 import { brandServes } from "../../../lib/brands";
 import * as zara from "./brands/zara";
 import * as guess from "./brands/guess";
-import { listGuessUs } from "./brands/guess-us";
+import { listGuessUs, listGuessCa } from "./brands/guess-us";
 import { listNewBalanceNa } from "./brands/newbalance-na";
 import { listAnnInc } from "./brands/anninc";
 import * as penti from "./brands/penti";
@@ -85,7 +85,7 @@ import * as mudo from "./brands/mudo";
  */
 export const adapters: BrandAdapter[] = [
   { brand: zara.brand, country: "TR", listProducts: zara.listProducts },
-  { brand: guess.brand, country: "TR", listProducts: (c) => (c === "US" ? listGuessUs(c) : guess.listProducts(c)) },
+  { brand: guess.brand, country: "TR", listProducts: (c) => (c === "US" ? listGuessUs(c) : c === "CA" ? listGuessCa(c) : guess.listProducts(c)) },
   { brand: penti.brand, country: "TR", listProducts: penti.listProducts },
   // Sephora is a different platform in every region: TR OCAPI, US/CA site API,
   // AU through Sephora Asia's API, CH its own SFCC (2026-10-11).

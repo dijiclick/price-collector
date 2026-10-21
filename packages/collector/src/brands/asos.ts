@@ -19,6 +19,9 @@
  * store (`ROE`, English), Austria by the German store. A store/country pair
  * ASOS does not serve answers 400, which the run surfaces as an error.
  *
+ * US/CA (2026-10-21): the US store (USD) and, for Canada, the "rest of world"
+ * store priced in CAD; both rows also carry the real brand as `maker`.
+ *
  * Note: from this Mac (Turkish line) www.asos.com only answers over IPv4.
  */
 import type { ProductRecord } from "../types";
@@ -50,7 +53,16 @@ export const ASOS_MARKETS: Partial<Record<CountryCode, { store: string; lang: st
   BE: { store: "ROE", lang: "en-GB", path: "" },
   PT: { store: "ROE", lang: "en-GB", path: "" },
   FI: { store: "ROE", lang: "en-GB", path: "" },
+  // North America (2026-10-21): the US store, and Canada through ASOS's
+  // "rest of world" store priced in CAD (a `CA` store answers 400).
+  US: { store: "US", lang: "en-US", path: "/us" },
+  CA: { store: "ROW", lang: "en-GB", path: "" },
+  // Australia (2026-10-21): its own AUD store, PDPs under /au.
+  AU: { store: "AU", lang: "en-AU", path: "/au" },
 };
+
+/** Markets that also record the real brand (`maker`) from the listing's `brandName`. */
+const MAKER_MARKETS = new Set<CountryCode>(["US", "CA"]);
 
 /** Sale category ids with their section gender and share of the cap (global across stores). */
 export const SALE: [cid: number, gender: ProductRecord["gender"], share: number][] = [
@@ -69,7 +81,12 @@ export const pageUrl = (cid: number, offset: number, country: CountryCode = "GB"
 
 export function mapAsos(p: any, gender: ProductRecord["gender"], country: CountryCode = "GB"): ProductRecord | null {
   const path = ASOS_MARKETS[country]?.path ?? "";
-  return mapAsosProduct(p, { brand, country, gender, pdp: (url) => `${SITE}${path}/${url}` });
+  const r = mapAsosProduct(p, { brand, country, gender, pdp: (url) => `${SITE}${path}/${url}` });
+  if (r && MAKER_MARKETS.has(country)) {
+    const make = typeof p?.brandName === "string" ? p.brandName.trim() : "";
+    r.maker = make || null;
+  }
+  return r;
 }
 
 export async function listProducts(country: CountryCode = "GB"): Promise<ProductRecord[]> {

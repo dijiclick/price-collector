@@ -1,6 +1,6 @@
 /**
  * Landmark Group's Gulf fashion chains — Centrepoint (multi-brand: Splash,
- * Shoemart, Lifestyle, Babyshop…), Max and Splash. One platform, one
+ * Shoemart, Lifestyle, Babyshop…), Max, Splash and (UAE) Shoemart. One platform, one
  * Cloudflare policy. Measured 2026-10-11:
  *
  * - Every storefront answers a browser (and a GitHub runner) with a
@@ -91,6 +91,24 @@ export const LANDMARK_SITES: Record<string, LandmarkSite> = {
     ],
     // No Qatar shop: the qa view holds 0 rows (2026-10-21).
     markets: ["AE", "SA", "KW"],
+  },
+  // Shoemart (multi-brand shoes/bags, 2026-10-21): its own Bloomreach account,
+  // keys from the site's initial state (`configReducer.data.bloomreach.account`).
+  // UAE only: every other view (sa/qa/kw) holds 0 rows. Titles already carry
+  // the brand ("Skechers Women …").
+  shoemart: {
+    slug: "shoemart",
+    site: "https://www.shoemartstores.com",
+    accountId: "8320",
+    authKey: "c65pyjmbc3g858lo",
+    domainKey: "shoemart",
+    roots: [
+      { q: "women", gender: "kadin", cap: 800 },
+      { q: "men", gender: "erkek", cap: 450 },
+      { q: "girls", gender: "cocuk", cap: 125 },
+      { q: "boys", gender: "cocuk", cap: 125 },
+    ],
+    markets: ["AE"],
   },
 };
 

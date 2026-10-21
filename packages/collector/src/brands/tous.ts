@@ -24,7 +24,23 @@ import type { CountryCode } from "../../../../lib/countries";
 import { attrOf, decodeEntities, jsonOf } from "./_sfcchtml";
 
 const ORIGIN = "https://www.tous.com";
-const MARKETS: Partial<Record<CountryCode, string>> = { ES: "/es-es" };
+const MARKETS: Partial<Record<CountryCode, string>> = { ES: "/es-es", PT: "/pt-pt", FR: "/fr-fr", IT: "/it-it" };
+/**
+ * Portugal, France and Italy (2026-10-21): the same Sites-tous_eu store, same
+ * category ids (root c/5533), the markdown root named in the local language.
+ */
+const ROOTS: Partial<Record<CountryCode, string>> = {
+  ES: "precios-especiales",
+  PT: "precos-especiais",
+  FR: "prix-speciaux",
+  IT: "prezzi-speciali",
+};
+const LANGS: Partial<Record<CountryCode, string>> = {
+  ES: "es-ES,es;q=0.9",
+  PT: "pt-PT,pt;q=0.9",
+  FR: "fr-FR,fr;q=0.9",
+  IT: "it-IT,it;q=0.9",
+};
 const UA = "curl/8.0";
 const PAGE = 48;
 const MAX_REQUESTS = 30;
@@ -34,22 +50,23 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const clean = (s: unknown): string => (typeof s === "string" ? decodeEntities(s).replace(/\s+/g, " ").trim() : "");
 
 /** Markdown shelves linked from the homepage: leaves first, the root last. Pure. */
-export function tousShelves(home: string, prefix: string): string[] {
+export function tousShelves(home: string, prefix: string, root = "precios-especiales"): string[] {
   const all = new Set<string>();
-  for (const m of home.matchAll(/href="(?:https:\/\/www\.tous\.com)?(\/[a-z]{2}-[a-z]{2}\/precios-especiales\/(?:[a-z0-9-]+\/)*c\/\d+)"/g)) {
+  const link = new RegExp(`href="(?:https:\\/\\/www\\.tous\\.com)?(\\/[a-z]{2}-[a-z]{2}\\/${root}\\/(?:[a-z0-9-]+\\/)*c\\/\\d+)"`, "g");
+  for (const m of home.matchAll(link)) {
     if (m[1].startsWith(prefix + "/")) all.add(m[1]);
   }
   const list = [...all];
   const base = (p: string) => p.replace(/c\/\d+$/, "");
   const leaves = list.filter((p) => !list.some((q) => q !== p && base(q).startsWith(base(p))));
-  const root = list.filter((p) => !leaves.includes(p) && /\/precios-especiales\/c\/\d+$/.test(p));
-  return [...leaves.sort(), ...root];
+  const top = list.filter((p) => !leaves.includes(p) && new RegExp(`\\/${root}\\/c\\/\\d+$`).test(p));
+  return [...leaves.sort(), ...top];
 }
 
 /** "/es-es/precios-especiales/joyeria/anillos/c/5538" → "anillos"; the root → null. Pure. */
-export function tousShelf(path: string): string | null {
+export function tousShelf(path: string, root = "precios-especiales"): string | null {
   const seg = path.replace(/\/c\/\d+$/, "").split("/").pop() ?? "";
-  return seg && seg !== "precios-especiales" ? seg.replace(/-/g, " ") : null;
+  return seg && seg !== root ? seg.replace(/-/g, " ") : null;
 }
 
 /** "SZ01_08, SZ01_10" → ["8", "10"]; "U"/"not apply" → []. Pure. */
@@ -101,12 +118,13 @@ export function mapTous(tile: string, shelf: string | null = null, country: Coun
   };
 }
 
-/** Register as `listTous(country)`. ES only. */
+/** Register as `listTous(country)`. ES, PT, FR, IT. */
 export async function listTous(country: CountryCode): Promise<ProductRecord[]> {
   const prefix = MARKETS[country];
   if (!prefix) return [];
-  const opts = { country, timeoutMs: 45_000, headers: { "User-Agent": UA, "Accept-Language": "es-ES,es;q=0.9" } };
-  const shelves = tousShelves(await getText(`${ORIGIN}${prefix}/`, opts), prefix);
+  const root = ROOTS[country]!;
+  const opts = { country, timeoutMs: 45_000, headers: { "User-Agent": UA, "Accept-Language": LANGS[country]! } };
+  const shelves = tousShelves(await getText(`${ORIGIN}${prefix}/`, opts), prefix, root);
   if (!shelves.length) return []; // no markdown running
   const byId = new Map<string, ProductRecord>();
   const next = new Map<string, number>(shelves.map((s) => [s, 0]));
@@ -118,7 +136,7 @@ export async function listTous(country: CountryCode): Promise<ProductRecord[]> {
       requests++;
       const tiles = tousTiles(await getText(`${ORIGIN}${path}?start=${start}&sz=${PAGE}`, opts));
       for (const t of tiles) {
-        const r = mapTous(t, tousShelf(path), country);
+        const r = mapTous(t, tousShelf(path, root), country);
         if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
       }
       if (tiles.length < PAGE) next.delete(path);
