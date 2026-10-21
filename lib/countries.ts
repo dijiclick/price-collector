@@ -86,8 +86,9 @@ export const COUNTRIES = {
   },
   // Wave 2 (2026-09-23): the markets that pay for subscriptions. Swept by the
   // collector, invisible in the app until `launched` flips on real data. US, CA,
-  // AU, CH and NO flipped after their first sweep; the EU waits on the DSA
-  // trader declaration.
+  // AU, CH and NO flipped after their first sweep. The 12 EU markets flipped
+  // 2026-10-21 after EU wave 1 (24–39 brands each, every one swept), with the
+  // DSA trader declaration filed and analytics consent-first in the EU.
   US: {
     currency: "USD", symbol: "$", symbolBefore: true,
     proxyExit: "us", minPrice: 500, buckets: [5000, 15000],
@@ -106,52 +107,52 @@ export const COUNTRIES = {
   IE: {
     currency: "EUR", symbol: "€", symbolBefore: true,
     proxyExit: "ie", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-IE", launched: false,
+    dateLocale: "en-IE", launched: true,
   },
   DE: {
     currency: "EUR", symbol: "€", symbolBefore: true,
     proxyExit: "de", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-DE", launched: false,
+    dateLocale: "en-DE", launched: true,
   },
   FR: {
     currency: "EUR", symbol: "€", symbolBefore: true,
     proxyExit: "fr", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-FR", launched: false,
+    dateLocale: "en-FR", launched: true,
   },
   NL: {
     currency: "EUR", symbol: "€", symbolBefore: true,
     proxyExit: "nl", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-NL", launched: false,
+    dateLocale: "en-NL", launched: true,
   },
   BE: {
     currency: "EUR", symbol: "€", symbolBefore: true,
     proxyExit: "be", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-BE", launched: false,
+    dateLocale: "en-BE", launched: true,
   },
   AT: {
     currency: "EUR", symbol: "€", symbolBefore: true,
     proxyExit: "at", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-AT", launched: false,
+    dateLocale: "en-AT", launched: true,
   },
   ES: {
     currency: "EUR", symbol: "€", symbolBefore: true,
     proxyExit: "es", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-ES", launched: false,
+    dateLocale: "en-ES", launched: true,
   },
   IT: {
     currency: "EUR", symbol: "€", symbolBefore: true,
     proxyExit: "it", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-IT", launched: false,
+    dateLocale: "en-IT", launched: true,
   },
   PT: {
     currency: "EUR", symbol: "€", symbolBefore: true,
     proxyExit: "pt", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-PT", launched: false,
+    dateLocale: "en-PT", launched: true,
   },
   FI: {
     currency: "EUR", symbol: "€", symbolBefore: true,
     proxyExit: "fi", minPrice: 500, buckets: [5000, 15000],
-    dateLocale: "en-FI", launched: false,
+    dateLocale: "en-FI", launched: true,
   },
   CH: {
     currency: "CHF", symbol: "CHF", symbolBefore: true,
@@ -161,12 +162,12 @@ export const COUNTRIES = {
   SE: {
     currency: "SEK", symbol: "kr", symbolBefore: false,
     proxyExit: "se", minPrice: 5000, buckets: [50000, 150000],
-    dateLocale: "en-SE", launched: false,
+    dateLocale: "en-SE", launched: true,
   },
   DK: {
     currency: "DKK", symbol: "kr", symbolBefore: false,
     proxyExit: "dk", minPrice: 5000, buckets: [50000, 150000],
-    dateLocale: "en-DK", launched: false,
+    dateLocale: "en-DK", launched: true,
   },
   NO: {
     currency: "NOK", symbol: "kr", symbolBefore: false,
