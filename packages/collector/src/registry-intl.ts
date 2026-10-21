@@ -53,7 +53,6 @@ import { listShopbop } from "./brands/shopbop";
 import { listSixPm } from "./brands/sixpm";
 import { listFootLocker } from "./brands/_footlocker";
 import { listNorthernReflections } from "./brands/northernreflections";
-import { listLulus } from "./brands/lulus";
 import { listChicosFas } from "./brands/chicosfas";
 import { listArcteryx } from "./brands/arcteryx";
 import { listJJill } from "./brands/jjill";
@@ -522,6 +521,8 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "lovebonito", listProducts: (c) => listLoveBonito(c) },
   { brand: "mannings", listProducts: (c) => listMannings(c) },
   { brand: "guardian", listProducts: (c) => listGuardian(c) },
+  // First live run 2026-10-21: Lulus, Talbots (PerimeterX) and Champs Sports
+  // (no listing to a runner) were blocked and are left out; their adapters stay.
   // ── "Double the brands" round (2026-10-21) — runner-verified, no proxy ──
   // US / Canada
   ...dtcaAdapters,
@@ -538,12 +539,11 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "shoecarnival", listProducts: (c) => listAlgoliaUsca("shoecarnival", c) },
   { brand: "vineyardvines", listProducts: (c) => listAlgoliaUsca("vineyardvines", c) },
   { brand: "heydude", listProducts: (c) => listAlgoliaUsca("heydude", c) },
-  ...(["ariat", "hottopic", "ragandbone", "saucony", "bootbarn", "talbots", "sallybeauty"] as const).map((b) => ({ brand: b, listProducts: (c: CountryCode) => listGridUsca(b, c) })),
+  ...(["ariat", "hottopic", "ragandbone", "saucony", "bootbarn", "sallybeauty"] as const).map((b) => ({ brand: b, listProducts: (c: CountryCode) => listGridUsca(b, c) })),
   { brand: "michaelhill", listProducts: (c) => listSearchUsca("michaelhill", c) },
   { brand: "rickis", listProducts: (c) => listSearchUsca("rickis", c) },
   { brand: "nordstrom", listProducts: (c) => listNordstrom(c) },
   { brand: "footlocker", listProducts: (c) => listFootLocker("footlocker", c) },
-  { brand: "champssports", listProducts: (c) => listFootLocker("champssports", c) },
   { brand: "academy", listProducts: (c) => listAcademy(c) },
   { brand: "journeys", listProducts: (c) => listJourneys(c) },
   { brand: "zumiez", listProducts: (c) => listZumiez(c) },
@@ -554,7 +554,6 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "sixpm", listProducts: (c) => listSixPm(c) },
   { brand: "bikinivillage", listProducts: (c) => listBikiniVillage(c) },
   { brand: "northernreflections", listProducts: (c) => listNorthernReflections(c) },
-  { brand: "lulus", listProducts: (c) => listLulus(c) },
   { brand: "chicos", listProducts: (c) => listChicosFas("chicos", c) },
   { brand: "whitehouseblackmarket", listProducts: (c) => listChicosFas("whitehouseblackmarket", c) },
   { brand: "arcteryx", listProducts: (c) => listArcteryx(c) },
