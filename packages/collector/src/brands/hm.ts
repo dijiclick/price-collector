@@ -38,6 +38,14 @@ export const LOCALES: Partial<Record<CountryCode, string>> = {
   SE: "sv_se",
   DK: "da_dk",
   NO: "no_no",
+  // Japan (2026-10-21): only ja_jp exists (en_jp is 422). Runner probe 39634410176: 200.
+  JP: "ja_jp",
+  // South Korea (2026-10-21): ko_kr answers in KRW ("₩39,900"; the numeric
+  // `price` is whole won). Runner probe 39634127022.
+  KR: "ko_kr",
+  // 2026-10-21: both answer in English (S$ / HK$ marks).
+  SG: "en_sg",
+  HK: "en_hk",
 };
 
 export function localeFor(country: CountryCode): string {
@@ -91,6 +99,10 @@ const MARKS: Record<string, string[]> = {
   SEK: ["kr", "SEK"],
   DKK: ["kr", "DKK"],
   NOK: ["kr", "NOK"],
+  JPY: ["¥", "￥"],
+  KRW: ["₩"],
+  SGD: ["S$", "SGD"],
+  HKD: ["HK$", "HKD"],
 };
 
 /** True when a printed mark is compatible with the currency we will store. */
@@ -174,7 +186,10 @@ export function mapProduct(
     listPrice: typeof original === "number" && original > current ? toMinor(original) : null,
     currency: currencyFor(country),
     inStock: p.availability?.stockState === "Available",
-    category,
+    // Japan: names are Japanese, but every row carries H&M's own English
+    // category code ("ladies_cardigansjumpers_cardigans") — the type the
+    // classifier can read. Gender below still comes from the crawl root.
+    category: country === "JP" && typeof p.mainCatCode === "string" && p.mainCatCode ? p.mainCatCode.replace(/_/g, " ") : category,
     // One listing row is one colour ("Koyu kırmızı/Kalpler"). Without it 95% of
     // H&M had no colour family and vanished from every colour filter.
     colorName: typeof p.colorName === "string" && p.colorName.trim() ? p.colorName.trim() : null,

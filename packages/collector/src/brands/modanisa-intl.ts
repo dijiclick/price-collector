@@ -24,7 +24,7 @@ const SLUG = process.env.MODANISA_INTL_LIST ?? "outlet-12.list";
 const PER_PAGE = 64;
 const CAP = Number(process.env.MODANISA_INTL_MAX_PRODUCTS ?? 1500);
 const MAX_PAGES = Math.ceil(CAP / PER_PAGE) + 2;
-export const MODANISA_MARKETS: CountryCode[] = ["AE", "SA"];
+export const MODANISA_MARKETS: CountryCode[] = ["AE", "SA", "QA", "KW"];
 
 export function intlHeaders(country: CountryCode): Record<string, string> {
   return {

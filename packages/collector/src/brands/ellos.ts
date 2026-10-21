@@ -21,8 +21,13 @@ import { toMinor } from "../normalize";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
 export const brand = "ellos";
-export const ELLOS_MARKETS: Partial<Record<CountryCode, { origin: string; outlet: string }>> = {
+export const ELLOS_MARKETS: Partial<Record<CountryCode, { origin: string; outlet: string; deptPaths?: Record<string, string> }>> = {
   NO: { origin: "https://www.ellos.no", outlet: "/outlet" },
+  // 2026-10-21: same API and outlet campaign on the Swedish/Finnish/Danish
+  // sites; only the department slugs are local (keyed by the NO slug below).
+  SE: { origin: "https://www.ellos.se", outlet: "/outlet", deptPaths: { dame: "dam", herre: "herr", barn: "barn" } },
+  FI: { origin: "https://www.ellos.fi", outlet: "/outlet", deptPaths: { dame: "naiset", herre: "miehet", barn: "lapset" } },
+  DK: { origin: "https://www.ellos.dk", outlet: "/outlet", deptPaths: { dame: "dame", herre: "herre", barn: "born" } },
 };
 
 /** Department → gender and a page budget (58 rows a page; ~1,500 total). */
@@ -99,7 +104,7 @@ export async function listEllos(country: CountryCode = "NO"): Promise<ProductRec
       await sleep(500);
       let data: any;
       try {
-        data = await getJson<any>(articlesUrl(m.origin, campaign, `${m.outlet}/${d.path}`, n), { country, retries: 1 });
+        data = await getJson<any>(articlesUrl(m.origin, campaign, `${m.outlet}/${m.deptPaths?.[d.path] ?? d.path}`, n), { country, retries: 1 });
       } catch {
         break; // 404 ArticlesNotFound past the last page
       }

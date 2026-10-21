@@ -33,7 +33,25 @@ export const ZARA_PATHS: Partial<Record<CountryCode, string>> = {
   SE: "se/en",
   DK: "dk/en",
   NO: "no/en",
+  // 2026-10-21. Kuwait prices are hundredths of a KWD like every other market
+  // (striped cardigan 890 / 1390 = KWD 8.90 / 13.90), not thousandths.
+  QA: "qa/en",
+  KW: "kw/en",
+  // Japan and South Korea (2026-10-21): the local-language storefronts, so
+  // names stay Japanese/Korean. Prices there are whole yen/won — PRICE_SCALE.
+  JP: "jp/ja",
+  KR: "kr/ko",
+  SG: "sg/en",
+  HK: "hk/en",
 };
+
+/**
+ * Markets whose listing prints `price` in WHOLE units because the currency has
+ * no minor unit (JPY, KRW: 5990 = ¥5,990). Stored prices are always amount ×
+ * 100, so these are multiplied; every other market's integers are already
+ * hundredths (cents, pence, kuruş, and KWD hundredths too).
+ */
+export const PRICE_SCALE: Partial<Record<CountryCode, number>> = { JP: 100, KR: 100 };
 
 /** `https://www.zara.com/{path}` for a market. Throws for a market with no
  *  storefront entry rather than silently collecting Turkey under its name. */
@@ -145,8 +163,10 @@ export function mapComponent(
   const group = c?.brand?.brandGroupCode;
   if (group && group !== "zara") return null;
   const color = c.detail?.colors?.[0] ?? {};
-  const price: number | undefined = color.price ?? c.price;
-  if (typeof price !== "number" || price <= 0) return null;
+  const scale = PRICE_SCALE[country] ?? 1;
+  const raw: number | undefined = color.price ?? c.price;
+  if (typeof raw !== "number" || raw <= 0) return null;
+  const price = raw * scale;
   const gallery = zaraGallery(color.xmedia);
   const imageUrl = gallery[0] ?? null;
   return {
@@ -161,7 +181,7 @@ export function mapComponent(
     // 37900 = 379 kr, 5990 = CHF 59.90). The listing carries no currency code,
     // so it comes from the country table.
     price,
-    listPrice: typeof color.oldPrice === "number" ? color.oldPrice : null,
+    listPrice: typeof color.oldPrice === "number" ? color.oldPrice * scale : null,
     currency: currencyFor(country),
     // Listings keep sold-out and not-yet-released products, and their
     // `availability` matches real per-size stock ("coming_soon"/"out_of_stock"
@@ -171,6 +191,12 @@ export function mapComponent(
     groupKey: "zara:" + c.seo.seoProductId,
     colorName: color.name ?? null,
     gender,
+    // Japan only: names are Japanese, which lib/productTypes.ts cannot read, but
+    // every component carries Zara's own English family ("BLAZER", "TROUSERS",
+    // "SANDAL", "PERFUME") — the type the classifier needs.
+    ...(country === "JP" && typeof c.familyName === "string" && c.familyName.trim()
+      ? { category: c.familyName.trim().toLowerCase() }
+      : {}),
   };
 }
 

@@ -31,7 +31,13 @@ import { toMinor } from "../normalize";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
 const ORIGIN = "https://lyko.com";
-const PATH = "/no/deals-kupp";
+/** Deals root per market (2026-10-21: same JSON on the Swedish/Finnish/Danish paths). */
+export const LYKO_PATHS: Partial<Record<CountryCode, string>> = {
+  NO: "/no/deals-kupp",
+  SE: "/sv/deals-fynd",
+  FI: "/fi/tarjouksia-loytoja",
+  DK: "/da/deals-kup",
+};
 const WINDOW = 500;
 const MAX_REQUESTS = 30;
 /** Stop once a whole window brings fewer than this many real markdowns. */
@@ -57,7 +63,7 @@ export function lykoOriginal(price: any): number | null {
 export function lykoCategory(deepest: unknown): string | null {
   if (typeof deepest !== "string") return null;
   const seg = deepest.split("?")[0].split("/").filter(Boolean).pop() ?? "";
-  if (!seg || seg === "no") return null;
+  if (!seg || /^(no|sv|fi|da)$/.test(seg)) return null;
   const t = seg.replace(/-+/g, " ").trim();
   return t ? t[0].toUpperCase() + t.slice(1) : null;
 }
@@ -96,7 +102,8 @@ export function mapLyko(p: any, country: CountryCode = "NO"): ProductRecord | nu
 const HEADERS = { "X-Requested-With": "XMLHttpRequest" };
 
 export async function listLyko(country: CountryCode, cap = 1500): Promise<ProductRecord[]> {
-  if (country !== "NO") return [];
+  const PATH = LYKO_PATHS[country];
+  if (!PATH) return [];
   const byId = new Map<string, ProductRecord>();
   let requests = 0;
   const get = async (url: string) => {

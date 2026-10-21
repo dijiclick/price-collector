@@ -27,8 +27,10 @@ import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 export interface AvensiaSite {
   brand: string;
   origin: string;
-  /** Sale listing paths, collected in order. */
+  /** Sale listing paths (Norway), collected in order. */
   paths: string[];
+  /** Other markets' sale listing paths (2026-10-21). */
+  markets?: Partial<Record<CountryCode, string[]>>;
   paging: "window" | "page";
   /** Best-effort gender from the product url. */
   gender?: (url: string) => ProductRecord["gender"];
@@ -46,9 +48,9 @@ export function kappahlGender(url: string): ProductRecord["gender"] {
   const segs = url.toLowerCase().split(/[/?#]/).filter(Boolean);
   if (segs.includes("newbie-woman")) return "kadin";
   for (const s of segs) {
-    if (s === "dame") return "kadin";
-    if (s === "herre") return "erkek";
-    if (s === "barn" || s === "baby" || s === "newbie") return "cocuk";
+    if (s === "dame" || s === "dam" || s === "naiset") return "kadin";
+    if (s === "herre" || s === "herr" || s === "miehet") return "erkek";
+    if (s === "barn" || s === "baby" || s === "newbie" || s === "lapset" || s === "vauvat") return "cocuk";
   }
   return null;
 }
@@ -57,7 +59,7 @@ export function kappahlGender(url: string): ProductRecord["gender"] {
 export function kappahlCategory(url: string): string | null {
   const segs = url.split("?")[0].split("/").filter(Boolean);
   const s = segs.length >= 2 ? segs[segs.length - 2] : "";
-  if (!s || /^(nb-no|salg|dame|herre|barn|baby|newbie)$/i.test(s)) return null;
+  if (!s || /^(nb-no|salg|dame|herre|barn|baby|newbie|sv-se|fi-fi|rea|ale|kappahl-outlet|dam|herr|naiset|miehet|lapset|vauvat)$/i.test(s)) return null;
   const t = s.replace(/-+/g, " ").trim();
   return t ? t[0].toUpperCase() + t.slice(1) : null;
 }
@@ -73,6 +75,10 @@ export const AVENSIA_SITES: Record<"vita" | "kappahl", AvensiaSite> = {
     brand: "kappahl",
     origin: "https://www.kappahl.com",
     paths: ["/nb-no/salg", "/nb-no/kappahl-outlet"],
+    markets: {
+      SE: ["/sv-se/rea", "/sv-se/kappahl-outlet"],
+      FI: ["/fi-fi/ale", "/fi-fi/kappahl-outlet"],
+    },
     paging: "page",
     gender: kappahlGender,
     category: kappahlCategory,
@@ -120,8 +126,12 @@ export function mapAvensia(site: AvensiaSite, country: CountryCode, p: any): Pro
 const HEADERS = { "X-Requested-With": "XMLHttpRequest", "Content-Type": "application/json" };
 
 export async function listAvensia(site: AvensiaSite, country: CountryCode, cap = 1500): Promise<ProductRecord[]> {
-  if (country !== "NO") return [];
+  const paths = country === "NO" ? site.paths : site.markets?.[country];
+  if (!paths) return [];
   const byId = new Map<string, ProductRecord>();
+  // A seasonal sale path can be empty (KappAhl's /salg and /rea were, 2026-10-21):
+  // only fail when EVERY path came back empty.
+  const empty: string[] = [];
   let requests = 0;
   const take = (rows: any[]) => {
     for (const p of rows) {
@@ -135,7 +145,7 @@ export async function listAvensia(site: AvensiaSite, country: CountryCode, cap =
     return getJson<any>(url, { headers: HEADERS, country });
   };
 
-  for (const path of site.paths) {
+  for (const path of paths) {
     if (byId.size >= cap * 1.2 || requests >= MAX_REQUESTS) break;
     const base = `${site.origin}${path}`;
     if (site.paging === "window") {
@@ -153,7 +163,7 @@ export async function listAvensia(site: AvensiaSite, country: CountryCode, cap =
       for (let n = 1; requests < MAX_REQUESTS && byId.size < cap * 1.2; n++) {
         const d = await get(n === 1 ? base : `${base}?page=${n}`).catch(() => null);
         const list: any[] = d?.products ?? [];
-        if (n === 1 && !list.length) throw new Error(`${site.brand}/${country}: ${path} returned no products`);
+        if (n === 1 && !list.length) { empty.push(path); break; }
         if (!list.length) break;
         take(list);
         total = Number(d?.totalProductCount ?? total);
@@ -162,6 +172,7 @@ export async function listAvensia(site: AvensiaSite, country: CountryCode, cap =
       }
     }
   }
+  if (!byId.size && empty.length) throw new Error(`${site.brand}/${country}: ${empty.join(", ")} returned no products`);
   const all = [...byId.values()];
   return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, cap);
 }

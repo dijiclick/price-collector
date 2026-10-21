@@ -28,6 +28,9 @@ const API_KEY = "6e9a600dc69be19481363bddd793e2f2";
 const INDEX: Partial<Record<CountryCode, string>> = {
   AE: "enterprise_magento_english_products",
   SA: "enterprise_magento_en_sa_products",
+  // 2026-10-21: QAR / KWD (KWD prices carry 3 decimals; toMinor rounds to ×100).
+  QA: "enterprise_magento_en_qa_products",
+  KW: "enterprise_magento_en_kw_products",
 };
 const PER_PAGE = 1000;
 const CAP = Number(process.env.AIVI_MAX_PRODUCTS ?? 1500);

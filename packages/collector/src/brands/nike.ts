@@ -1,6 +1,7 @@
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
+import { jaCategory } from "./_ja-category";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
 /**
@@ -52,6 +53,15 @@ export const NIKE_MARKETS: Partial<Record<CountryCode, { language: string; site:
   AT: { language: "de", site: "https://www.nike.com/at" },
   FI: { language: "en-GB", site: "https://www.nike.com/fi" },
   DK: { language: "da", site: "https://www.nike.com/dk" },
+  // Japan, 2026-10-21: `ja` answers ~3,700 discounted ACTIVE threads in JPY with
+  // the store's own fullPrice; en-GB answers 0. Runner probe 39634451857: 200.
+  JP: { language: "ja", site: "https://www.nike.com/jp" },
+  // South Korea (2026-10-21): `ko` answers ~3,060 discounted ACTIVE threads in
+  // KRW (whole won; toMinor stores ×100 like everywhere). Runner probe 39634127022.
+  KR: { language: "ko", site: "https://www.nike.com/kr" },
+  // 2026-10-21: SG answers en-GB in SGD (~2,090 discounted ACTIVE threads). HK
+  // answers 0 threads in every language (en, en-GB, zh-Hant, zh-TW…), so it is out.
+  SG: { language: "en-GB", site: "https://www.nike.com/sg" },
 };
 
 export function threadsUrl(extra: string[], anchor = 0, count = PAGE, country: CountryCode = "TR"): string {
@@ -134,7 +144,9 @@ export function mapThread(thread: any, country: CountryCode = "TR"): ProductReco
       inStock: sizes.length > 0 ? sizes.some((s) => s.availability !== "out_of_stock") : info?.availability?.available === true,
       // The subtitle is Nike's own product-type line ("Kadın Koşu Ayakkabısı"),
       // which is what the type classifier reads best.
-      category: c.subtitle ?? m.productType ?? null,
+      // Japan: the subtitle is Japanese ("メンズシューズ"), so it goes through the
+      // JA→EN shelf map; Nike's own FOOTWEAR/APPAREL/EQUIPMENT is the fallback.
+      category: country === "JP" ? (jaCategory(c.subtitle) ?? jaCategory(c.fullTitle) ?? m.productType ?? null) : (c.subtitle ?? m.productType ?? null),
       gender: genderOf(m.genders),
       variants: sizes.length || c.colorDescription
         ? { colors: c.colorDescription ? [String(c.colorDescription)] : [], sizes }

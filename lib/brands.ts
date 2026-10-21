@@ -18,41 +18,48 @@ export interface BrandInfo {
   countries: CountryCode[];
 }
 
+/**
+ * Markets opened after the "every market" helpers below were written
+ * (2026-10-21). They are NOT implied by EVERYWHERE / except() / GUESS — an
+ * Inditex brand there may have no storefront, or a different platform — so
+ * each brand lists them explicitly where its adapter was verified.
+ */
+const LATER: CountryCode[] = ["QA", "KW", "JP", "KR", "SG", "HK"];
 /** Turkish retailers with no other storefront. */
 const TR_ONLY: CountryCode[] = ["TR"];
 /**
  * Every market. The six Inditex brands plus Mango: itxrest answers per store
  * id for all of them, and Mango's orchestrator takes `countryIso`.
  */
-const EVERYWHERE: CountryCode[] = [...ALL_COUNTRIES];
+const EVERYWHERE: CountryCode[] = ALL_COUNTRIES.filter((c) => !LATER.includes(c));
 /**
  * Where an Inditex brand has no storefront of its own, the store list maps the
  * country to a worldwide ("WW") store that prices in another currency, and the
  * adapter refuses it. Seen on the first sweep, 2026-09-23.
  */
-const except = (...no: CountryCode[]): CountryCode[] => ALL_COUNTRIES.filter((c) => !no.includes(c));
+const except = (...no: CountryCode[]): CountryCode[] => EVERYWHERE.filter((c) => !no.includes(c));
 /**
  * Turkey, Britain and Europe. Guess's Algolia has no `en_US`, `en_CA`,
  * `en_AU`, `en_AE` or `en_SA` index (404) — those storefronts are other
  * platforms. Verified 2026-09-20 and 2026-09-23.
  */
-const GUESS: CountryCode[] = ALL_COUNTRIES.filter(
+const GUESS: CountryCode[] = EVERYWHERE.filter(
   (c) => !["CA", "AU", "AE", "SA"].includes(c),
 );
 
 export const BRANDS: BrandInfo[] = [
-  { slug: "zara", label: "ZARA", category: "Giyim", logo: "/brands/zara.svg", countries: EVERYWHERE },
+  { slug: "zara", label: "ZARA", category: "Giyim", logo: "/brands/zara.svg", countries: [...EVERYWHERE, "QA", "KW", "JP", "KR", "SG", "HK"] },
   { slug: "mango", label: "MANGO", category: "Giyim", logo: "/brands/mango.svg", countries: EVERYWHERE },
-  { slug: "hm", label: "H&M", category: "Giyim", logo: "/brands/hm.svg", countries: EVERYWHERE },
-  { slug: "bershka", label: "BERSHKA", category: "Giyim", logo: "/brands/bershka.svg", countries: except("AU") },
-  { slug: "stradivarius", label: "Stradivarius", category: "Giyim", logo: "/brands/stradivarius.svg", countries: except("AU") },
-  { slug: "pullandbear", label: "PULL&BEAR", category: "Giyim", logo: "/brands/pullandbear.svg", countries: except("NO") },
-  { slug: "massimodutti", label: "Massimo Dutti", category: "Giyim", logo: "/brands/massimodutti.svg", countries: except("AU") },
+  { slug: "hm", label: "H&M", category: "Giyim", logo: "/brands/hm.svg", countries: [...EVERYWHERE, "QA", "KW", "JP", "KR", "SG"] },
+  { slug: "bershka", label: "BERSHKA", category: "Giyim", logo: "/brands/bershka.svg", countries: [...except("AU"), "QA", "KW"] },
+  { slug: "stradivarius", label: "Stradivarius", category: "Giyim", logo: "/brands/stradivarius.svg", countries: [...except("AU"), "KW"] },
+  { slug: "pullandbear", label: "PULL&BEAR", category: "Giyim", logo: "/brands/pullandbear.svg", countries: [...except("NO"), "QA", "KW"] },
+  { slug: "massimodutti", label: "Massimo Dutti", category: "Giyim", logo: "/brands/massimodutti.svg", countries: [...except("AU"), "QA", "KW", "SG", "HK"] },
   { slug: "koton", label: "KOTON", category: "Giyim", logo: "/brands/koton.svg", countries: TR_ONLY },
   { slug: "guess", label: "GUESS", category: "Giyim", logo: "/brands/guess.svg", countries: GUESS },
   { slug: "penti", label: "penti", category: "İç giyim", logo: "/brands/penti.png", countries: TR_ONLY },
-  { slug: "oysho", label: "OYSHO", category: "İç giyim", logo: "/brands/oysho.svg", countries: except("AU", "NO") },
-  { slug: "sephora", label: "SEPHORA", category: "Kozmetik", logo: "/brands/sephora.svg", countries: ["TR", "US", "CA", "AU", "DE", "FR", "IT", "CH"] },
+  { slug: "oysho", label: "OYSHO", category: "İç giyim", logo: "/brands/oysho.svg", countries: [...except("AU", "NO"), "QA", "KW"] },
+  { slug: "sephora", label: "SEPHORA", category: "Kozmetik", logo: "/brands/sephora.svg", countries: ["TR", "US", "CA", "AU", "DE", "FR", "IT", "CH", "SG", "HK"] },
   { slug: "gratis", label: "gratis", category: "Kozmetik", logo: "/brands/gratis.svg", countries: TR_ONLY },
   { slug: "rossmann", label: "ROSSMANN", category: "Kozmetik", logo: "/brands/rossmann.svg", countries: ["TR", "DE"] },
   { slug: "watsons", label: "Watsons", category: "Kişisel bakım", logo: "/brands/watsons.svg", countries: TR_ONLY },
@@ -66,11 +73,11 @@ export const BRANDS: BrandInfo[] = [
   { slug: "lefties", label: "Lefties", category: "Giyim", logo: "/brands/lefties.svg", countries: ["TR", "FR", "ES", "IT", "PT"] },
   { slug: "vakko", label: "VAKKO", category: "Giyim", logo: "/brands/vakko.svg", countries: TR_ONLY },
   { slug: "vakkorama", label: "Vakkorama", category: "Çok markalı", logo: "/brands/vakkorama.svg", countries: TR_ONLY },
-  { slug: "nike", label: "Nike", category: "Ayakkabı", logo: "/brands/nike.svg", countries: ["TR", "GB", "US", "IE", "DE", "FR", "NL", "BE", "AT", "ES", "IT", "FI", "CH", "SE", "DK", "NO"] },
+  { slug: "nike", label: "Nike", category: "Ayakkabı", logo: "/brands/nike.svg", countries: ["TR", "GB", "US", "IE", "DE", "FR", "NL", "BE", "AT", "ES", "IT", "FI", "CH", "SE", "DK", "NO", "JP", "KR", "SG"] },
   { slug: "newbalance", label: "New Balance", category: "Ayakkabı", logo: "/brands/newbalance.svg", countries: ["TR", "US", "CA", "IE", "DE", "FR", "NL", "BE", "AT", "ES", "IT", "PT", "FI", "SE", "DK"] },
   { slug: "puma", label: "PUMA", category: "Ayakkabı", logo: "/brands/puma.svg", countries: ["TR", "GB", "US", "CA", "IE", "DE", "FR", "NL", "BE", "AT", "ES", "IT", "PT", "FI", "CH", "SE", "DK"] },
   { slug: "superstep", label: "SuperStep", category: "Çok markalı", logo: "/brands/superstep.svg", countries: TR_ONLY },
-  { slug: "modanisa", label: "Modanisa", category: "Çok markalı", logo: "/brands/modanisa.svg", countries: ["TR", "AE", "SA"] },
+  { slug: "modanisa", label: "Modanisa", category: "Çok markalı", logo: "/brands/modanisa.svg", countries: ["TR", "AE", "SA", "QA", "KW"] },
   { slug: "network", label: "Network", category: "Giyim", logo: "/brands/network.svg", countries: TR_ONLY },
   { slug: "ipekyol", label: "İpekyol", category: "Giyim", logo: "/brands/ipekyol.svg", countries: TR_ONLY },
   { slug: "twist", label: "Twist", category: "Giyim", logo: "/brands/twist.svg", countries: TR_ONLY },
@@ -92,8 +99,8 @@ export const BRANDS: BrandInfo[] = [
   { slug: "lesbenjamins", label: "Les Benjamins", category: "Giyim", logo: "/brands/lesbenjamins.svg", countries: TR_ONLY },
   { slug: "underarmour", label: "Under Armour", category: "Spor", logo: "/brands/underarmour.svg", countries: ["TR", "US", "CA"] },
   { slug: "timberland", label: "Timberland", category: "Ayakkabı", logo: "/brands/timberland.svg", countries: TR_ONLY },
-  { slug: "marksandspencer", label: "Marks & Spencer", category: "Giyim", logo: "/brands/marksandspencer.svg", countries: ["TR", "GB"] },
-  { slug: "victoriassecret", label: "Victoria's Secret", category: "İç giyim", logo: "/brands/victoriassecret.svg", countries: ["TR", "AE", "SA"] },
+  { slug: "marksandspencer", label: "Marks & Spencer", category: "Giyim", logo: "/brands/marksandspencer.svg", countries: ["TR", "GB", "IE"] },
+  { slug: "victoriassecret", label: "Victoria's Secret", category: "İç giyim", logo: "/brands/victoriassecret.svg", countries: ["TR", "AE", "SA", "QA", "KW"] },
   { slug: "lcw", label: "LC Waikiki", category: "Giyim", logo: "/brands/lcw.svg", countries: TR_ONLY },
   { slug: "defacto", label: "DeFacto", category: "Giyim", logo: "/brands/defacto.svg", countries: TR_ONLY },
   { slug: "mavi", label: "Mavi", category: "Giyim", logo: "/brands/mavi.svg", countries: TR_ONLY },
@@ -163,7 +170,7 @@ export const BRANDS: BrandInfo[] = [
   { slug: "coachoutlet", label: "Coach Outlet", category: "Çanta", logo: "/brands/coachoutlet.svg", countries: ["US", "CA"] },
   { slug: "katespadeoutlet", label: "Kate Spade Outlet", category: "Çanta", logo: "/brands/katespadeoutlet.svg", countries: ["US"] },
   { slug: "nordstromrack", label: "Nordstrom Rack", category: "Çok markalı", logo: "/brands/nordstromrack.svg", countries: ["US"] },
-  { slug: "adidas", label: "adidas", category: "Ayakkabı", logo: "/brands/adidas.svg", countries: ["TR", "GB", "US", "CA", "AU", "IE", "DE", "FR", "NL", "BE", "AT", "ES", "IT", "PT", "FI", "CH", "SE", "DK", "NO"] },
+  { slug: "adidas", label: "adidas", category: "Ayakkabı", logo: "/brands/adidas.svg", countries: ["TR", "GB", "US", "CA", "AU", "IE", "DE", "FR", "NL", "BE", "AT", "ES", "IT", "PT", "FI", "CH", "SE", "DK", "NO", "JP", "KR", "SG", "HK"] },
   { slug: "swarovski", label: "Swarovski", category: "Takı", logo: "/brands/swarovski.svg", countries: ["TR", "US", "CA", "AU", "AE"] },
   { slug: "urbanoutfitters", label: "Urban Outfitters", category: "Giyim", logo: "/brands/urbanoutfitters.svg", countries: ["US", "CA", "GB"] },
   { slug: "freepeople", label: "Free People", category: "Giyim", logo: "/brands/freepeople.svg", countries: ["US", "GB"] },
@@ -183,7 +190,7 @@ export const BRANDS: BrandInfo[] = [
   { slug: "aritzia", label: "Aritzia", category: "Giyim", logo: "/brands/aritzia.svg", countries: ["US", "CA"] },
   { slug: "lululemon", label: "lululemon", category: "Spor", logo: "/brands/lululemon.svg", countries: ["US", "CA", "TR"] },
   // 2026-10-11 round 2: big brands behind bot walls (registry-intl.ts).
-  { slug: "boots", label: "Boots", category: "Kozmetik", logo: "/brands/boots.svg", countries: ["GB", "AE", "SA"] },
+  { slug: "boots", label: "Boots", category: "Kozmetik", logo: "/brands/boots.svg", countries: ["GB", "AE", "SA", "KW", "IE"] },
   { slug: "uniqlo", label: "UNIQLO", category: "Giyim", logo: "/brands/uniqlo.svg", countries: ["GB", "AU", "IE", "DE", "FR", "NL", "BE", "AT", "ES", "IT", "PT", "FI", "SE", "DK"] },
   { slug: "faces", label: "FACES", category: "Kozmetik", logo: "/brands/faces.svg", countries: ["AE", "SA"] },
   { slug: "garage", label: "Garage", category: "Giyim", logo: "/brands/garage.svg", countries: ["CA"] },
@@ -197,21 +204,21 @@ export const BRANDS: BrandInfo[] = [
   { slug: "douglas", label: "Douglas", category: "Kozmetik", logo: "/brands/douglas.svg", countries: ["CH"] },
   { slug: "cubus", label: "Cubus", category: "Giyim", logo: "/brands/cubus.svg", countries: ["NO"] },
   { slug: "bikbok", label: "Bik Bok", category: "Giyim", logo: "/brands/bikbok.svg", countries: ["NO"] },
-  { slug: "lindex", label: "Lindex", category: "Giyim", logo: "/brands/lindex.svg", countries: ["NO"] },
-  { slug: "nelly", label: "Nelly", category: "Giyim", logo: "/brands/nelly.svg", countries: ["NO"] },
-  { slug: "lyko", label: "Lyko", category: "Kozmetik", logo: "/brands/lyko.svg", countries: ["NO"] },
-  { slug: "aivi", label: "AIVI", category: "Çok markalı", logo: "/brands/aivi.svg", countries: ["AE", "SA"] },
-  { slug: "styli", label: "Styli", category: "Çok markalı", logo: "/brands/styli.svg", countries: ["AE", "SA"] },
-  { slug: "centrepoint", label: "Centrepoint", category: "Çok markalı", logo: "/brands/centrepoint.svg", countries: ["AE", "SA"] },
-  { slug: "maxfashion", label: "Max", category: "Giyim", logo: "/brands/maxfashion.svg", countries: ["AE", "SA"] },
-  { slug: "splash", label: "Splash", category: "Giyim", logo: "/brands/splash.svg", countries: ["AE", "SA"] },
+  { slug: "lindex", label: "Lindex", category: "Giyim", logo: "/brands/lindex.svg", countries: ["NO", "SE", "FI", "DK"] },
+  { slug: "nelly", label: "Nelly", category: "Giyim", logo: "/brands/nelly.svg", countries: ["NO", "SE", "FI", "DK"] },
+  { slug: "lyko", label: "Lyko", category: "Kozmetik", logo: "/brands/lyko.svg", countries: ["NO", "SE", "FI", "DK"] },
+  { slug: "aivi", label: "AIVI", category: "Çok markalı", logo: "/brands/aivi.svg", countries: ["AE", "SA", "QA", "KW"] },
+  { slug: "styli", label: "Styli", category: "Çok markalı", logo: "/brands/styli.svg", countries: ["AE", "SA", "QA", "KW"] },
+  { slug: "centrepoint", label: "Centrepoint", category: "Çok markalı", logo: "/brands/centrepoint.svg", countries: ["AE", "SA", "QA", "KW"] },
+  { slug: "maxfashion", label: "Max", category: "Giyim", logo: "/brands/maxfashion.svg", countries: ["AE", "SA", "QA", "KW"] },
+  { slug: "splash", label: "Splash", category: "Giyim", logo: "/brands/splash.svg", countries: ["AE", "SA", "KW"] },
   { slug: "ounass", label: "Ounass", category: "Çok markalı", logo: "/brands/ounass.svg", countries: ["AE", "SA"] },
   { slug: "flo", label: "FLO", category: "Ayakkabı", logo: "/brands/flo.svg", countries: ["TR"] },
   { slug: "instreet", label: "In Street", category: "Spor", logo: "/brands/instreet.svg", countries: ["TR"] },
   { slug: "lumberjack", label: "Lumberjack", category: "Ayakkabı", logo: "/brands/lumberjack.svg", countries: ["TR"] },
   { slug: "kinetix", label: "Kinetix", category: "Spor", logo: "/brands/kinetix.svg", countries: ["TR"] },
   { slug: "reebok", label: "Reebok", category: "Spor", logo: "/brands/reebok.svg", countries: ["TR"] },
-  { slug: "kiko", label: "KIKO Milano", category: "Kozmetik", logo: "/brands/kiko.svg", countries: ["TR"] },
+  { slug: "kiko", label: "KIKO Milano", category: "Kozmetik", logo: "/brands/kiko.svg", countries: ["TR", "IT"] },
   { slug: "skechers", label: "Skechers", category: "Ayakkabı", logo: "/brands/skechers.svg", countries: ["TR", "US", "CA"] },
   { slug: "sneaksup", label: "Sneaks Up", category: "Spor", logo: "/brands/sneaksup.svg", countries: ["TR"] },
   { slug: "arket", label: "ARKET", category: "Giyim", logo: "/brands/arket.svg", countries: ["GB", "IE", "DE", "NL", "BE", "AT", "PT", "FI", "CH", "SE", "DK", "NO"] },
@@ -222,9 +229,9 @@ export const BRANDS: BrandInfo[] = [
   { slug: "asos", label: "ASOS", category: "Çok markalı", logo: "/brands/asos.svg", countries: ["GB", "IE", "DE", "FR", "NL", "BE", "AT", "ES", "IT", "PT", "FI", "SE", "DK"] },
   { slug: "next", label: "Next", category: "Giyim", logo: "/brands/next.svg", countries: ["GB"] },
   { slug: "reiss", label: "Reiss", category: "Giyim", logo: "/brands/reiss.svg", countries: ["GB"] },
-  { slug: "riverisland", label: "River Island", category: "Giyim", logo: "/brands/riverisland.svg", countries: ["GB"] },
+  { slug: "riverisland", label: "River Island", category: "Giyim", logo: "/brands/riverisland.svg", countries: ["GB", "IE"] },
   { slug: "jdsports", label: "JD Sports", category: "Spor", logo: "/brands/jdsports.svg", countries: ["GB", "IE", "DE", "FR", "NL", "BE", "AT", "ES", "IT", "PT", "FI", "SE", "DK"] },
-  { slug: "cottonon", label: "Cotton On", category: "Giyim", logo: "/brands/cottonon.svg", countries: ["AU"] },
+  { slug: "cottonon", label: "Cotton On", category: "Giyim", logo: "/brands/cottonon.svg", countries: ["AU", "SG"] },
   { slug: "showpo", label: "Showpo", category: "Giyim", logo: "/brands/showpo.svg", countries: ["AU"] },
   { slug: "sportsgirl", label: "Sportsgirl", category: "Giyim", logo: "/brands/sportsgirl.svg", countries: ["AU"] },
   { slug: "jd-sports", label: "JD Sports", category: "Spor", logo: "/brands/jd-sports.svg", countries: ["AU"] },
@@ -239,17 +246,17 @@ export const BRANDS: BrandInfo[] = [
   { slug: "impo", label: "Impo", category: "Kozmetik", logo: "/brands/impo.svg", countries: ["CH"] },
   { slug: "only", label: "ONLY", category: "Giyim", logo: "/brands/only.svg", countries: ["IE", "DE", "FR", "NL", "BE", "AT", "ES", "IT", "PT", "FI", "CH", "SE", "DK", "NO"] },
   { slug: "veromoda", label: "VERO MODA", category: "Giyim", logo: "/brands/veromoda.svg", countries: ["IE", "DE", "FR", "NL", "AT", "ES", "IT", "PT", "FI", "CH", "SE", "DK", "NO"] },
-  { slug: "kappahl", label: "KappAhl", category: "Giyim", logo: "/brands/kappahl.svg", countries: ["NO"] },
+  { slug: "kappahl", label: "KappAhl", category: "Giyim", logo: "/brands/kappahl.svg", countries: ["NO", "SE", "FI"] },
   { slug: "vita", label: "Vita", category: "Kozmetik", logo: "/brands/vita.svg", countries: ["NO"] },
   { slug: "xxl", label: "XXL", category: "Spor", logo: "/brands/xxl.svg", countries: ["NO"] },
   { slug: "blivakker", label: "Blivakker", category: "Kozmetik", logo: "/brands/blivakker.svg", countries: ["NO"] },
-  { slug: "ginatricot", label: "Gina Tricot", category: "Giyim", logo: "/brands/ginatricot.svg", countries: ["NO"] },
+  { slug: "ginatricot", label: "Gina Tricot", category: "Giyim", logo: "/brands/ginatricot.svg", countries: ["NO", "SE", "FI", "DK", "NL", "DE", "FR", "AT"] },
   { slug: "na-kd", label: "NA-KD", category: "Giyim", logo: "/brands/na-kd.svg", countries: ["NO"] },
-  { slug: "ellos", label: "Ellos", category: "Çok markalı", logo: "/brands/ellos.svg", countries: ["NO"] },
+  { slug: "ellos", label: "Ellos", category: "Çok markalı", logo: "/brands/ellos.svg", countries: ["NO", "SE", "FI", "DK"] },
   { slug: "fredrikoglouisa", label: "Fredrik & Louisa", category: "Kozmetik", logo: "/brands/fredrikoglouisa.svg", countries: ["NO"] },
   { slug: "gullfunn", label: "Gullfunn", category: "Takı", logo: "/brands/gullfunn.svg", countries: ["NO"] },
-  { slug: "bathandbodyworks", label: "Bath & Body Works", category: "Kişisel bakım", logo: "/brands/bathandbodyworks.svg", countries: ["TR", "AE", "SA", "US"] },
-  { slug: "americaneagle", label: "American Eagle", category: "Giyim", logo: "/brands/americaneagle.svg", countries: ["AE", "SA", "US", "CA"] },
+  { slug: "bathandbodyworks", label: "Bath & Body Works", category: "Kişisel bakım", logo: "/brands/bathandbodyworks.svg", countries: ["TR", "AE", "SA", "US", "QA", "KW"] },
+  { slug: "americaneagle", label: "American Eagle", category: "Giyim", logo: "/brands/americaneagle.svg", countries: ["AE", "SA", "US", "CA", "QA", "KW"] },
   { slug: "goldenscent", label: "Golden Scent", category: "Kozmetik", logo: "/brands/goldenscent.svg", countries: ["AE", "SA"] },
   { slug: "vperfumes", label: "VPerfumes", category: "Kozmetik", logo: "/brands/vperfumes.svg", countries: ["AE", "SA"] },
   { slug: "bloomingdales", label: "Bloomingdale's", category: "Çok markalı", logo: "/brands/bloomingdales.svg", countries: ["AE", "US"] },
@@ -293,7 +300,7 @@ export const BRANDS: BrandInfo[] = [
   { slug: "whistles", label: "Whistles", category: "Giyim", logo: "/brands/whistles.svg", countries: ["GB"] },
   { slug: "hobbs", label: "Hobbs", category: "Giyim", logo: "/brands/hobbs.svg", countries: ["GB"] },
   // EU wave 1 (2026-10-21): brands ranked by each country's own Google search demand.
-  { slug: "decathlon", label: "Decathlon", category: "Spor", logo: "/brands/decathlon.svg", countries: ["TR", "DE", "FR", "NL", "BE", "AT", "ES", "IT", "PT"] },
+  { slug: "decathlon", label: "Decathlon", category: "Spor", logo: "/brands/decathlon.svg", countries: ["TR", "DE", "FR", "NL", "BE", "AT", "ES", "IT", "PT", "SG"] },
   { slug: "intersport", label: "Intersport", category: "Spor", logo: "/brands/intersport.svg", countries: ["FR"] },
   { slug: "promod", label: "Promod", category: "Giyim", logo: "/brands/promod.svg", countries: ["FR"] },
   { slug: "undiz", label: "Undiz", category: "İç giyim", logo: "/brands/undiz.svg", countries: ["FR"] },
@@ -319,6 +326,52 @@ export const BRANDS: BrandInfo[] = [
   { slug: "tous", label: "TOUS", category: "Takı", logo: "/brands/tous.svg", countries: ["ES"] },
   { slug: "bimbaylola", label: "BIMBA Y LOLA", category: "Çanta", logo: "/brands/bimbaylola.svg", countries: ["ES"] },
   { slug: "scalpers", label: "Scalpers", category: "Giyim", logo: "/brands/scalpers.svg", countries: ["ES"] },
+  // Wave 2 (2026-10-21): Netherlands/Belgium, Ireland, Nordics, Italy. Same rules: runner-verified, no proxy, real strike prices only.
+  { slug: "kruidvat", label: "Kruidvat", category: "Kozmetik", logo: "/brands/kruidvat.svg", countries: ["NL", "BE"] },
+  { slug: "rituals", label: "Rituals", category: "Kozmetik", logo: "/brands/rituals.svg", countries: ["NL", "BE", "DE", "AT", "FR", "ES", "IT", "PT", "IE", "FI", "SE", "DK", "GB", "CH"] },
+  { slug: "hunkemoller", label: "Hunkemöller", category: "İç giyim", logo: "/brands/hunkemoller.svg", countries: ["NL", "BE"] },
+  { slug: "wefashion", label: "WE Fashion", category: "Giyim", logo: "/brands/wefashion.svg", countries: ["NL", "BE"] },
+  { slug: "jbc", label: "JBC", category: "Giyim", logo: "/brands/jbc.svg", countries: ["BE"] },
+  { slug: "scapino", label: "Scapino", category: "Ayakkabı", logo: "/brands/scapino.png", countries: ["NL"] },
+  { slug: "onlyandsons", label: "ONLY & SONS", category: "Giyim", logo: "/brands/onlyandsons.png", countries: ["NL", "BE"] },
+  { slug: "elverys", label: "Intersport Elverys", category: "Spor", logo: "/brands/elverys.svg", countries: ["IE"] },
+  { slug: "brownthomas", label: "Brown Thomas", category: "Mağaza", logo: "/brands/brownthomas.svg", countries: ["IE"] },
+  { slug: "arnotts", label: "Arnotts", category: "Mağaza", logo: "/brands/arnotts.svg", countries: ["IE"] },
+  { slug: "dunnes", label: "Dunnes Stores", category: "Mağaza", logo: "/brands/dunnes.svg", countries: ["IE"] },
+  { slug: "jackjones", label: "JACK & JONES", category: "Giyim", logo: "/brands/jackjones.svg", countries: ["SE", "FI", "DK"] },
+  { slug: "vila", label: "VILA", category: "Giyim", logo: "/brands/vila.png", countries: ["SE", "FI", "DK"] },
+  { slug: "pieces", label: "PIECES", category: "Giyim", logo: "/brands/pieces.png", countries: ["SE", "FI", "DK"] },
+  { slug: "stadium", label: "Stadium", category: "Spor", logo: "/brands/stadium.svg", countries: ["SE", "FI"] },
+  { slug: "ahlens", label: "Åhléns", category: "Mağaza", logo: "/brands/ahlens.svg", countries: ["SE"] },
+  { slug: "apotea", label: "Apotea", category: "Kozmetik", logo: "/brands/apotea.png", countries: ["SE"] },
+  { slug: "stockmann", label: "Stockmann", category: "Mağaza", logo: "/brands/stockmann.svg", countries: ["FI"] },
+  { slug: "matas", label: "Matas", category: "Kozmetik", logo: "/brands/matas.svg", countries: ["DK"] },
+  { slug: "magasin", label: "Magasin du Nord", category: "Mağaza", logo: "/brands/magasin.svg", countries: ["DK"] },
+  { slug: "ovs", label: "OVS", category: "Giyim", logo: "/brands/ovs.svg", countries: ["IT"] },
+  { slug: "tigota", label: "Tigotà", category: "Kozmetik", logo: "/brands/tigota.svg", countries: ["IT"] },
+  { slug: "yamamay", label: "Yamamay", category: "İç giyim", logo: "/brands/yamamay.svg", countries: ["IT"] },
+  { slug: "benetton", label: "United Colors of Benetton", category: "Giyim", logo: "/brands/benetton.svg", countries: ["IT"] },
+  { slug: "sisley", label: "Sisley", category: "Giyim", logo: "/brands/sisley.svg", countries: ["IT"] },
+  { slug: "terranova", label: "Terranova", category: "Giyim", logo: "/brands/terranova.png", countries: ["IT"] },
+  { slug: "calliope", label: "Calliope", category: "Giyim", logo: "/brands/calliope.svg", countries: ["IT"] },
+  { slug: "pittarosso", label: "PittaRosso", category: "Ayakkabı", logo: "/brands/pittarosso.png", countries: ["IT"] },
+  { slug: "motivi", label: "Motivi", category: "Giyim", logo: "/brands/motivi.png", countries: ["IT"] },
+  // Wave 3 (2026-10-21): Japan and South Korea (names stay in the local language).
+  { slug: "honeys", label: "Honeys", category: "Giyim", logo: "/brands/honeys.svg", countries: ["JP"] },
+  { slug: "earthmusic", label: "earth music&ecology", category: "Giyim", logo: "/brands/earthmusic.png", countries: ["JP"] },
+  { slug: "globalwork", label: "GLOBAL WORK", category: "Giyim", logo: "/brands/globalwork.svg", countries: ["JP"] },
+  { slug: "musinsa", label: "MUSINSA", category: "Çok markalı", logo: "/brands/musinsa.png", countries: ["KR"] },
+  { slug: "29cm", label: "29CM", category: "Çok markalı", logo: "/brands/29cm.png", countries: ["KR"] },
+  { slug: "wconcept", label: "W Concept", category: "Çok markalı", logo: "/brands/wconcept.svg", countries: ["KR"] },
+  { slug: "spao", label: "SPAO", category: "Giyim", logo: "/brands/spao.png", countries: ["KR"] },
+  { slug: "topten", label: "TOPTEN", category: "Giyim", logo: "/brands/topten.png", countries: ["KR"] },
+  { slug: "8seconds", label: "8seconds", category: "Giyim", logo: "/brands/8seconds.png", countries: ["KR"] },
+  // Singapore and Hong Kong (2026-10-21).
+  { slug: "charleskeith", label: "CHARLES & KEITH", category: "Çanta", logo: "/brands/charleskeith.svg", countries: ["SG", "HK"] },
+  { slug: "pedro", label: "PEDRO", category: "Ayakkabı", logo: "/brands/pedro.svg", countries: ["SG"] },
+  { slug: "lovebonito", label: "Love, Bonito", category: "Giyim", logo: "/brands/lovebonito.svg", countries: ["SG"] },
+  { slug: "mannings", label: "Mannings", category: "Kozmetik", logo: "/brands/mannings.png", countries: ["HK"] },
+  { slug: "guardian", label: "Guardian", category: "Kozmetik", logo: "/brands/guardian.png", countries: ["SG"] },
 ];
 
 export const BRAND_SLUGS = BRANDS.map((b) => b.slug);

@@ -34,6 +34,22 @@ const MAX_PAGES = 40;
 const PAUSE_MS = 500;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Ireland (boots.ie, EUR; 2026-10-21): the same Algolia app holds a sister
+ * index `prod_live_products_ie` (~61k entries) with EUR `currentPrice` /
+ * `regularPrice` and `wasPriceText_ROI`. boots.ie is Imperva-walled like
+ * boots.com; the index is not (probe run 39634392109). Beauty and fragrance
+ * only — toiletries, health and electrical (straighteners,
+ * shavers) are left out for Ireland.
+ */
+const IE_INDEX = "prod_live_products_ie";
+const IE_SITE = "https://www.boots.ie";
+export const FILTER_IE =
+  '(categoryMap.categories.lvl0:"beauty & skincare" OR categoryMap.categories.lvl0:"fragrance") AND ' +
+  'NOT categoryMap.categories.lvl0:"baby & child" AND NOT categoryMap.categories.lvl0:"electrical" AND ' +
+  'NOT categoryMap.categories.lvl0:"health & pharmacy" AND NOT categoryMap.categories.lvl0:"homeware" AND ' +
+  'NOT brand:Chanel AND liveFlag:true AND inStock:true';
+
 /** The site's own default filter, narrowed to the departments the app covers and to stock. */
 export const FILTER =
   '(categoryMap.categories.lvl0:"beauty & skincare" OR categoryMap.categories.lvl0:"fragrance" OR ' +
@@ -45,6 +61,7 @@ const ATTRS = [
   "currentPrice", "regularPrice", "inStock", "productColour", "categoryMap",
   "productAttributes.gender", "productAttributes.wasPriceText_UK", "productAttributes.product_type",
 ].join(",");
+const ATTRS_IE = ATTRS.replace("productAttributes.wasPriceText_UK", "productAttributes.wasPriceText_ROI");
 
 export function pageUrl(page: number): string {
   const p = new URLSearchParams({
@@ -58,6 +75,20 @@ export function pageUrl(page: number): string {
     "x-algolia-api-key": API_KEY,
   });
   return `https://${APP_ID}-dsn.algolia.net/1/indexes/${INDEX}?${p}`;
+}
+
+export function pageUrlIe(page: number): string {
+  const p = new URLSearchParams({
+    query: "",
+    hitsPerPage: "1000",
+    page: String(page),
+    filters: FILTER_IE,
+    attributesToRetrieve: ATTRS_IE,
+    attributesToHighlight: "",
+    "x-algolia-application-id": APP_ID,
+    "x-algolia-api-key": API_KEY,
+  });
+  return `https://${APP_ID}-dsn.algolia.net/1/indexes/${IE_INDEX}?${p}`;
 }
 
 /** Algolia stores single-valued attributes as a bare string and multi-valued ones as an array. */
@@ -80,7 +111,9 @@ export function mapBootsGb(h: any, country: CountryCode = "GB"): ProductRecord |
   const was = Number(h?.regularPrice);
   if (!h?.objectID || !h?.offerName || !h?.actionURL) return null;
   if (!(price > 0) || !(was > price)) return null;
-  if (String(h?.productAttributes?.wasPriceText_UK ?? "").toLowerCase() === "worth") return null;
+  const ie = country === "IE";
+  const wasText = ie ? h?.productAttributes?.wasPriceText_ROI : h?.productAttributes?.wasPriceText_UK;
+  if (String(wasText ?? "").toLowerCase() === "worth") return null;
   const img = h.model ? `https://boots.scene7.com/is/image/Boots/${h.model}?wid=800&hei=800&op_sharpen=1` : null;
   const cats = h?.categoryMap?.["categories.lvl3"] ?? h?.categoryMap?.["categories.lvl2"] ?? [];
   const type = h?.productAttributes?.product_type;
@@ -89,12 +122,12 @@ export function mapBootsGb(h: any, country: CountryCode = "GB"): ProductRecord |
     country,
     externalId: String(h.objectID),
     name: String(h.offerName).trim(),
-    url: `${SITE}${h.actionURL}`,
+    url: `${ie ? IE_SITE : SITE}${h.actionURL}`,
     imageUrl: img,
     images: cleanGallery([img], img),
     price: toMinor(price),
     listPrice: toMinor(was),
-    currency: "GBP",
+    currency: ie ? "EUR" : "GBP",
     inStock: h.inStock !== false,
     // product_type lists merchandising shelves too ("star gift"); skip those.
     category: list(type).find((t) => !/gift/i.test(t)) || cats[0] || null,
@@ -106,6 +139,7 @@ export function mapBootsGb(h: any, country: CountryCode = "GB"): ProductRecord |
 }
 
 export async function listBootsGb(country: CountryCode = "GB"): Promise<ProductRecord[]> {
+  if (country === "IE") return listBootsIe();
   if (country !== "GB") return [];
   const byId = new Map<string, ProductRecord>();
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -118,6 +152,26 @@ export async function listBootsGb(country: CountryCode = "GB"): Promise<ProductR
     }
     if (hits.length < 1000) break;
   }
+  const off = (r: ProductRecord) => (r.listPrice! - r.price) / r.listPrice!;
+  return [...byId.values()].sort((a, b) => off(b) - off(a)).slice(0, CAP);
+}
+
+async function listBootsIe(): Promise<ProductRecord[]> {
+  const country: CountryCode = "IE";
+  const byId = new Map<string, ProductRecord>();
+  let page = 0;
+  for (; page < MAX_PAGES; page++) {
+    if (page > 0) await sleep(PAUSE_MS);
+    const d = await getJson<any>(pageUrlIe(page), { country });
+    const hits: any[] = d?.hits;
+    if (!Array.isArray(hits)) throw new Error(`boots/IE: page ${page} has no hits`);
+    for (const h of hits) {
+      const r = mapBootsGb(h, country);
+      if (r) byId.set(r.externalId, r);
+    }
+    if (hits.length < 1000) break;
+  }
+  if (page === MAX_PAGES) throw new Error(`boots/IE: more than ${MAX_PAGES} pages`);
   const off = (r: ProductRecord) => (r.listPrice! - r.price) / r.listPrice!;
   return [...byId.values()].sort((a, b) => off(b) - off(a)).slice(0, CAP);
 }

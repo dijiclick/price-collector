@@ -174,6 +174,40 @@ export const COUNTRIES = {
     proxyExit: "no", minPrice: 5000, buckets: [50000, 150000],
     dateLocale: "en-NO", launched: true,
   },
+  // Wave 2/3 (2026-10-21). Collected, not offered until each has ~20 working
+  // brands. Prices are stored ×100 for EVERY currency, including the ones with
+  // no minor unit (JPY, KRW) and the 3-decimal KWD (rounded to hundredths);
+  // lib/format.ts prints JPY/KRW without decimals.
+  QA: {
+    currency: "QAR", symbol: "QAR", symbolBefore: true,
+    proxyExit: "qa", minPrice: 1000, buckets: [10000, 30000],
+    dateLocale: "en-QA", launched: false,
+  },
+  KW: {
+    currency: "KWD", symbol: "KWD", symbolBefore: true,
+    proxyExit: "kw", minPrice: 100, buckets: [1000, 3000],
+    dateLocale: "en-KW", launched: false,
+  },
+  JP: {
+    currency: "JPY", symbol: "¥", symbolBefore: true,
+    proxyExit: "jp", minPrice: 50000, buckets: [500000, 1500000],
+    dateLocale: "ja-JP", launched: false,
+  },
+  KR: {
+    currency: "KRW", symbol: "₩", symbolBefore: true,
+    proxyExit: "kr", minPrice: 500000, buckets: [3000000, 10000000],
+    dateLocale: "ko-KR", launched: false,
+  },
+  SG: {
+    currency: "SGD", symbol: "S$", symbolBefore: true,
+    proxyExit: "sg", minPrice: 500, buckets: [5000, 15000],
+    dateLocale: "en-SG", launched: false,
+  },
+  HK: {
+    currency: "HKD", symbol: "HK$", symbolBefore: true,
+    proxyExit: "hk", minPrice: 3000, buckets: [30000, 100000],
+    dateLocale: "en-HK", launched: false,
+  },
 } satisfies Record<string, CountryInfo>;
 
 export type CountryCode = keyof typeof COUNTRIES;

@@ -27,6 +27,8 @@
  *   department's reduced rows come first and are topped up to its cap with
  *   full-price rows (as Akinon shops do between sales): the run size holds,
  *   the sweep runs, and a full-price row that goes on sale is a real drop.
+ * - Qatar and Kuwait (2026-10-21): same keys, `view_id=qa|kw` gives QAR/KWD
+ *   (Centrepoint KW "5.5 / 10", Max KW "7 / 9.99"). Splash has no Qatar view.
  * - A page shorter than the result count says it should be (or a doc-less
  *   reply) is retried once, then fails the run: a half-read department must
  *   not pass as a complete one and mark the rest gone.
@@ -62,7 +64,7 @@ export const LANDMARK_SITES: Record<string, LandmarkSite> = {
       { q: "baby", gender: "cocuk", cap: 100 },
       { q: "sports", gender: null, cap: 150 },
     ],
-    markets: ["AE", "SA"],
+    markets: ["AE", "SA", "QA", "KW"],
   },
   maxfashion: {
     slug: "maxfashion",
@@ -75,7 +77,7 @@ export const LANDMARK_SITES: Record<string, LandmarkSite> = {
       { q: "mxmen", gender: "erkek", cap: 400 },
       { q: "mxkids", gender: "cocuk", cap: 400 },
     ],
-    markets: ["AE", "SA"],
+    markets: ["AE", "SA", "QA", "KW"],
   },
   splash: {
     slug: "splash",
@@ -87,7 +89,8 @@ export const LANDMARK_SITES: Record<string, LandmarkSite> = {
       { q: "women", gender: "kadin", cap: 900 },
       { q: "men", gender: "erkek", cap: 600 },
     ],
-    markets: ["AE", "SA"],
+    // No Qatar shop: the qa view holds 0 rows (2026-10-21).
+    markets: ["AE", "SA", "KW"],
   },
 };
 

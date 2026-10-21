@@ -18,6 +18,9 @@
  *   every listed size is in stock (sold-out sizes are simply absent). Basket
  *   promotions ("40% off everything", "3 for 175") are not in final_price and
  *   are ignored, like elsewhere.
+ * - Qatar and Kuwait (2026-10-21) are the same apps and keys with
+ *   `_prod_qa_`/`_prod_kw_` indices, sites on `.com.qa` / `.com.kw`. Kuwait
+ *   prices are KWD with up to 3 decimals (17.5, 2.25); toMinor rounds to ×100.
  * - Pagination is not capped at 1,000 hits (AEO AE: 1,986 over two pages of
  *   1,000), so a market is 1–3 requests.
  */
@@ -42,7 +45,12 @@ export const ALSHAYA_BRANDS: Record<string, AlshayaBrand> = {
     appId: "4FNPAZ4RVM",
     apiKey: "febfc405b70857ee8f201a084e5853e6",
     prefix: "vs",
-    sites: { AE: "https://www.victoriassecret.ae", SA: "https://www.victoriassecret.com.sa" },
+    sites: {
+      AE: "https://www.victoriassecret.ae",
+      SA: "https://www.victoriassecret.com.sa",
+      QA: "https://www.victoriassecret.com.qa",
+      KW: "https://www.victoriassecret.com.kw",
+    },
     defaultGender: "kadin",
   },
   bathandbodyworks: {
@@ -50,7 +58,12 @@ export const ALSHAYA_BRANDS: Record<string, AlshayaBrand> = {
     appId: "6TOQSJY0O6",
     apiKey: "c7af7bb2c02f6f150cf0e92eeaef1476",
     prefix: "bbw",
-    sites: { AE: "https://www.bathandbodyworks.ae", SA: "https://www.bathandbodyworks.com.sa" },
+    sites: {
+      AE: "https://www.bathandbodyworks.ae",
+      SA: "https://www.bathandbodyworks.com.sa",
+      QA: "https://www.bathandbodyworks.com.qa",
+      KW: "https://www.bathandbodyworks.com.kw",
+    },
     defaultGender: null,
   },
   americaneagle: {
@@ -58,7 +71,12 @@ export const ALSHAYA_BRANDS: Record<string, AlshayaBrand> = {
     appId: "SK1QL8DGIA",
     apiKey: "9102f3143ecc8b69ff6662de24805073",
     prefix: "aeo",
-    sites: { AE: "https://www.americaneagle.ae", SA: "https://www.americaneagle.com.sa" },
+    sites: {
+      AE: "https://www.americaneagle.ae",
+      SA: "https://www.americaneagle.com.sa",
+      QA: "https://www.americaneagle.com.qa",
+      KW: "https://www.americaneagle.com.kw",
+    },
     defaultGender: null,
   },
 };

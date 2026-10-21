@@ -52,6 +52,10 @@ const SITE_PATHS: Record<string, string> = {
   IE: "ie/en", NL: "nl/en", FI: "fi/en", SE: "se/en", DK: "dk/en", NO: "no/en",
   DE: "de/de", AT: "at/de", CH: "ch/de", FR: "fr/fr", BE: "be/fr",
   ES: "es/es", IT: "it/it", PT: "pt/pt",
+  QA: "qa/en", KW: "kw/en",
+  // 2026-10-21: paths only, so the "every country" test holds with SG/HK in
+  // lib/countries.ts. NOT swept yet (needs the browser fetcher; the Mac got 429).
+  SG: "sg/en", HK: "hk/en",
 };
 
 export function siteFor(country: CountryCode): MangoSite {

@@ -29,6 +29,8 @@ export const SEPHORA_ASIA_HEADERS = (country: CountryCode): Record<string, strin
   "Accept-Language": `en-${country}`,
   "X-Site-Country": country,
 });
+/** Markets this API serves for us: AU, and since 2026-10-21 Singapore and Hong Kong. */
+export const SEPHORA_ASIA_MARKETS: CountryCode[] = ["AU", "SG", "HK"];
 const PAGE = 100;
 const MAX_PAGES = 12;
 const PAUSE_MS = 800;
@@ -111,7 +113,8 @@ export function mapSephoraAsia(p: any, included: Map<string, any>, country: Coun
 }
 
 export async function listSephoraAsia(country: CountryCode): Promise<ProductRecord[]> {
-  if (country !== "AU") return [];
+  // SG (sephora.sg) and HK (sephora.hk) are the same API, added 2026-10-21; prices are cents there too.
+  if (!SEPHORA_ASIA_MARKETS.includes(country)) return [];
   const byId = new Map<string, ProductRecord>();
   let pages = 1;
   for (let n = 1; n <= Math.min(pages, MAX_PAGES); n++) {

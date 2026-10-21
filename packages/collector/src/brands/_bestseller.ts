@@ -23,7 +23,7 @@ import { getJson } from "../http";
 import { toMinor } from "../normalize";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
-export type BestsellerBrand = "only" | "veromoda";
+export type BestsellerBrand = "only" | "veromoda" | "jackjones" | "onlyandsons";
 
 /**
  * EU catalogues (2026-10-21): each answers with its own price list (`eur_de`,
@@ -40,6 +40,11 @@ export const BESTSELLER_SITES: Record<BestsellerBrand, { origin: string; catalog
   only: { origin: "https://www.only.com", catalogs: { CH: "de-ch", NO: "nb-no", ...EU_CATALOGS, BE: "nl-be" } },
   // Vero Moda Belgium (nl-be / fr-be) had 0 markdown items on 2026-10-21 — not mapped.
   veromoda: { origin: "https://www.veromoda.com", catalogs: { CH: "de-ch", NO: "nb-no", ...EU_CATALOGS } },
+  // JACK & JONES (2026-10-21): same API, ~2,430 markdown items in every catalogue
+  // (nl-be had only 32 — not mapped). ONLY & SONS also answers but carries ~170.
+  jackjones: { origin: "https://www.jackjones.com", catalogs: { CH: "de-ch", NO: "nb-no", ...EU_CATALOGS } },
+  // ONLY & SONS: NL and BE verified 2026-10-21 (runner 200); other catalogues untested.
+  onlyandsons: { origin: "https://www.onlyandsons.com", catalogs: { NL: "nl-nl", BE: "nl-be" } },
 };
 
 const SEARCH_PAGE = 200;

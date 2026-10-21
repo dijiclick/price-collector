@@ -89,9 +89,9 @@ export const adapters: BrandAdapter[] = [
   { brand: penti.brand, country: "TR", listProducts: penti.listProducts },
   // Sephora is a different platform in every region: TR OCAPI, US/CA site API,
   // AU through Sephora Asia's API, CH its own SFCC (2026-10-11).
-  { brand: sephora.brand, country: "TR", listProducts: byMarket(sephora.listProducts, (c) => (c === "AU" ? listSephoraAsia(c) : c === "CH" ? listSephoraCh(c) : listSephoraIntl(c))) },
+  { brand: sephora.brand, country: "TR", listProducts: byMarket(sephora.listProducts, (c) => (c === "AU" || c === "SG" || c === "HK" ? listSephoraAsia(c) : c === "CH" ? listSephoraCh(c) : listSephoraIntl(c))) },
   // Gulf H&M is Alshaya's shop, read through Alshaya's Algolia (hm-gulf.ts).
-  { brand: hm.brand, country: "TR", listProducts: (c) => (c === "AE" || c === "SA" ? listHmGulf(c) : hm.listProducts(c)) },
+  { brand: hm.brand, country: "TR", listProducts: (c) => (c === "AE" || c === "SA" || c === "QA" || c === "KW" ? listHmGulf(c) : hm.listProducts(c)) },
   { brand: gratis.brand, country: "TR", listProducts: gratis.listProducts },
   { brand: mango.brand, country: "TR", listProducts: mango.listProducts },
   { brand: watsons.brand, country: "TR", listProducts: watsons.listProducts },

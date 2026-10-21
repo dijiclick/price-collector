@@ -1,5 +1,5 @@
 /**
- * H&M in the Gulf (ae.hm.com, sa.hm.com) — franchised to Alshaya, so it is a
+ * H&M in the Gulf (ae.hm.com, sa.hm.com; qa.hm.com, kw.hm.com since 2026-10-21) — franchised to Alshaya, so it is a
  * different shop from www2.hm.com (hm.ts): own prices in AED/SAR, own catalogue.
  * Measured 2026-10-11:
  *
@@ -30,7 +30,12 @@ import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 export const HM_GULF = {
   appId: "HGR051I5XN",
   apiKey: "a2fdc9d456e5e714d8b654dfe1d8aed8",
-  sites: { AE: "https://ae.hm.com", SA: "https://sa.hm.com" } as Partial<Record<CountryCode, string>>,
+  sites: {
+    AE: "https://ae.hm.com",
+    SA: "https://sa.hm.com",
+    QA: "https://qa.hm.com",
+    KW: "https://kw.hm.com",
+  } as Partial<Record<CountryCode, string>>,
 };
 
 const BRANDS = new Set(["H&M", "& Other Stories"]);

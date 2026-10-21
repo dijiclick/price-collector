@@ -31,8 +31,12 @@ const ORIGIN = "https://nelly.com";
 const CLUSTER = "https://w67A8630F.api.esales.apptus.cloud/api/storefront/v3/queries";
 
 /** Per-market Elevate settings (from the site's own locale table). */
-export const NELLY_MARKETS: Partial<Record<CountryCode, { market: string; locale: string }>> = {
+export const NELLY_MARKETS: Partial<Record<CountryCode, { market: string; locale: string; departments?: string[] }>> = {
   NO: { market: "Nelly_Norway", locale: "nb-NO" },
+  // 2026-10-21: same cluster; the department paths are localised per market.
+  SE: { market: "Nelly_Sweden", locale: "sv-SE", departments: ["/klader/", "/skor/", "/badklader/", "/underklader/", "/accessoarer/", "/sport/"] },
+  FI: { market: "Nelly_Finland", locale: "fi-FI", departments: ["/vaatteet/", "/kengat/", "/uima-asut/", "/alusvaatteet/", "/asusteet/", "/urheilu/"] },
+  DK: { market: "Nelly_Denmark", locale: "da-DK", departments: ["/toj/", "/sko/", "/badetoj/", "/undertoj/", "/accessories/", "/sport/"] },
 };
 
 /** Top-level departments of the navigation tree, read in this order. */
@@ -175,7 +179,7 @@ export async function listNelly(country: CountryCode, cap = 1500): Promise<Produ
   };
 
   let anyHits = false;
-  for (const ref of DEPARTMENTS) {
+  for (const ref of m.departments ?? DEPARTMENTS) {
     for (let skip = 0; requests < MAX_REQUESTS && byId.size < cap * 1.2; skip += LIMIT) {
       const d = await page(ref, skip).catch(() => null);
       const rows = productsOf(d);

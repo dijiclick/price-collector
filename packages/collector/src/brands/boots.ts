@@ -8,6 +8,8 @@
  *   requests too, but the collector only talks to `*-dsn.algolia.net`.
  * - Marked-down rows (`discount > 0`): AE ~825, SA ~45. Every row is in stock
  *   (the index holds only buyable rows) and carries no garment sizes.
+ * - Kuwait (kw.boots.com) added 2026-10-21. Qatar is NOT: bp_prod_qa_product_list
+ *   exists (38 rows) but qa.boots.com does not resolve - no shop to link to.
  * - Boots is a pharmacy as well as a beauty shop. Rows whose department is
  *   Wellness (supplements), Pharmacy, Baby or Opticians are dropped, so what is
  *   left is skincare, make-up, hair, fragrance, suncare and personal care.
@@ -22,7 +24,7 @@ export const BOOTS_GULF: AlshayaBrand = {
   appId: "LQE0C6VCY3",
   apiKey: "f12de14eaa992a4ae3a13f40b61c3978",
   prefix: "bp",
-  sites: { AE: "https://ae.boots.com", SA: "https://sa.boots.com" },
+  sites: { AE: "https://ae.boots.com", SA: "https://sa.boots.com", KW: "https://kw.boots.com" },
   defaultGender: null,
 };
 

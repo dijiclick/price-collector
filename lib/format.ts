@@ -69,6 +69,9 @@ const SEPARATORS: Record<AppLang, { group: string; decimal: string }> = {
  * An unknown currency prints as its own code — a row written by a market whose
  * adapter shipped ahead of this table must never render as "undefined50,00".
  */
+/** Currencies printed without decimals (stored ×100 all the same). */
+const ZERO_DECIMAL = new Set(["JPY", "KRW"]);
+
 export function formatMoney(
   minor: number,
   currency?: string | null,
@@ -83,7 +86,9 @@ export function formatMoney(
   const whole = Math.floor(abs / 100);
   const cents = String(abs % 100).padStart(2, "0");
   const grouped = String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, group);
-  const number = `${grouped}${decimal}${cents}`;
+  // Yen and won have no minor unit: stored ×100 like every currency, printed
+  // whole (¥5.990 / ₩39.000, never ¥5.990,00).
+  const number = ZERO_DECIMAL.has(code) ? grouped : `${grouped}${decimal}${cents}`;
   // A multi-letter code needs air between it and the digits ("AED 1.200,00");
   // a glyph does not ("₺1.310,00").
   const gap = style.symbol.length > 1 ? " " : "";

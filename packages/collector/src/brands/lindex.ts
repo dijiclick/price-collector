@@ -39,10 +39,13 @@ export const LINDEX_SECTIONS: { id: string; label: string; gender: ProductRecord
   { id: "catalog01_1033146_1033146a1034209", label: "Beauty", gender: null },
 ];
 
-export function lindexListUrl(categoryId: string, startIndex: number): string {
+/** Markets the API serves (lowercase path/`country` code); same section ids everywhere (2026-10-21). */
+export const LINDEX_MARKETS: Partial<Record<CountryCode, string>> = { NO: "no", SE: "se", FI: "fi", DK: "dk" };
+
+export function lindexListUrl(categoryId: string, startIndex: number, country: CountryCode = "NO"): string {
   const q = new URLSearchParams({
     "categoryIds[0]": categoryId,
-    country: "no",
+    country: LINDEX_MARKETS[country] ?? "no",
     pageSize: String(PAGE),
     startIndex: String(startIndex),
     "facets[0].name": "has_sale_any_market_v2",
@@ -74,7 +77,7 @@ export function mapLindex(v: any, gender: ProductRecord["gender"], country: Coun
     country,
     externalId: `${styleId}-${colorId}`,
     name,
-    url: `${SITE}/no/p/${styleId}-${colorId}-${slug}`,
+    url: `${SITE}/${LINDEX_MARKETS[country] ?? "no"}/p/${styleId}-${colorId}-${slug}`,
     imageUrl: img,
     images: img ? [img] : null,
     price: toMinor(price),
@@ -121,7 +124,8 @@ export function applyLindexDetail(rows: ProductRecord[], detail: any): void {
 }
 
 export async function listLindex(country: CountryCode): Promise<ProductRecord[]> {
-  if (country !== "NO") return [];
+  const cc = LINDEX_MARKETS[country];
+  if (!cc) return [];
   const opts = { country, retries: 1 } as const;
   const byId = new Map<string, ProductRecord>();
   let calls = 0;
@@ -131,7 +135,7 @@ export async function listLindex(country: CountryCode): Promise<ProductRecord[]>
       if (calls++ > 0) await sleep(PAUSE_MS);
       let d: any;
       try {
-        d = await getJson<any>(lindexListUrl(sec.id, start), opts);
+        d = await getJson<any>(lindexListUrl(sec.id, start, country), opts);
       } catch (e) {
         firstError ??= e;
         break;
@@ -160,7 +164,7 @@ export async function listLindex(country: CountryCode): Promise<ProductRecord[]>
     if (!rows.some((r) => r.inStock)) continue;
     details++;
     await sleep(PAUSE_MS);
-    const d = await getJson<any>(`${API}/products/details/no/style/${sid}`, opts).catch(() => null);
+    const d = await getJson<any>(`${API}/products/details/${cc}/style/${sid}`, opts).catch(() => null);
     if (d?.payload) applyLindexDetail(rows, d.payload);
   }
   return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);

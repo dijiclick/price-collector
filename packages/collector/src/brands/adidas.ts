@@ -32,6 +32,7 @@
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
+import { jaCategory } from "./_ja-category";
 import { sizedIds, sizesFirst } from "../sizes";
 import { randomUUID } from "node:crypto";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
@@ -96,6 +97,21 @@ export const ADIDAS_MARKETS: Partial<Record<CountryCode, { lang: string; collect
   PT: { lang: "pt-PT", collection: "outlet", site: "https://www.adidas.pt" },
   FI: { lang: "fi-FI", collection: "outlet", site: "https://www.adidas.fi" },
   DK: { lang: "da-DK", collection: "outlet", site: "https://www.adidas.dk" },
+  // Japan, 2026-10-21: ja-JP answers a JPY catalogue (en-JP is refused, 400).
+  // There `outlet` is only a text search (collection_match false) and `sale` is
+  // the real collection (~2,850 rows, about a fifth of them actually reduced —
+  // the rest carry a HIDDEN original equal to the sale price, dropped by
+  // pricesOf). Akamai 403s the runner (probe 39634451857); the Hetzner box gets
+  // 200 — host-run, like the EU markets.
+  JP: { lang: "ja-JP", collection: "sale", site: "https://www.adidas.jp" },
+  // South Korea (2026-10-21): ko-KR answers the KRW outlet (~1,560 products,
+  // SALE under ORIGINAL). Runners get Akamai's 403 (probe 39634127022) like the
+  // EU markets; the Hetzner box gets 200 — host-run with the adidas job.
+  KR: { lang: "ko-KR", collection: "outlet", site: "https://www.adidas.co.kr" },
+  // 2026-10-21: the app answers both in English with their own outlet
+  // (SG ~4,400 rows in SGD, HK ~3,800 in HKD; HK's `sale` is empty).
+  SG: { lang: "en-SG", collection: "outlet", site: "https://www.adidas.com.sg" },
+  HK: { lang: "en-HK", collection: "outlet", site: "https://www.adidas.com.hk/en" },
 };
 
 export function appHeaders(country: CountryCode, ua: string = appUa()): Record<string, string> {
@@ -239,7 +255,9 @@ export function mapAdidas(p: any, country: CountryCode, full = false): ProductRe
     // The subtitle is "<gender> <line>" (Originals/Performance/TERREX) — not a
     // product type; the type classifier reads the name ("… Shoes", "… Pants").
     // listAdidas fills it with "Aksesuar" for ids on adidas's accessories list.
-    category: null,
+    // Japan: no English line at all, but apparel names carry a Japanese type
+    // word ("… Tシャツ", "… パンツ"), mapped to the English shelf word.
+    category: country === "JP" ? jaCategory(p.product_name) : null,
     gender: genderOf(p.subtitle),
     variants: null,
     // Colourways of one article share the model number (ONI52 → KI9403, JI4329 …).

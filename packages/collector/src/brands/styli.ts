@@ -25,7 +25,8 @@ import { toMinor } from "../normalize";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
 const ENDPOINT = "https://vm-prod.stylishop.com/api/v2/listing/vm";
-const STORE: Partial<Record<CountryCode, number>> = { AE: 7, SA: 1 };
+// 2026-10-21: 12 = Kuwait English (KWD), 15 = Qatar English (QAR).
+const STORE: Partial<Record<CountryCode, number>> = { AE: 7, SA: 1, KW: 12, QA: 15 };
 const PAGE_SIZE = 100;
 const CAP = Number(process.env.STYLI_MAX_PRODUCTS ?? 1500);
 const MAX_PAGES = Math.ceil(CAP / PAGE_SIZE) + 2;

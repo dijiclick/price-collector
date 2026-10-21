@@ -32,6 +32,16 @@ export const MS_SECTIONS: { path: string; gender: ProductRecord["gender"]; max: 
   { path: "/l/offers/clearance/lingerie-and-nightwear-clearance", gender: "kadin", max: 350 },
 ];
 
+/**
+ * Ireland (2026-10-21): the same Next.js listing under `/ie/…`, prices in EUR
+ * (`price.currency` on every hit). Clearance there is small (~325 women's
+ * hits, ~60% of them with a was price; no lingerie clearance tree).
+ */
+export const MS_SECTIONS_IE: { path: string; gender: ProductRecord["gender"]; max: number }[] = [
+  { path: "/ie/l/offers/clearance/womens-clearance", gender: "kadin", max: 1000 },
+  { path: "/ie/l/offers/clearance/mens-clearance", gender: "erkek", max: 500 },
+];
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** The search result object out of a listing page's `__NEXT_DATA__`. */
@@ -81,9 +91,9 @@ export function mapMarksIntl(p: any, country: CountryCode, gender: ProductRecord
   };
 }
 
-async function page(url: string): Promise<{ products: any[]; totalItems: number } | null> {
+async function page(url: string, country: CountryCode = "GB"): Promise<{ products: any[]; totalItems: number } | null> {
   for (let attempt = 0; attempt < 3; attempt++) {
-    const html = await getText(url, { country: "GB", headers: { Accept: "text/html" } }).catch(() => null);
+    const html = await getText(url, { country, headers: { Accept: "text/html" } }).catch(() => null);
     const r = html ? resultsOf(html) : null;
     if (r) return r;
     await sleep(3000 * (attempt + 1));
@@ -92,6 +102,7 @@ async function page(url: string): Promise<{ products: any[]; totalItems: number 
 }
 
 export async function listMarksIntl(country: CountryCode): Promise<ProductRecord[]> {
+  if (country === "IE") return listMarksIe();
   if (country !== "GB") return [];
   const byId = new Map<string, ProductRecord>();
   let requests = 0;
@@ -105,6 +116,33 @@ export async function listMarksIntl(country: CountryCode): Promise<ProductRecord
         break;
       }
       for (const p of r.products) {
+        const rec = mapMarksIntl(p, country, s.gender);
+        if (!rec || rec.listPrice == null || byId.has(rec.externalId)) continue;
+        byId.set(rec.externalId, rec);
+        if (++taken >= s.max || byId.size >= CAP) break;
+      }
+      if (r.products.length < PER_PAGE || n * PER_PAGE >= r.totalItems) break;
+    }
+  }
+  return [...byId.values()];
+}
+
+/** Ireland: the GB flow over the `/ie` clearance trees; a non-EUR hit throws. */
+async function listMarksIe(): Promise<ProductRecord[]> {
+  const country: CountryCode = "IE";
+  const byId = new Map<string, ProductRecord>();
+  let requests = 0;
+  for (const s of MS_SECTIONS_IE) {
+    let taken = 0;
+    for (let n = 1; n <= MAX_PAGES && taken < s.max && byId.size < CAP; n++) {
+      if (requests++ > 0) await sleep(PAUSE_MS);
+      const r = await page(`${SITE}${s.path}${n > 1 ? `?page=${n}` : ""}`, country);
+      if (!r) {
+        if (n === 1) throw new Error(`marksandspencer/IE: clearance listing refused (${s.path})`);
+        throw new Error(`marksandspencer/IE: page ${n} of ${s.path} failed`);
+      }
+      for (const p of r.products) {
+        if (p?.price?.currency && p.price.currency !== "EUR") throw new Error(`marksandspencer/IE: hit priced in ${p.price.currency}`);
         const rec = mapMarksIntl(p, country, s.gender);
         if (!rec || rec.listPrice == null || byId.has(rec.externalId)) continue;
         byId.set(rec.externalId, rec);

@@ -43,6 +43,39 @@ import { listManor } from "./brands/manor";
 import { listAboutYou } from "./brands/aboutyou";
 import { listImpo } from "./brands/impo";
 import { listBestseller } from "./brands/_bestseller";
+import { listRituals } from "./brands/rituals";
+import { listHunkemoller } from "./brands/hunkemoller";
+import { listWefashion } from "./brands/wefashion";
+import { listJbc } from "./brands/jbc";
+import { listScapino } from "./brands/scapino";
+import { listKruidvat } from "./brands/kruidvat";
+import { listBtGroup } from "./brands/_btgroup";
+import { listElverys } from "./brands/elverys";
+import { listDunnes } from "./brands/dunnes";
+import { listBestsellerSfcc } from "./brands/bestseller-sfcc";
+import { listStadium } from "./brands/stadium";
+import { listAhlens } from "./brands/ahlens";
+import { listApotea } from "./brands/apotea";
+import { listStockmann } from "./brands/stockmann";
+import { listMatas } from "./brands/matas";
+import { listMagasin } from "./brands/magasin";
+import { listItalyShopify } from "./brands/italy-shopify";
+import { listOvs } from "./brands/ovs";
+import { listTigota } from "./brands/tigota";
+import { listKikoIt } from "./brands/kiko-it";
+import { listPittaRosso } from "./brands/pittarosso";
+import { listMotivi } from "./brands/motivi";
+import { listProducts as listHoneys } from "./brands/honeys";
+import { listProducts as listEarthMusic } from "./brands/earthmusic";
+import { listProducts as listGlobalWork } from "./brands/globalwork";
+import { listMusinsa, listMusinsaStore } from "./brands/musinsa";
+import { list29cm } from "./brands/29cm";
+import { listWconcept } from "./brands/wconcept";
+import { listCharlesKeith, listPedro } from "./brands/ckgroup";
+import { listDecathlonSg } from "./brands/decathlon-sg";
+import { listLoveBonito } from "./brands/lovebonito";
+import { listMannings } from "./brands/mannings";
+import { listGuardian } from "./brands/guardian";
 import { listAlshaya } from "./brands/_alshaya";
 import * as goldenscent from "./brands/goldenscent";
 import * as vperfumes from "./brands/vperfumes";
@@ -320,7 +353,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   // Victoria's Secret US/CA and Ounass, each measured < ~1 MB a run.
   { brand: "lornajane", listProducts: listLornaJane },
   { brand: "faces", listProducts: listFaces },
-  { brand: "boots", listProducts: (c) => (c === "GB" ? listBootsGb(c) : listBoots(c)) },
+  { brand: "boots", listProducts: (c) => (c === "GB" || c === "IE" ? listBootsGb(c) : listBoots(c)) },
   { brand: "uniqlo", listProducts: listUniqlo },
   { brand: "garage", listProducts: (c) => garage.listProducts(c) },
   { brand: "dynamite", listProducts: (c) => dynamite.listProducts(c) },
@@ -347,7 +380,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "lumberjack", listProducts: (c) => listFtech("lumberjack", c) },
   { brand: "kinetix", listProducts: (c) => listFtech("kinetix", c) },
   { brand: "reebok", listProducts: (c) => listFtech("reebok", c) },
-  { brand: "kiko", listProducts: tr(() => kiko.listProducts("TR")) },
+  { brand: "kiko", listProducts: (c) => (c === "TR" ? kiko.listProducts("TR") : listKikoIt(c)) },
   // Skechers: PersonaClick in Turkey; Bloomreach (account 7927) in US/CA.
   { brand: "skechers", listProducts: byMarket(() => skechers.listProducts("TR"), listSkechersNa) },
   { brand: "sneaksup", listProducts: tr(() => sneaksup.listProducts("TR")) },
@@ -383,7 +416,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   // EU wave 1 (2026-10-21): chosen by each country's own Google search demand;
   // every route confirmed from a GitHub runner, no proxy.
   // Decathlon: the Android app's shopping API (every website is Cloudflare-walled).
-  { brand: "decathlon", listProducts: (c) => listDecathlon(c) },
+  { brand: "decathlon", listProducts: (c) => (c === "SG" ? listDecathlonSg(c) : listDecathlon(c)) },
   { brand: "deichmann", listProducts: (c) => listDeichmann("deichmann", c) },
   // France
   { brand: "intersport", listProducts: (c) => listIntersport(c) },
@@ -412,4 +445,50 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "sfera", listProducts: (c) => listSfera(c) },
   { brand: "tous", listProducts: (c) => listTous(c) },
   { brand: "bimbaylola", listProducts: (c) => listBimbaYLola(c) },
+  // ── Wave 2 (2026-10-21) — every route runner-verified, no proxy ──
+  // Netherlands / Belgium
+  { brand: "kruidvat", listProducts: (c) => listKruidvat(c) },
+  { brand: "rituals", listProducts: (c) => listRituals(c) },
+  { brand: "hunkemoller", listProducts: (c) => listHunkemoller(c) },
+  { brand: "wefashion", listProducts: (c) => listWefashion(c) },
+  { brand: "jbc", listProducts: (c) => listJbc(c) },
+  { brand: "scapino", listProducts: (c) => listScapino(c) },
+  { brand: "onlyandsons", listProducts: (c) => listBestseller("onlyandsons", c) },
+  // Ireland
+  { brand: "elverys", listProducts: (c) => listElverys(c) },
+  { brand: "brownthomas", listProducts: (c) => listBtGroup("brownthomas", c) },
+  { brand: "arnotts", listProducts: (c) => listBtGroup("arnotts", c) },
+  { brand: "dunnes", listProducts: (c) => listDunnes(c) },
+  // Sweden / Finland / Denmark
+  { brand: "jackjones", listProducts: (c) => listBestseller("jackjones", c) },
+  { brand: "vila", listProducts: (c) => listBestsellerSfcc("vila", c) },
+  { brand: "pieces", listProducts: (c) => listBestsellerSfcc("pieces", c) },
+  { brand: "stadium", listProducts: (c) => listStadium(c) },
+  { brand: "ahlens", listProducts: (c) => listAhlens(c) },
+  { brand: "apotea", listProducts: (c) => listApotea(c) },
+  { brand: "stockmann", listProducts: (c) => listStockmann(c) },
+  { brand: "matas", listProducts: (c) => listMatas(c) },
+  { brand: "magasin", listProducts: (c) => listMagasin(c) },
+  // Italy
+  { brand: "ovs", listProducts: (c) => listOvs(c) },
+  { brand: "tigota", listProducts: (c) => listTigota(c) },
+  { brand: "pittarosso", listProducts: (c) => listPittaRosso(c) },
+  { brand: "motivi", listProducts: (c) => listMotivi(c) },
+  ...["benetton", "sisley", "terranova", "calliope", "yamamay"].map((b) => ({ brand: b, listProducts: (c: CountryCode) => listItalyShopify(b, c) })),
+  // ── Wave 3: Japan and South Korea (prices ×100 like every market) ──
+  { brand: "honeys", listProducts: (c) => (c === "JP" ? listHoneys() : Promise.resolve([])) },
+  { brand: "earthmusic", listProducts: (c) => (c === "JP" ? listEarthMusic() : Promise.resolve([])) },
+  { brand: "globalwork", listProducts: (c) => (c === "JP" ? listGlobalWork() : Promise.resolve([])) },
+  { brand: "musinsa", listProducts: (c) => listMusinsa(c) },
+  { brand: "29cm", listProducts: (c) => list29cm(c) },
+  { brand: "wconcept", listProducts: (c) => listWconcept(c) },
+  { brand: "spao", listProducts: (c) => listMusinsaStore("spao", c) },
+  { brand: "topten", listProducts: (c) => listMusinsaStore("topten", c) },
+  { brand: "8seconds", listProducts: (c) => listMusinsaStore("8seconds", c) },
+  // Singapore / Hong Kong
+  { brand: "charleskeith", listProducts: (c) => listCharlesKeith(c) },
+  { brand: "pedro", listProducts: (c) => listPedro(c) },
+  { brand: "lovebonito", listProducts: (c) => listLoveBonito(c) },
+  { brand: "mannings", listProducts: (c) => listMannings(c) },
+  { brand: "guardian", listProducts: (c) => listGuardian(c) },
 ];

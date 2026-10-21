@@ -26,6 +26,15 @@ export const GINATRICOT_MARKETS: Partial<Record<CountryCode, { siteKey: string; 
     apiKey: "1a4505584344dacf9a49c8694e06917a",
     saleId: "124894",
   },
+  // 2026-10-21: the other markets' keys sit next to NO's in the storefront's env
+  // chunk (`unbxd.keys`); the all-sale category id is the same everywhere.
+  SE: { siteKey: "ss-unbxd-auk-prod-ginatricot-se73331773038031", apiKey: "278db028d5858283939019aa24d00bb1", saleId: "124894" },
+  FI: { siteKey: "ss-unbxd-auk-prod-ginatricot-fi73331773038053", apiKey: "3e09ec3ac7e99681e11a58293a2e10aa", saleId: "124894" },
+  DK: { siteKey: "ss-unbxd-auk-prod-ginatricot-dk73331773038027", apiKey: "980c21993b1b28d55a3f06642475659a", saleId: "124894" },
+  NL: { siteKey: "ss-unbxd-auk-prod-ginatricot-nl73331773038110", apiKey: "14eb2d4e940f165ef2c916df5c5eb3f2", saleId: "124894" },
+  DE: { siteKey: "ss-unbxd-auk-prod-ginatricot-de73331773041373", apiKey: "ecaef10895dc1985a602dfbef67b79ff", saleId: "124894" },
+  FR: { siteKey: "ss-unbxd-auk-prod-ginatricot-fr73331773038896", apiKey: "2a0e2f5606d0b13d1db9121e81dbb6e5", saleId: "124894" },
+  AT: { siteKey: "ss-unbxd-auk-prod-ginatricot-at73331773038029", apiKey: "a9d3d4647a3dde29787d57181b6b8d50", saleId: "124894" },
 };
 
 const ROWS = 100;

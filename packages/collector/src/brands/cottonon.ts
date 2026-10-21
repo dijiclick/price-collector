@@ -27,6 +27,9 @@ import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
 export const COTTONON_SITES: Partial<Record<CountryCode, string>> = {
   AU: "https://cottonon.com/AU",
+  // 2026-10-21: same SFCC grid, SGD. Only `co/co-sale` exists there (Supré and
+  // Factorie answer 410 and are skipped by the loop below).
+  SG: "https://cottonon.com/SG",
 };
 
 interface SaleCategory {
