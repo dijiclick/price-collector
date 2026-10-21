@@ -32,6 +32,19 @@
  *
  * Multi-brand: the card's own brand (Mango, Puma, Dune London…) goes into the
  * name; `category` is Zalando's product-type segment of the name.
+ *
+ * Links (2026-10-22): the card carries no url, and a product page's slug can
+ * NOT be rebuilt from the name. It is frozen when the article is created and
+ * never follows later renames — "KREIS PLÄTTCHEN GEO - Halskette" lives at
+ * /heideman-mit-kreis-anhaenger-halskette-2he51l028-d11.html, Bronx's "NEW-KOLE
+ * - Boots med høye hæler" at /bronx-stiefel-hoye-stovler-…. A wrong slug is a
+ * plain 404 (Zalando never redirects it), and 43 of 70 in-stock rows sampled
+ * across all 14 markets had one — every one of the 70 was AVAILABLE in the
+ * app's PDP query, so nothing was delisted. The only exact source is the PDP
+ * query's `uri`, one non-batchable call per product. Instead the link is the
+ * shop's own search for the config SKU inside the women's category: Zalando
+ * answers it with a server-side 302 to the canonical product page (checked in
+ * all 14 markets, JS off), costs nothing at crawl time and survives renames.
  */
 import { createHash } from "node:crypto";
 import { cleanGallery, type ProductRecord } from "../types";
@@ -143,17 +156,6 @@ export function catalogVariables(country: CountryCode, after: string | null): Re
   };
 }
 
-const slug = (s: string) =>
-  s
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[æÆ]/g, "ae")
-    .replace(/[øØ]/g, "o")
-    .replace(/[åÅ]/g, "a")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
 /**
  * Zalando names are "<model> - <type> - <colour>" (model is sometimes absent).
  * Returns the type and colour segments.
@@ -162,6 +164,15 @@ export function splitName(name: string): { type: string | null; colour: string |
   const parts = name.split(" - ").map((p) => p.trim()).filter(Boolean);
   if (parts.length < 2) return { type: null, colour: null };
   return { type: parts[parts.length - 2] || null, colour: parts[parts.length - 1] || null };
+}
+
+/**
+ * The shop's search for one config SKU, which 302s to the product page under
+ * its real slug (see the header for why the slug is never built here).
+ */
+export function productUrl(country: CountryCode, sku: string): string {
+  const m = ZALANDO_MARKETS[country]!;
+  return `https://${m.host}/${m.women}/?q=${encodeURIComponent(sku.toUpperCase())}`;
 }
 
 function genderOf(target: unknown): ProductRecord["gender"] {
@@ -196,9 +207,7 @@ export function mapNode(country: CountryCode, n: any): ProductRecord | null {
     country,
     externalId: sku,
     name: brandName && !name.toLowerCase().startsWith(brandName.toLowerCase()) ? `${brandName} ${name}` : name,
-    // The slug is NOT cosmetic: a named model ("AURORA") missing from it 404s
-    // (2026-10-21, NL/FR/Nordics). Brand + full name, as Zalando's own URLs are.
-    url: `https://${m.host}/${slug(`${brandName} ${name}`)}-${sku.toLowerCase()}.html`,
+    url: productUrl(country, sku),
     imageUrl: first,
     images: cleanGallery(photos, first),
     price,

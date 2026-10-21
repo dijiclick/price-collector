@@ -640,10 +640,18 @@ export function mapProduct(
   const name: string | undefined = real?.name ?? p.name;
   if (!name) return null;
 
+  // The slug is shared by every colour of the garment and, bare, opens the
+  // shop's default colour — often a full-price one while we priced a marked-down
+  // colour. Each colour is its own bundle (`p.id`, = the item's
+  // `productUrlParam`), and `?pelement={bundle id}` opens exactly that colour at
+  // its price. Verified live 2026-10-22 on the SSR JSON-LD: P&B TR l07670332
+  // bare → Pembe 1.990 ₺, `?pelement=763056449` → Gül kurusu 1.190 ₺;
+  // Stradivarius TR l06609148 bare → Somon 1.190 ₺, `?pelement=519434867` →
+  // Mavi 710 ₺; Massimo Dutti TR l00837175 bare → 2.800 ₺, `?pelement=62246010`
+  // → 2.000 ₺. `?cS=`/`?colorId=` alone switch the swatch but not the price.
   const slug: string | undefined = p.productUrl ?? real?.productUrl;
-  const url = slug
-    ? `${m.urlPrefix}/${encodeURI(slug)}`
-    : `${m.urlPrefix}/-l${detail?.displayReference ?? p.id}`;
+  const path = slug ? encodeURI(slug) : `-l${detail?.displayReference ?? p.id}`;
+  const url = `${m.urlPrefix}/${path}?pelement=${p.id}`;
 
   // Product-level id: the same garment ships as one bundle id per COLOUR (same
   // url, e.g. …-l00808111). Key on the shared "l{ref}" from the url so colours
@@ -655,7 +663,9 @@ export function mapProduct(
     ? String(detail.displayReference).replace(/\D/g, "")
     : String(p.id);
 
-  const imageUrl = pickImage(detail);
+  // The priced colour's own photos — detail.xmedia holds every colour's, and
+  // ranking across them could show another colour than the one linked.
+  const imageUrl = pickImage(detail, color.id);
   return {
     brand: site.brand,
     country: m.country,
@@ -663,7 +673,7 @@ export function mapProduct(
     name,
     url,
     imageUrl,
-    images: cleanGallery(pickImages(detail), imageUrl),
+    images: cleanGallery(pickImages(detail, color.id), imageUrl),
     price,
     listPrice,
     currency: m.currency,

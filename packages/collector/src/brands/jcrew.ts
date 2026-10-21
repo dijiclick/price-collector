@@ -188,7 +188,11 @@ function photosOf(brand: JcrewBrand, d: any, id: string, colour: string, groups:
     const shots: string[] = Array.isArray(fam?.shotType)
       ? fam.shotType.map(String)
       : String(groups.find((g) => g.v.shot)?.v.shot ?? d?.shotType ?? "_m").split("|");
-    return shots.filter((s) => /^_[a-z0-9]+$/i.test(s)).map((s) => madewellImg(`${id}_${colour}${s}`));
+    // A merged Petite/Tall style (NW671) shows its parent's (NW330) photos: the child id 404s on
+    // 221 of 225 such colours (2026-10-21), the parent id answers for all of them.
+    const parent = String(d?.parentProduct ?? "");
+    const photoId = /^[A-Z0-9]+$/.test(parent) ? parent : id;
+    return shots.filter((s) => /^_[a-z0-9]+$/i.test(s)).map((s) => madewellImg(`${photoId}_${colour}${s}`));
   }
   const attr = (d?.colorVariationAttributes ?? []).find((a: any) => a?.color === colour);
   const shots = String(attr?.skuShotType ?? "")
@@ -199,6 +203,10 @@ function photosOf(brand: JcrewBrand, d: any, id: string, colour: string, groups:
   return [jcrewImg(`${id}_${colour}`), ...shots.map((s) => jcrewImg(`${id}_${colour}${s}`))];
 }
 
+/** The fit a J.Crew PDP opens on; Madewell has no sizing level (null). */
+const isDefaultFit = (sizing: string | null) => !sizing || /^(classic|standard|regular)$/i.test(sizing);
+const isDeal = (g: Group) => num(g.v.price)! < num(g.v.list)!;
+
 function sizesOf(groups: Group[]): SizeVariant[] {
   const byLabel = new Map<string, SizeVariant["availability"]>();
   const rank = { out_of_stock: 0, low_on_stock: 1, in_stock: 2 } as const;
@@ -208,7 +216,7 @@ function sizesOf(groups: Group[]): SizeVariant[] {
     const aligned = stock.length === sizes.length;
     sizes.forEach((size, i) => {
       if (!size) return;
-      const label = g.sizing && !/^(classic|standard|regular)$/i.test(g.sizing) ? `${size} ${g.sizing}` : size;
+      const label = isDefaultFit(g.sizing) ? size : `${size} ${g.sizing}`;
       let a: SizeVariant["availability"] = g.orderable ? "in_stock" : "out_of_stock";
       if (g.orderable && aligned) {
         const n = Number(stock[i]);
@@ -245,9 +253,12 @@ export function mapJcrewResult(brand: JcrewBrand, res: any, country: CountryCode
   if (prefix === undefined || !id || !res?.value) return [];
   const out: ProductRecord[] = [];
   for (const [colour, groups] of colours(res, site.jcrewSchema)) {
-    // A colour's price is the same in every group; take it from an orderable one when there is one.
+    // Fits price apart (CS864 Deco Blue: Petite CAD 102, Classic 188), so the row is priced from one
+    // group and links that fit: orderable first, then a discounted one, then the site's default fit.
     const head = [...groups].sort((a, b) => Number(b.orderable) - Number(a.orderable));
-    const priced = head.find((g) => num(g.v.price) != null && num(g.v.list) != null);
+    const priced = groups
+      .filter((g) => num(g.v.price) != null && num(g.v.list) != null)
+      .sort((a, b) => Number(b.orderable) - Number(a.orderable) || Number(isDeal(b)) - Number(isDeal(a)) || Number(isDefaultFit(b.sizing)) - Number(isDefaultFit(a.sizing)))[0];
     if (!priced) continue;
     // min / min, never min-sale vs max-list: a size range is not a discount.
     const sale = num(priced.v.price)!;
@@ -262,7 +273,9 @@ export function mapJcrewResult(brand: JcrewBrand, res: any, country: CountryCode
     const url =
       brand === "madewell"
         ? `${String(d.url ?? `${site.host}/p/${id}/`).split("?")[0]}?ccode=${encodeURIComponent(colour)}`
-        : `${site.host}${prefix}/p/${id}?color_name=${encodeURIComponent(slug(rawColour || colour))}`;
+        : `${site.host}${prefix}/p/${id}?color_name=${encodeURIComponent(slug(rawColour || colour))}` +
+          // The PDP opens on Classic; `fit=` (the site's own links carry it) selects the priced fit.
+          (priced.sizing && !isDefaultFit(priced.sizing) ? `&fit=${encodeURIComponent(priced.sizing)}` : "");
     out.push({
       brand,
       country,

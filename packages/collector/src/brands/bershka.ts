@@ -116,8 +116,12 @@ export function mapProduct(
     name: p.name,
     // canonical PDP url: slug without its -l{ref} suffix + the bundle summary id.
     // Per-country form (`/gb/…`, `/us/…`, `/no/en/…`) matches Bershka's own
-    // sitemaps; the PDPs themselves are Akamai-blocked from Node.
-    url: `${m.urlPrefix}/${encodeURI(String(p.productUrl).replace(/-l\d+$/, ""))}-c0p${real.id ?? p.id}.html`,
+    // sitemaps. That page is shared by every colour and opens the default one,
+    // so `?colorId=` (what Bershka's own swatches link to) pins the colour we
+    // priced. Verified live 2026-10-22: TR c0p229705009 bare → 2.490 ₺ (428),
+    // `?colorId=712` → 1.740 ₺; the query survives the slug redirect.
+    url: `${m.urlPrefix}/${encodeURI(String(p.productUrl).replace(/-l\d+$/, ""))}-c0p${real.id ?? p.id}.html` +
+      (color.id != null ? `?colorId=${encodeURIComponent(String(color.id))}` : ""),
     imageUrl,
     images: cleanGallery(pickImages(real.detail, color.id), imageUrl),
     price,
