@@ -17,8 +17,10 @@
  *   intimate hygiene, supplements and baby care are dropped.
  * - Photos: the raw `mcprod` media URLs are walled, but the storefront's own
  *   Next.js image proxy serves them (probe run 39635501014: 200 from a
- *   runner), so imageUrl is `www.tigota.it/_next/image?url=…`. From Turkey and
- *   Germany both answer 403 — CHECK ON AN ITALIAN DEVICE before shipping.
+ *   runner), so imageUrl is `www.tigota.it/_next/image?url=…`. Both hosts are
+ *   geo-gated: check-host.net 2026-10-22 → 200 from Milan and the US, 403 from
+ *   SE/DE/FR/NL/TR (any client). Italian users see photos; no unwalled host
+ *   exists (every *.tigota.it is on Cloudflare).
  * - Product page: `https://www.tigota.it/<url_key>` (200 from a runner).
  */
 import { cleanGallery, type ProductRecord } from "../types";

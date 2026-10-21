@@ -56,3 +56,13 @@ export function poundsOf(v: unknown): number {
   const n = parseFloat(String(v ?? "").replace(/[^0-9.]/g, ""));
   return Number.isFinite(n) ? n : NaN;
 }
+
+/**
+ * SFCC builds a catalogue image URL with a `default/dw<hash>/` segment when the
+ * file exists, and falls back to `<locale>/v<timestamp>/` when it does not —
+ * a URL that is always a 404 (`{"error":"not found"}` from the image service).
+ * Measured 2026-10-21: all 8 Phase Eight rows on that path 404, 0 of 1,489 on
+ * `default/dw…` did; Space NK's one such row 404s too.
+ */
+export const sfccMissingImage = (u: string): boolean =>
+  /\/demandware\.static\/-\/Sites-[^/]+\/[a-z]{2}(?:_[A-Z]{2})?\/v\d+\//.test(u);

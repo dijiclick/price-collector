@@ -53,6 +53,7 @@ import { listShopbop } from "./brands/shopbop";
 import { listSixPm } from "./brands/sixpm";
 import { listFootLocker } from "./brands/_footlocker";
 import { listNorthernReflections } from "./brands/northernreflections";
+import { listLulus } from "./brands/lulus";
 import { listChicosFas } from "./brands/chicosfas";
 import { listArcteryx } from "./brands/arcteryx";
 import { listJJill } from "./brands/jjill";
@@ -132,6 +133,7 @@ import { listSpaceNk } from "./brands/spacenk";
 import { listAritzia } from "./brands/aritzia";
 import { listLululemon } from "./brands/lululemon";
 import { listLornaJane } from "./brands/lornajane";
+import { listCountryRoad } from "./brands/countryroad";
 import { listFaces } from "./brands/faces";
 import { listBoots } from "./brands/boots";
 import { listBootsGb } from "./brands/boots-gb";
@@ -175,7 +177,6 @@ import { listNordstromRack } from "./brands/nordstromrack";
 import { listAdidas } from "./brands/adidas";
 import { listSwarovski } from "./brands/swarovski";
 import { listUrbn } from "./brands/urbn";
-import { listUgg } from "./brands/ugg";
 import { listVans } from "./brands/vans";
 import * as sneaksup from "./brands/sneaksup";
 import { listHmGroup } from "./brands/hmgroup";
@@ -288,9 +289,9 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "urbanoutfitters", listProducts: (c) => listUrbn("urbanoutfitters", c) },
   { brand: "freepeople", listProducts: (c) => listUrbn("freepeople", c) },
   { brand: "anthropologie", listProducts: (c) => listUrbn("anthropologie", c) },
-  // UGG AU (au.ugg.com search API) and Vans AU (vans.com.au Magento GraphQL);
+  // Vans AU (vans.com.au Magento GraphQL). UGG AU left out 2026-10-22: au.ugg.com
+  // is Cloudflare-walled from every non-Australian IP (adapter kept);
   // ugg.com / vans.com are walled for every other market.
-  { brand: "ugg", listProducts: listUgg },
   { brand: "vans", listProducts: byMarket(vansTr.listProducts, (c) => (c === "US" ? listVansUs(c) : listVans(c))) },
   { brand: "timberland", listProducts: tr(timberland.listProducts) },
   { brand: "underarmour", listProducts: byMarket(underarmour.listProducts, listUnderArmourNa) },
@@ -381,6 +382,8 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   // sites' own search services / app APIs. Proxy only for Lululemon (fallback),
   // Victoria's Secret US/CA and Ounass, each measured < ~1 MB a run.
   { brand: "lornajane", listProducts: listLornaJane },
+  // Shopify, but /products.json is challenged after a burst (2026-10-21): Storefront API.
+  { brand: "countryroad", listProducts: listCountryRoad },
   { brand: "faces", listProducts: listFaces },
   { brand: "boots", listProducts: (c) => (c === "GB" || c === "IE" ? listBootsGb(c) : listBoots(c)) },
   { brand: "uniqlo", listProducts: listUniqlo },
@@ -521,8 +524,6 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "lovebonito", listProducts: (c) => listLoveBonito(c) },
   { brand: "mannings", listProducts: (c) => listMannings(c) },
   { brand: "guardian", listProducts: (c) => listGuardian(c) },
-  // First live run 2026-10-21: Lulus, Talbots (PerimeterX) and Champs Sports
-  // (no listing to a runner) were blocked and are left out; their adapters stay.
   // ── "Double the brands" round (2026-10-21) — runner-verified, no proxy ──
   // US / Canada
   ...dtcaAdapters,
@@ -539,11 +540,12 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "shoecarnival", listProducts: (c) => listAlgoliaUsca("shoecarnival", c) },
   { brand: "vineyardvines", listProducts: (c) => listAlgoliaUsca("vineyardvines", c) },
   { brand: "heydude", listProducts: (c) => listAlgoliaUsca("heydude", c) },
-  ...(["ariat", "hottopic", "ragandbone", "saucony", "bootbarn", "sallybeauty"] as const).map((b) => ({ brand: b, listProducts: (c: CountryCode) => listGridUsca(b, c) })),
+  ...(["ariat", "hottopic", "ragandbone", "saucony", "bootbarn", "talbots", "sallybeauty"] as const).map((b) => ({ brand: b, listProducts: (c: CountryCode) => listGridUsca(b, c) })),
   { brand: "michaelhill", listProducts: (c) => listSearchUsca("michaelhill", c) },
   { brand: "rickis", listProducts: (c) => listSearchUsca("rickis", c) },
   { brand: "nordstrom", listProducts: (c) => listNordstrom(c) },
   { brand: "footlocker", listProducts: (c) => listFootLocker("footlocker", c) },
+  { brand: "champssports", listProducts: (c) => listFootLocker("champssports", c) },
   { brand: "academy", listProducts: (c) => listAcademy(c) },
   { brand: "journeys", listProducts: (c) => listJourneys(c) },
   { brand: "zumiez", listProducts: (c) => listZumiez(c) },
@@ -554,6 +556,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "sixpm", listProducts: (c) => listSixPm(c) },
   { brand: "bikinivillage", listProducts: (c) => listBikiniVillage(c) },
   { brand: "northernreflections", listProducts: (c) => listNorthernReflections(c) },
+  { brand: "lulus", listProducts: (c) => listLulus(c) },
   { brand: "chicos", listProducts: (c) => listChicosFas("chicos", c) },
   { brand: "whitehouseblackmarket", listProducts: (c) => listChicosFas("whitehouseblackmarket", c) },
   { brand: "arcteryx", listProducts: (c) => listArcteryx(c) },

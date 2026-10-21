@@ -31,6 +31,9 @@ const API_KEY = "1455bca7c6c33e746a0f38beb28422e6"; // public search-only key fr
 const HOST = `https://${APP_ID}-dsn.algolia.net`;
 // f_jpg, not f_auto: f_auto answers AVIF to clients that accept it, which
 // older Android image decoders cannot read.
+// curl / node / python / JDK get a Cloudflare 403 on these (TLS fingerprint),
+// but iOS NSURLSession, Android OkHttp, Chrome and check-host.net from 8
+// countries all get 200 (2026-10-22) — test photos with a real client.
 const IMG = "https://assets.aritzia.com/image/upload/c_crop,ar_1920:2623,g_south/q_auto,f_jpg,w_1200/";
 
 export const ARITZIA_MARKETS: Partial<Record<CountryCode, { index: string; site: string; prefix: string }>> = {

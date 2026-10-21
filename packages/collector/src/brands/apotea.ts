@@ -24,6 +24,12 @@
  * spans health categories is read per beauty category via a brand filter
  * (`categoryPath` + `filter: brand=<path>`); a mixed non-brand promotion is
  * skipped (supplements, pharmacy, household, food, pets never pass).
+ *
+ * Photos: media.apotea.se sits behind a Cloudflare rule that challenges every
+ * request from outside Sweden (check-host.net 2026-10-22: 200 from SE only,
+ * 403 from IT/DE/FR/NL/US/TR). media.apotea.no is the Norwegian shop's media
+ * host on Apotea's own origin (no Cloudflare): the same `/product-images/`
+ * paths answer 200 from every country, any client, no Referer.
  */
 import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
@@ -46,6 +52,10 @@ export const APOTEA_BEAUTY = new Set([
 /** Neutral sections a beauty campaign may also show up in (travel sizes, Premium). */
 const NEUTRAL = new Set(["resa", "premium-2"]);
 
+/** Large photo on the unwalled .no media host (see the header). Pure. */
+export const apoteaImage = (url: string): string =>
+  url.replace("://media.apotea.se/", "://media.apotea.no/").replace("/product-images/M/", "/product-images/L/");
+
 const num = (x: unknown): number => (typeof x === "number" ? x : parseFloat(String(x ?? "")));
 
 /** Map one search article. Pure. Returns only real markdowns of non-medicines. */
@@ -57,7 +67,7 @@ export function mapApotea(a: any, country: CountryCode = "SE"): ProductRecord | 
   const price = num(a?.campaignPrice);
   const was = num(a?.lowest_price);
   if (!(price > 0) || !(was > price)) return null;
-  const img = typeof a?.imageUrl === "string" && a.imageUrl ? a.imageUrl.replace("/product-images/M/", "/product-images/L/") : null;
+  const img = typeof a?.imageUrl === "string" && a.imageUrl ? apoteaImage(a.imageUrl) : null;
   return {
     brand: "apotea",
     country,

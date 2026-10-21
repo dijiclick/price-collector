@@ -46,6 +46,16 @@
  *   Per-size stock exists only for the range styles resolved above.
  * - Gender: a second pass over the same grid refined to `gender=male` marks the
  *   men's styles; everything else in an MK sale is women's.
+ *
+ * Time (2026-10-21): every MK host is answered by Akamai or Cloudflare depending
+ * on the runner — one probe minute .eu/.es/.co.uk were Cloudflare 200 and
+ * .global Akamai 429, the next .eu and .es were Akamai 403 (probes 39674470505,
+ * 39675707028). Starting each of ~50 calls on a refusing host and backing off
+ * pushed NL/BE/AT/IE/ES past the 300 s brand limit while GB/CH crawled in
+ * 210-240 s. So the host that last answered a market is tried first (`lastGood`),
+ * each call has its own timeout, and the optional colour-range calls stop at a
+ * time budget; the sale grid and the (one- or two-page) men's pass always
+ * finish, so a slow run never returns a partial grid.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getText } from "../http";
@@ -123,6 +133,11 @@ const MAX_PAGES = 10;
 const VARIATION_BUDGET = 40;
 const CAP = 1500;
 const PAUSE_MS = 500;
+/** Past this, colour-range calls stop (the brand limit is 300 s). */
+const BUDGET_MS = Number(process.env.MK_BUDGET_MS ?? 200_000);
+/** Per call: a 200-tile page is ~4.5 MB; a Product-Variation answer is small. */
+const GRID_TIMEOUT_MS = 45_000;
+const VARIATION_TIMEOUT_MS = 20_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const base = (m: Market) => `${m.api}/on/demandware.store/Sites-${m.site}-Site/${m.locale}`;
@@ -139,17 +154,23 @@ export function variationUrl(country: CountryCode, pid: string, colour: string):
   return `${base(m)}/Product-Variation?pid=${encodeURIComponent(pid)}&dwvar_${pid}_color=${encodeURIComponent(colour)}&quantity=1`;
 }
 
-/** The URL to use on each attempt: the primary host, then each mirror, round-robin. Pure. */
-export function attemptUrls(url: string, country: CountryCode, attempts: number): string[] {
+/**
+ * The URL to use on each attempt: the primary host, then each mirror, round-robin,
+ * starting at host index `first` (the one that last answered this market). Pure.
+ */
+export function attemptUrls(url: string, country: CountryCode, attempts: number, first = 0): string[] {
   const m = MK_MARKETS[country];
   const hosts = m ? [m.api, ...(m.mirrors ?? [])] : [];
   const out: string[] = [];
   for (let i = 0; i < attempts; i++) {
-    const h = hosts[i % Math.max(hosts.length, 1)];
+    const h = hosts[(first + i) % Math.max(hosts.length, 1)];
     out.push(m && h && url.startsWith(m.api) ? h + url.slice(m.api.length) : url);
   }
   return out;
 }
+
+/** Per market: index (into `[api, ...mirrors]`) of the host that last answered. */
+const lastGood = new Map<CountryCode, number>();
 
 async function fetchText(url: string, country: CountryCode, xhr = false): Promise<string> {
   const headers: Record<string, string> = {
@@ -159,11 +180,15 @@ async function fetchText(url: string, country: CountryCode, xhr = false): Promis
     Accept: xhr ? "application/json, text/javascript, */*; q=0.01" : "*/*",
   };
   if (xhr) headers["X-Requested-With"] = "XMLHttpRequest";
-  const urls = attemptUrls(url, country, MK_MARKETS[country]?.mirrors?.length ? 4 : 3);
+  const hostCount = 1 + (MK_MARKETS[country]?.mirrors?.length ?? 0);
+  const first = lastGood.get(country) ?? 0;
+  const urls = attemptUrls(url, country, hostCount > 1 ? 4 : 3, first);
   let lastErr: unknown;
   for (let attempt = 0; attempt < urls.length; attempt++) {
     try {
-      return await getText(urls[attempt], { country, headers });
+      const text = await getText(urls[attempt], { country, headers, timeoutMs: xhr ? VARIATION_TIMEOUT_MS : GRID_TIMEOUT_MS });
+      lastGood.set(country, (first + attempt) % hostCount);
+      return text;
     } catch (err) {
       lastErr = err;
       // An edge's 429 challenge: back off, and move to the next host if there is one.
@@ -404,6 +429,8 @@ async function crawlGrid(country: CountryCode, male: boolean): Promise<Tile[]> {
 
 export async function listMichaelKors(country: CountryCode): Promise<ProductRecord[]> {
   if (!MK_MARKETS[country]) return [];
+  const started = Date.now();
+  const elapsed = () => Date.now() - started;
   const tiles = await crawlGrid(country, false);
   if (!tiles.length) throw new Error(`michaelkors/${country}: sale grid returned no tiles`);
   let men = new Set<string>();
@@ -429,7 +456,7 @@ export async function listMichaelKors(country: CountryCode): Promise<ProductReco
   const toResolve = ranges.filter((t) => t.colour && !(m.outletMixed && /outlet/i.test(t.brandLine ?? "")) && !byId.has(t.pid));
   let calls = 0;
   for (const tile of toResolve) {
-    if (calls >= VARIATION_BUDGET || byId.size >= CAP) break;
+    if (calls >= VARIATION_BUDGET || byId.size >= CAP || elapsed() > BUDGET_MS) break;
     calls++;
     await sleep(PAUSE_MS);
     try {
@@ -441,7 +468,9 @@ export async function listMichaelKors(country: CountryCode): Promise<ProductReco
     }
   }
   if (toResolve.length > calls) {
-    console.log(`michaelkors/${country}: ${toResolve.length - calls} colour-range styles skipped (budget ${VARIATION_BUDGET})`);
+    console.log(
+      `michaelkors/${country}: ${toResolve.length - calls} colour-range styles skipped (budget ${VARIATION_BUDGET} calls / ${BUDGET_MS / 1000} s, at ${Math.round(elapsed() / 1000)} s)`,
+    );
   }
 
   const all = [...byId.values()];

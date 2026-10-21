@@ -21,9 +21,18 @@
  *   H&M Home. Only H&M and & Other Stories are kept, and Home is dropped.
  * - Women's (incl. Divided) rows are taken first, since the cap is far below a
  *   sale's size (AE: ~7,000 marked-down rows).
+ * - Some `media` assets no longer exist on the CDN: media.alshaya.com answers
+ *   404 `{"detail":"Item doesn't exist"}`. Measured 2026-10-21: 378 of 6,388
+ *   stored Gulf rows (6%) led with a dead photo; on a QA page 42 of 1,000 hits
+ *   had a dead first asset (38 of them with a live later one) and 11 more dead
+ *   assets sat further down. Nothing in the hit marks them, so each kept row's
+ *   photos are probed (HEAD) in order until one is live; that one leads, the
+ *   dead ones before it are dropped, and a row with none gets imageUrl null,
+ *   which the feed hides. Only the lead is probed — the whole gallery took
+ *   ~150 s a market against the 5-minute per-brand ceiling.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
-import { getJson } from "../http";
+import { getJson, isLiveImage } from "../http";
 import { toMinor } from "../normalize";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
@@ -153,5 +162,34 @@ export async function listHmGulf(country: CountryCode): Promise<ProductRecord[]>
   const all = [...byId.values()].sort(
     (a, z) => Number(z.inStock) - Number(a.inStock) || rank(a) - rank(z) || off(z) - off(a),
   );
-  return all.slice(0, CAP);
+  return dropDeadImages(all.slice(0, CAP));
+}
+
+/** Probe results by URL — the four Gulf shops share most assets, so one run asks once. */
+const alive = new Map<string, Promise<boolean>>();
+const PROBE_CONCURRENCY = 32;
+
+/** Drop leading photos the CDN no longer has; the first live one becomes imageUrl. Mutates and returns `rows`. */
+export async function dropDeadImages(
+  rows: ProductRecord[],
+  probe: (url: string) => Promise<boolean> = isLiveImage,
+): Promise<ProductRecord[]> {
+  const check = (u: string) => {
+    if (!alive.has(u)) alive.set(u, probe(u));
+    return alive.get(u)!;
+  };
+  let next = 0;
+  const worker = async () => {
+    while (next < rows.length) {
+      const r = rows[next++];
+      const urls = r.images ?? (r.imageUrl ? [r.imageUrl] : []);
+      let lead = 0;
+      while (lead < urls.length && !(await check(urls[lead]))) lead++;
+      const rest = urls.slice(lead);
+      r.images = rest.length ? rest : null;
+      r.imageUrl = rest[0] ?? null;
+    }
+  };
+  await Promise.all(Array.from({ length: PROBE_CONCURRENCY }, worker));
+  return rows;
 }

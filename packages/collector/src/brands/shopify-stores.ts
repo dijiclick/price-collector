@@ -18,6 +18,8 @@ const OWN_ENTRY = new Set([
   // have their own adapters, dispatched in registry-intl); the dtca module
   // serves its brands' every market, incl. the Storefront-API ones.
   "reebok", "jdsports", ...DTCA_BRANDS,
+  // 2026-10-21: products.json challenged mid-walk; Storefront API (countryroad.ts).
+  "countryroad",
 ]);
 
 export const shopifyStore = (brand: string) => SHOPIFY_STORES.find((s) => s.brand === brand)!;

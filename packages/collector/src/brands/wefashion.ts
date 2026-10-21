@@ -14,6 +14,13 @@
  * One tile = one style in one colour (`45908644_0507`); the grid lists only
  * sellable styles, so a tile is in stock.
  *
+ * Kids tiles can be a size-range price: `<span class="price__from-label">vanaf</span>`
+ * before the pair. The pair is then the cheapest size's only — quick view of
+ * 97572213_0060 (2026-10-21): 92–128 €25→€15, 134–176 €29→€17, tile "vanaf €25
+ * €15". One record has one price, so those tiles are skipped (74 of 522 NL
+ * kids tiles; women + men already fill most of the cap), as bonprix-intl.ts
+ * skips its `fromPrice` tiles.
+ *
  * One SFCC site per market, same category ids everywhere: WE-NL (nl_NL),
  * WE-BE (nl_BE); EUR. Measured 2026-10-21: NL women 630, men 627, kids 525.
  * Tiles are heavy (~55 KB each), so pages are 100 tiles and the cap is hit
@@ -57,8 +64,9 @@ function genderOf(division: string): ProductRecord["gender"] {
   return null;
 }
 
-/** One tile → a record, or null when it carries no struck price. Pure. */
+/** One tile → a record, or null when it carries no struck price or a "vanaf" range. Pure. */
 export function mapWefashionTile(tile: string, country: CountryCode = "NL"): ProductRecord | null {
+  if (/class="price__from-label"/.test(tile)) return null;
   const head = tile.slice(0, tile.indexOf(">") + 1);
   const ga = jsonOf<any>(attrOf(head, "data-gtm-item-GA4") ?? "")?.ecommerce?.items?.[0] ?? {};
   const id = attrOf(head, "data-product-id") ?? (typeof ga.item_option_id === "string" ? ga.item_option_id : null);

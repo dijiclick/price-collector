@@ -11,6 +11,12 @@
  * (`quantityType` InStock / LowStock / OutOfStock). `promoPrice` is a
  * coupon-code price ("with code FALLFAVES") and is ignored: only the store's
  * own reduced price counts.
+ *
+ * PerimeterX lets a runner IP make only a handful of these calls before it
+ * answers 403 (probe 39685263884, 2026-10-21: six 400-product pages 200, the
+ * seventh 403), so pages are as large as the API serves (`pp` is capped at
+ * 400: ~2,080 sale products in 6 calls instead of 9 at 250), and a refused page
+ * is asked again after a longer pause.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -19,11 +25,27 @@ import type { CountryCode } from "../../../../lib/countries";
 
 const ORIGIN = "https://www.lulus.com";
 const SALE_CATEGORY = 95;
-const PER_PAGE = 250;
-const MAX_PAGES = 12;
+/** The API's maximum (`pp=1000` returns 400). */
+const PER_PAGE = 400;
+const MAX_PAGES = 8;
 const CAP = 1500;
 const PAUSE_MS = Number(process.env.LULUS_PAUSE_MS ?? 1500);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** One page; a PerimeterX 403 is asked again after 10 s and 30 s (scaled by LULUS_PAUSE_MS). */
+async function getPage(url: string, country: CountryCode): Promise<any> {
+  const waits = [0, 10_000, 30_000].map((ms) => (ms * PAUSE_MS) / 1500);
+  let last: unknown;
+  for (const wait of waits) {
+    if (wait) await sleep(wait);
+    try {
+      return await getJson<any>(url, { country, retries: 0, headers: { Accept: "application/json" } });
+    } catch (err) {
+      last = err;
+    }
+  }
+  throw last;
+}
 
 const availability = (q: unknown): SizeVariant["availability"] =>
   q === "InStock" ? "in_stock" : q === "LowStock" ? "low_on_stock" : "out_of_stock";
@@ -77,10 +99,7 @@ export async function listLulus(country: CountryCode): Promise<ProductRecord[]> 
   let seen = 0;
   for (let page = 1; page <= MAX_PAGES && seen < total; page++) {
     if (page > 1) await sleep(PAUSE_MS);
-    const data = await getJson<any>(`${ORIGIN}/api/search/products/${SALE_CATEGORY}?pp=${PER_PAGE}&p=${page}`, {
-      country,
-      headers: { Accept: "application/json" },
-    });
+    const data = await getPage(`${ORIGIN}/api/search/products/${SALE_CATEGORY}?pp=${PER_PAGE}&p=${page}`, country);
     const products: any[] = data?.content?.products;
     if (!data?.success || !Array.isArray(products)) throw new Error(`lulus/${country}: page ${page} returned no product list`);
     total = Number(data.content.total) || 0;

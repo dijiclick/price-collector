@@ -64,6 +64,13 @@ interface GridSite {
   cap: number;
   tileStart: RegExp;
   parse: (tile: string, host: string) => Tile | null;
+  /** Per-request timeout (default 45 s). */
+  timeoutMs?: number;
+  /**
+   * The wall serves an IP only `maxCalls` requests: the walk ends there, or at the
+   * first wall after a good page, and keeps what it read instead of throwing.
+   */
+  quota?: boolean;
 }
 
 const PAUSE_MS = Number(process.env.SFCC_USCA_PAUSE_MS ?? 700);
@@ -387,15 +394,22 @@ export const GRID_USCA: Record<GridUscaBrand, GridSite> = {
     parse: parseBootBarnTile,
   },
   talbots: {
-    // 1,917 sale styles (Oct 2026). Same PerimeterX rule as Boot Barn.
+    // 1,917 sale styles (Oct 2026). Same PerimeterX rule as Boot Barn, and a quota:
+    // a runner IP gets three grid pages, every later call is a 302 to PX-Show, at any
+    // pace and UA (probes 39674470505, 39678163885, 39684561862, 39685263884 on
+    // 2026-10-21: requests 1-3 served, 4+ walled, with 10 s pauses too). So three
+    // 500-tile pages (= the cap). A deep big page renders slowly (start=1000&sz=500:
+    // 44 s to first byte from the Mac), hence the long timeout.
     markets: {
       US: {
         host: "https://www.talbots.com",
-        sections: [{ url: (s) => `https://www.talbots.com/sale?start=${s}&sz=60&format=ajax`, gender: "kadin", label: null, max: 1500 }],
+        sections: [{ url: (s) => `https://www.talbots.com/sale?start=${s}&sz=500&format=ajax`, gender: "kadin", label: null, max: 1500 }],
       },
     },
-    pageSize: 60,
-    maxCalls: 34,
+    pageSize: 500,
+    maxCalls: 3,
+    timeoutMs: 90_000,
+    quota: true,
     cap: 1500,
     tileStart: /<div class="product-tile "/,
     parse: parseTalbotsTile,
@@ -428,7 +442,7 @@ async function getGrid(url: string, site: GridSite): Promise<string> {
       const res = await fetch(url, {
         headers: { "User-Agent": APP_UA, "X-Requested-With": "XMLHttpRequest", Accept: "text/html, */*; q=0.01", "Accept-Language": "en-US,en;q=0.9" },
         redirect: "manual",
-        signal: AbortSignal.timeout(45_000),
+        signal: AbortSignal.timeout(site.timeoutMs ?? 45_000),
       });
       if (res.status !== 200) throw new Error(`HTTP ${res.status} for ${url}${res.headers.get("location") ? ` → ${res.headers.get("location")!.slice(0, 60)}` : ""}`);
       const html = await res.text();
@@ -476,12 +490,27 @@ export async function listGridUsca(brand: GridUscaBrand, country: CountryCode): 
   const seenRaw = new Set<string>();
   let calls = 0;
   let tilesSeen = 0;
+  let quotaHit = false;
   for (const section of market.sections) {
     let taken = 0;
-    for (let start = 0; taken < section.max && byId.size < site.cap; ) {
-      if (calls >= site.maxCalls) throw new Error(`${brand}/${country}: request budget (${site.maxCalls}) spent before the cap`);
+    for (let start = 0; taken < section.max && byId.size < site.cap && !quotaHit; ) {
+      if (calls >= site.maxCalls) {
+        if (site.quota) {
+          quotaHit = true;
+          break;
+        }
+        throw new Error(`${brand}/${country}: request budget (${site.maxCalls}) spent before the cap`);
+      }
       if (calls++ > 0) await sleep(PAUSE_MS);
-      const html = await getGrid(section.url(start), site);
+      let html: string;
+      try {
+        html = await getGrid(section.url(start), site);
+      } catch (err) {
+        if (!site.quota || !byId.size) throw err;
+        console.warn(`${brand}/${country}: walled after ${calls - 1} pages, keeping ${byId.size} rows — ${String(err)}`);
+        quotaHit = true;
+        break;
+      }
       const tiles = splitTiles(html, site.tileStart);
       if (!tiles.length) {
         if (start === 0) throw new Error(`${brand}/${country}: no tiles at ${section.url(0)}`);

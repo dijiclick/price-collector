@@ -142,9 +142,17 @@ export function mapSaleStore(store: SaleStore, country: CountryCode, p: any): Pr
   };
 }
 
-/** Read the public token out of a storefront page. Pure. */
+/**
+ * Read the public token out of a storefront page. Pure. A theme's own
+ * `storefront(Access)Token` wins; else Shopify's `shopify-features` blob,
+ * whose `"accessToken"` every Online Store page carries (Country Road).
+ */
 export function tokenFromHtml(html: string): string | null {
-  return html.match(/storefrontAccessToken["']?\s*[:=]\s*["']([a-f0-9]{32})["']/i)?.[1] ?? null;
+  return (
+    html.match(/storefront(?:Access)?Token["']?\s*[:=]\s*["']([a-f0-9]{32})["']/i)?.[1] ??
+    html.match(/"accessToken":"([a-f0-9]{32})"/)?.[1] ??
+    null
+  );
 }
 
 export async function listSaleStore(store: SaleStore, country: CountryCode): Promise<ProductRecord[]> {

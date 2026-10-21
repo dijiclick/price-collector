@@ -123,3 +123,30 @@ export async function getText(url: string, opts: FetchOpts = {}): Promise<string
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.text();
 }
+
+/**
+ * Does this image URL serve an image? False only on a definite answer — 404/410,
+ * or a 2xx that is not `image/*` (e.g. a JSON "not found" body). A timeout, a
+ * network error or a 403 (a CDN refusing our egress) returns true: our own
+ * hiccup must not strip a working photo.
+ * HEAD first; one GET when the host refuses HEAD (405/501).
+ */
+export async function isLiveImage(url: string, timeoutMs = 10_000): Promise<boolean> {
+  for (const method of ["HEAD", "GET"]) {
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "User-Agent": UA, Accept: "image/*" },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (method === "GET") await res.body?.cancel().catch(() => {});
+      if (method === "HEAD" && (res.status === 405 || res.status === 501)) continue;
+      if (res.status === 404 || res.status === 410) return false;
+      if (res.ok) return /^image\//i.test(res.headers.get("content-type") ?? "image/");
+      return true;
+    } catch {
+      return true;
+    }
+  }
+  return true;
+}

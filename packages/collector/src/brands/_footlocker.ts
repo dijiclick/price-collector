@@ -13,6 +13,13 @@
  * kept while the embedded pagination agrees. (From the Turkish Mac the .com
  * sites geo-redirect to footlocker.eu — test from a runner.)
  *
+ * Now and then a runner is handed a ~2 KB Kasada shell (`kpsdk-load`, no
+ * page body) instead of the page, for one URL at a time, and the same URL is
+ * whole again a minute later (probe runs 39681802513, 39684561862 on 2026-10-21:
+ * champssports kids/clothing and adidas 2 KB, then 0.7 / 1.9 MB with the
+ * listing). Such a page is fetched again after a pause, and a slice that still
+ * has no listing is skipped; the banner fails only when most slices do.
+ *
  * Each product has `price.value` (selling) and `originalPrice.value` (the price
  * the site strikes through). Rows are kept only when original > price, and
  * dropped when another colour of the same product is flagged as a member-only
@@ -62,7 +69,9 @@ export const FL_SLICES: [path: string, gender: ProductRecord["gender"], pages: n
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 const CAP = 1500;
-const PAUSE_MS = 1200;
+const PAUSE_MS = Number(process.env.FL_PAUSE_MS ?? 1200);
+/** Waits before fetching a page again that came back without its listing. */
+const SHELL_RETRY_MS = [3000, 8000].map((ms) => (process.env.FL_PAUSE_MS === "0" ? 0 : ms));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Brands these banners carry, longest first so "adidas Originals" wins over "adidas". */
@@ -162,21 +171,38 @@ export function mapFl(p: any, banner: FlBanner, country: CountryCode, gender: Pr
   };
 }
 
+/** One listing page, fetched again while it comes back without its listing (Kasada shell). Null if it never does. */
+async function fetchListing(banner: FlBanner, country: CountryCode, slice: string, page: number) {
+  const url = pageUrl(banner, country, slice, page);
+  let html = "";
+  for (let attempt = 0; attempt <= SHELL_RETRY_MS.length; attempt++) {
+    if (attempt > 0) await sleep(SHELL_RETRY_MS[attempt - 1]);
+    html = await getText(url, {
+      country,
+      timeoutMs: 45_000,
+      headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
+    });
+    const got = parseFlPage(html);
+    if (got) return got;
+  }
+  console.warn(`${banner}/${country}: ${slice} p${page} has no embedded listing (${html.length} bytes: ${html.slice(0, 80).replace(/\s+/g, " ")})`);
+  return null;
+}
+
 export async function listFootLocker(banner: FlBanner, country: CountryCode): Promise<ProductRecord[]> {
   const s = FL_SITES[banner][country];
   if (!s) return [];
   const byId = new Map<string, ProductRecord>();
   let requests = 0;
+  const missed: string[] = [];
   for (const [slice, gender, pages] of FL_SLICES) {
     for (let page = 0; page < pages; page++) {
       if (requests++ > 0) await sleep(PAUSE_MS);
-      const html = await getText(pageUrl(banner, country, slice, page), {
-        country,
-        timeoutMs: 45_000,
-        headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
-      });
-      const got = parseFlPage(html);
-      if (!got) throw new Error(`${banner}/${country}: ${slice} p${page} has no embedded listing (wall or layout change)`);
+      const got = await fetchListing(banner, country, slice, page);
+      if (!got) {
+        if (page === 0) missed.push(slice);
+        break;
+      }
       if (Number(got.pagination?.currentPage) !== page) {
         console.warn(`${banner}/${country}: ${slice} asked page ${page}, served ${got.pagination?.currentPage}; next slice`);
         break;
@@ -188,5 +214,11 @@ export async function listFootLocker(banner: FlBanner, country: CountryCode): Pr
       if (page + 1 >= Number(got.pagination?.totalPages ?? 0)) break;
     }
   }
+  // A wall (or a layout change) shows up as most slices without a listing.
+  if (missed.length * 2 > FL_SLICES.length) {
+    throw new Error(`${banner}/${country}: ${missed.length}/${FL_SLICES.length} sale slices had no embedded listing (wall or layout change)`);
+  }
+  if (!byId.size) throw new Error(`${banner}/${country}: the sale listings had no reduced product`);
+  if (missed.length) console.warn(`${banner}/${country}: skipped ${missed.join(", ")} (no listing)`);
   return [...byId.values()].slice(0, CAP);
 }

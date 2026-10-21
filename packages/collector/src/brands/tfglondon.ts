@@ -18,7 +18,7 @@ import { cleanGallery, type ProductRecord } from "../types";
 import { getText } from "../http";
 import { toMinor } from "../normalize";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
-import { attrValues, jsonOf, poundsOf } from "./_sfcchtml";
+import { attrValues, jsonOf, poundsOf, sfccMissingImage } from "./_sfcchtml";
 
 export type TfgSlug = "whistles" | "hobbs" | "phase-eight";
 
@@ -48,7 +48,9 @@ export function mapTfgTile(slug: TfgSlug, tracking: any, country: CountryCode = 
   const price = poundsOf(it?.price);
   const orig = poundsOf(it?.originalPrice);
   if (!it?.id || !it?.name || !it?.url || !Number.isFinite(price) || price <= 0) return null;
-  const imgs: string[] = (it.images ?? []).filter((u: unknown) => typeof u === "string");
+  // A few Phase Eight tiles carry only a missing-file URL (the site's own tile
+  // shows a blank too); dropping it leaves imageUrl null, which the feed hides.
+  const imgs: string[] = (it.images ?? []).filter((u: unknown) => typeof u === "string" && !sfccMissingImage(u));
   const colour = typeof list.item_colour === "string" && list.item_colour.trim() ? list.item_colour.trim() : null;
   const cat = [it.category1, it.category0, list.item_category3, list.item_category2].find((c) => typeof c === "string" && c.trim());
   return {

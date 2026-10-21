@@ -28,16 +28,24 @@ const SITE = "https://www.benefitcosmetics.com";
 export const SALE_URL = `${SITE}/en-us/sale?start=0&sz=120`;
 const CAP = 1500;
 
-const ENT: Record<string, string> = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " " };
+const ENT: Record<string, string> = {
+  amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " ",
+  // Names print their apostrophes as `&rsquo;` ("They&rsquo;re Real!"), 2026-10-21.
+  rsquo: "'", lsquo: "'", rdquo: '"', ldquo: '"', ndash: "–", mdash: "—", trade: "™", reg: "®", eacute: "é",
+};
 export const unescapeHtml = (s: string) =>
   s
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
     .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
     .replace(/&([a-z]+);/gi, (m, n) => ENT[n.toLowerCase()] ?? m);
 
-/** The tile blocks of a grid page, one per variant shown. Pure. */
+/**
+ * The tile blocks of a grid page, one per variant shown. Pure. Since ~2026-10-20
+ * the attributes of the tile div sit on separate lines (`<div class="product"\n
+ * data-pid=…`), so any whitespace is allowed between them.
+ */
 export function tilesOf(html: string): string[] {
-  return html.split(/(?=<div class="product" data-pid=")/).slice(1);
+  return html.split(/(?=<div class="product"\s+data-pid=")/).slice(1);
 }
 
 /** Map one product tile. Pure; null unless the shelf shows a strike price above the sale price. */
@@ -59,7 +67,7 @@ export function mapBenefitTile(tile: string): ProductRecord | null {
   const main = typeof d?.image_url === "string" && d.image_url.startsWith("https://") ? d.image_url : null;
   const first = tileImgs[0] ?? main;
   const category = [d?.item_category2, d?.item_category].find((c) => typeof c === "string" && c.trim()) ?? null;
-  const shade = typeof d?.item_variant === "string" && d.item_variant.trim() && !/^(mini|full size|standard|kit|set|duo|trio|value set)$/i.test(d.item_variant.trim()) ? d.item_variant.trim() : null;
+  const shade = typeof d?.item_variant === "string" && d.item_variant.trim() && !/^(mini|full size|standard|kit|set|duo|trio|value set|merchandise)$/i.test(d.item_variant.trim()) ? d.item_variant.trim() : null;
 
   return {
     brand,

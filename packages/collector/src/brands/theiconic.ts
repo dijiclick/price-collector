@@ -14,6 +14,10 @@
  * is 8 requests. The listing carries price/final_price, brand and photos but no
  * sizes (those are per-product calls), so sizes are not collected. The listing
  * only shows purchasable products, so every row is in stock.
+ *
+ * Photos (static.theiconic.com.au): curl / node / python / JDK get a Cloudflare
+ * 403 (TLS fingerprint), but iOS NSURLSession, Chrome and check-host.net from 8
+ * countries get 200 with no Referer (2026-10-22) — test with a real client.
  */
 import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";

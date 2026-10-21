@@ -12,6 +12,13 @@
  * From a Turkish IP womensecret.com geo-redirects a browser UA to
  * intl.womensecret.com; runners (US) are not redirected.
  *
+ * Market pinning: a browser UA from outside Portugal asking for `/pt/pt`
+ * (homepage or listing) is 302'd to `/es/es` — a runner then read the Spanish
+ * homepage, found no `/pt/pt` sale links and failed every PT run (probe run
+ * 39674448944, 2026-10-21). The storefront's own `country_data=PT~pt` cookie
+ * pins the market: with it the same runner gets the Portuguese pages. It is
+ * sent for Spain too (`ES~es`), which also stops the Turkish-IP redirect.
+ *
  * Which listings: the sale shelves are campaign categories whose paths change
  * with the season ("mid-season-sale", "rebajas", "precios-especiales"), so each
  * run reads the brand's homepage navigation and keeps the women's/men's links
@@ -81,6 +88,12 @@ const RULES: Record<string, { sale: RegExp; multibuy: RegExp; notAdult: RegExp; 
   es: { sale: SALE, multibuy: MULTIBUY, notAdult: NOT_ADULT, bare: /\/promociones$|\/rebajas$/ },
   pt: { sale: SALE_PT, multibuy: MULTIBUY_PT, notAdult: NOT_ADULT_PT, bare: /\/promocoes$|\/promotions?$/ },
 };
+
+/** "/pt/pt" → the storefront's market cookie, "country_data=PT~pt". Pure. */
+export function marketCookie(prefix: string): string {
+  const [, country = "es", lang = "es"] = prefix.split("/");
+  return `country_data=${country.toUpperCase()}~${lang}`;
+}
 
 /** Sale listing paths linked from a brand homepage, women's first. Pure. */
 export function saleListings(homeHtml: string, prefix: string): string[] {
@@ -177,10 +190,14 @@ export async function listTendam(brand: TendamBrand, country: CountryCode): Prom
   // TENDAM_UA: a non-browser UA skips womensecret.com's geo redirect when testing from outside Spain/the US.
   const ua: Record<string, string> = process.env.TENDAM_UA ? { "User-Agent": process.env.TENDAM_UA } : {};
   const lang = country === "PT" ? "pt-PT,pt;q=0.9" : "es-ES,es;q=0.9";
-  const opts = { country, timeoutMs: 60_000, headers: { "Accept-Language": lang, ...ua } };
+  const opts = { country, timeoutMs: 60_000, headers: { "Accept-Language": lang, Cookie: marketCookie(prefix), ...ua } };
   const home = await getText(`${origin}${prefix}`, opts);
   const listings = saleListings(home, prefix).slice(0, MAX_LISTINGS);
-  if (!listings.length) throw new Error(`${brand}/${country}: no sale listing linked from the homepage`);
+  if (!listings.length) {
+    // No link into this market at all: the shop served another one (geo redirect), not "no sale".
+    if (!home.includes(`${prefix}/`)) throw new Error(`${brand}/${country}: homepage served another market (geo redirect)`);
+    throw new Error(`${brand}/${country}: no sale listing linked from the homepage`);
+  }
   const byId = new Map<string, ProductRecord>();
   // Round-robin, one page per listing per round, so men's and the house's own
   // shelves are not crowded out by whichever listing comes first.
