@@ -65,6 +65,9 @@ export function parseFacesGrid(country: CountryCode, html: string): ProductRecor
     const cnstrc = money(attrOf(tag, "data-cnstrc-item-price"));
     const paid = Number.isFinite(cnstrc) && cnstrc > 0 ? cnstrc : orig - money(imp.discount);
     if (!(paid > 0) || !(orig > paid)) continue;
+    // Multi-size perfumes (PM_*) put one size's price against another's; only a tile
+    // the shop itself strikes through is a markdown (2026-10-21: YSL Y 480 "was" 665).
+    if (!/strike-through/.test(block)) continue;
     const href = block.match(/href="(\/[a-z]{2}\/p\/[^"]+\.html)"/)?.[1];
     if (!href) continue;
     const imgs = [...block.matchAll(/srcset="([^"\s]+)/g)]

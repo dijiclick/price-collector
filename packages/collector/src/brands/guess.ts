@@ -117,7 +117,8 @@ export function mapHit(h: any, m: Market = market("TR")): ProductRecord | null {
     brand: "guess",
     externalId: id,
     name: h.name ?? "",
-    url: h.url ? `https://www.guess.eu${h.url}` : `https://www.guess.eu/${m.path}/`,
+    // guess.eu 301s to guess.com for every product (2026-10-21).
+    url: h.url ? `https://www.guess.com${h.url}` : `https://www.guess.com/${m.path}/`,
     imageUrl: imageUrl(id),
     price: toMinor(price),
     listPrice: retail && retail > price ? toMinor(retail) : null,

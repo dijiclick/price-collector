@@ -152,6 +152,8 @@ function record(
   },
 ): ProductRecord | null {
   const { price, was, gallery, ...rest } = r;
+  // Never store a non-URL as a photo ("[object Object]" shipped for Weekday on 2026-10-21).
+  if (rest.imageUrl != null && !/^https?:\/\//.test(String(rest.imageUrl))) rest.imageUrl = null;
   if (!rest.externalId || !rest.name || price == null || was == null || was <= price) return null;
   return {
     ...rest,
@@ -246,7 +248,10 @@ export function mapStories(country: CountryCode, p: any, gender: Gender): Produc
 }
 
 export function mapWeekday(country: CountryCode, p: any, gender: Gender): ProductRecord | null {
-  const imgs: string[] = p?.media?.images ?? [];
+  // 2026-10-21: `media.images` became objects ({ url, … }); strings still accepted.
+  const imgs: string[] = ((p?.media?.images ?? []) as unknown[])
+    .map((x: any) => (typeof x === "string" ? x : x?.url ?? x?.src ?? x?.image ?? x?.href ?? null))
+    .filter((u: unknown): u is string => typeof u === "string" && /^https?:\/\//.test(u));
   const sizes: SizeVariant[] = (p?.sizeVariants ?? [])
     .filter((s: any) => s?.label)
     .map((s: any) => {

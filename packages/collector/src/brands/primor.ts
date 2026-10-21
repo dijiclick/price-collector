@@ -104,7 +104,10 @@ export function mapPrimor(p: any, country: CountryCode = "ES"): ProductRecord[] 
     if (!v?.variantId || !Number.isFinite(price) || price <= 0) continue;
     if (!Number.isFinite(was) || was <= price) continue;
     const host = (PRIMOR_MARKETS[country] ?? PRIMOR_MARKETS.ES!).host;
-    const url = typeof v.link === "string" && v.link.startsWith(`${host}/`) ? v.link : null;
+    // Only the market's own store: /es_ic/ (Canarias) and /es_ea/ (Ceuta) are tax-free
+    // prices that read as fake discounts on the mainland (2026-10-21).
+    const store = country === "PT" ? "/pt_pt/" : country === "FR" ? "/fr_fr/" : "/es_es/";
+    const url = typeof v.link === "string" && v.link.startsWith(`${host}/`) && v.link.includes(store) ? v.link : null;
     if (!url) continue;
     const inStock = String(v.availability) === "true";
     const label = clean(v.variantValue);

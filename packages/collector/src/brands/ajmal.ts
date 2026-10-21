@@ -95,6 +95,7 @@ export const brand = "ajmal";
 
 export async function listProducts(country: CountryCode): Promise<ProductRecord[]> {
   if (country === "AE") return listAE();
-  if (country === "SA") return listShopify(SA_STORE, "SA");
+  // Staff-only listings ("…-employee", flat 20%) are not public deals (2026-10-21).
+  if (country === "SA") return (await listShopify(SA_STORE, "SA")).filter((r) => !/-employee(?:[/?#]|$)/i.test(r.url));
   return [];
 }

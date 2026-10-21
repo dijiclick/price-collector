@@ -98,7 +98,8 @@ export function mapSephoraAsia(p: any, included: Map<string, any>, country: Coun
     country,
     externalId: String(p.id),
     name,
-    url: String(a["web-url"]),
+    // The API still says sephora.au, now a parked domain; the live shop is sephora.com.au (2026-10-21).
+    url: String(a["web-url"]).replace(/^https?:\/\/(www\.)?sephora\.au\//, "https://www.sephora.com.au/"),
     imageUrl: imgs[0] ?? null,
     images: cleanGallery(imgs, imgs[0] ?? null),
     price,

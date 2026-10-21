@@ -57,7 +57,7 @@ const NON_BEAUTY = /^(home|kitchen|car_|dog|tea|laundry|towels|bed|cushion|throw
 export function ritualsQuery(lang: string): string {
   const attrs = [
     "objectID", "productTitle_en", `productTitle_${lang}`, `slug_${lang}`, "slug_en",
-    "shortProductDescription_en", "primaryImage", "displayPrice", "originalPrice",
+    "shortProductDescription_en", "primaryImage", "seo", "displayPrice", "originalPrice",
     "inStockEcom", "categoryHierarchy", "categories", "eanCode", "collection",
   ];
   const p = new URLSearchParams({
@@ -72,6 +72,9 @@ export function ritualsQuery(lang: string): string {
 
 /** One Algolia hit → a record, or null when it is not a real markdown or not personal care. Pure. */
 export function mapRitualsHit(h: any, country: CountryCode, m: Market): ProductRecord | null {
+  // Discontinued lines stay in the index flagged shouldIndex:false; the shop shows them
+  // at full price, redirects or 404s (2026-10-21: 53 per market, mostly Namaste).
+  if (h?.seo?.shouldIndex === false) return null;
   const price = Number(h?.displayPrice?.default);
   const was = Number(h?.originalPrice?.default);
   if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(was) || was <= price) return null;

@@ -75,7 +75,7 @@ export function mapAdore(h: any, country: CountryCode = "AU"): ProductRecord | n
     .slice()
     .sort((a, b) => Number(!!b?.is_primary) - Number(!!a?.is_primary) || Number(a?.sort_order ?? 0) - Number(b?.sort_order ?? 0))
     .map((i) => imageUrl(i?.url_relative))
-    .filter((u): u is string => !!u);
+    .filter((u): u is string => !!u && !/\/embed\//.test(u));
   const lvl0: string[] = Array.isArray(h?.hierarchical_categories?.lvl0) ? h.hierarchical_categories.lvl0 : [];
   const label = String(h?.brand_facet?.[0]?.name ?? "");
   const category = lvl0.find((c) => c !== label && !/specials|subscribe|gift|brand/i.test(c)) ?? null;

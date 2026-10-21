@@ -56,7 +56,9 @@ export function mapScapinoProduct(p: any, country: CountryCode = "NL"): ProductR
   if (NOT_FASHION.test(title)) return null;
   const attrs = a?.attributes ?? {};
   const types: string[] = Array.isArray(attrs.types) ? attrs.types.map(String) : [];
-  const images = cleanGallery(Array.isArray(a?.imageUrls) ? a.imageUrls : [], a?.mainImageUrl ?? null);
+  // `_Default` is a 50×50 thumbnail; /w512/ is the same photo at 512 px (2026-10-21).
+  const big = (u: unknown) => (typeof u === "string" ? u.replace("/_Default/", "/w512/") : u);
+  const images = cleanGallery((Array.isArray(a?.imageUrls) ? a.imageUrls : []).map(big), big(a?.mainImageUrl ?? null) as string | null);
   const brand = typeof attrs.brand === "string" && attrs.brand.trim() ? attrs.brand.trim() : null;
   return {
     brand: "scapino",

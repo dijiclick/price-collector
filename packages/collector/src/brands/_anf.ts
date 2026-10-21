@@ -94,12 +94,14 @@ export function mapAnf(slug: AnfSlug, country: CountryCode, p: any, category: st
   const first = img(p.imageSet?.modelImage) ?? img(p.imageSet?.prodImage);
   const gallery = (p.imageSet?.allImages ?? []).map(img);
   const path = String(p.productPageUrl ?? "").replace(/^undefined/, "").split("?")[0];
+  // Kids items come as /kids/p/…; anything without /p/ would open the home page — drop it.
+  if (!/\/p\//.test(path)) return null;
   return {
     brand: slug,
     country,
     externalId: String(p.id),
     name: String(p.name).trim(),
-    url: path.startsWith("/p/") ? `${b.host}/shop/${st.path}${path}` : `${b.host}/shop/${st.path}`,
+    url: `${b.host}/shop/${st.path}${path}`,
     imageUrl: first,
     images: cleanGallery(gallery, first),
     price: toMinor(now.amount),

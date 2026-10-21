@@ -160,7 +160,8 @@ export function mapAsics(h: any, country: CountryCode = "US"): ProductRecord | n
     externalId: id,
     // Model names are upper case on the site itself ("GEL-KAYANO 31"); kept as shown.
     name,
-    url: path,
+    // Outlet markdowns open on outlet.asics.com (same path); www answers 404 for them (2026-10-21).
+    url: mk.cgid === "outlet" ? path.replace(ORIGIN, "https://outlet.asics.com") : path,
     imageUrl: first,
     images: cleanGallery(photos, first),
     price: toMinor(sale),

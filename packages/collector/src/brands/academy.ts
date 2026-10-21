@@ -87,8 +87,8 @@ export function mapAcademy(h: any, gender: ProductRecord["gender"]): ProductReco
     country: "US",
     externalId: id,
     name,
-    // Most slugs end in the part number; a few stop at "…-t-shirt-" and need it appended.
-    url: `${SITE}/p/${/\d$/.test(String(h.seoURL)) ? h.seoURL : `${String(h.seoURL).replace(/-+$/, "")}-${id}`}`,
+    // The seoURL is the whole path segment; appending the id 404s (916 of 1,000 links, 2026-10-21).
+    url: `${SITE}/p/${String(h.seoURL).replace(/-+$/, "")}`,
     imageUrl: img,
     images: cleanGallery([img], img),
     price: toMinor(sale),

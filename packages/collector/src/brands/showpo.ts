@@ -16,7 +16,7 @@ export const SHOWPO: SaleStore = {
   token: process.env.SHOWPO_STOREFRONT_TOKEN ?? "24fbff5d48c32731464d09638f463c42",
   tokenPage: "https://www.showpo.com/row/",
   collections: ["sale"],
-  productUrl: (h) => `https://www.showpo.com/au/products/${h}`,
+  productUrl: (h) => `https://www.showpo.com/products/${h}`, // /au/products/… 404s (2026-10-21)
   gender: "kadin",
 };
 

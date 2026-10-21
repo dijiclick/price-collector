@@ -74,6 +74,9 @@ export function mapProduct(
 ): ProductRecord | null {
   if (!p?.id || !p.name || !p.productUrl) return null;
   // Products come wrapped as bundles; the sellable item is bundleProductSummaries[0].
+  // A multi-piece set ("top and skort set") would show the set's name at the first
+  // piece's price and link — skip those (2026-10-21, IT).
+  if ((p.bundleProductSummaries?.length ?? 0) > 1) return null;
   const real = p.bundleProductSummaries?.[0] ?? p;
   const color = real?.detail?.colors?.[0];
   if (!color) return null;

@@ -196,8 +196,9 @@ export function mapNode(country: CountryCode, n: any): ProductRecord | null {
     country,
     externalId: sku,
     name: brandName && !name.toLowerCase().startsWith(brandName.toLowerCase()) ? `${brandName} ${name}` : name,
-    // Zalando resolves a product page by the trailing config SKU; the slug is cosmetic.
-    url: `https://${m.host}/${slug(`${brandName} ${type ?? ""} ${colour ?? ""}`)}-${sku.toLowerCase()}.html`,
+    // The slug is NOT cosmetic: a named model ("AURORA") missing from it 404s
+    // (2026-10-21, NL/FR/Nordics). Brand + full name, as Zalando's own URLs are.
+    url: `https://${m.host}/${slug(`${brandName} ${name}`)}-${sku.toLowerCase()}.html`,
     imageUrl: first,
     images: cleanGallery(photos, first),
     price,

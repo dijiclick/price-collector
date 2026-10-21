@@ -154,7 +154,8 @@ export function parseGrid(
     if (!name) continue;
     const colour = altParts.length >= 3 ? altParts[altParts.length - 2] : null;
     const href = c.match(/class="full-pdp-link[^"]*"[^>]*href="([^"]+)"/)?.[1] ?? c.match(/href="(\/[a-z]{2}\/[^"]+\.html)"/)?.[1];
-    const url = typeof ga.item_url === "string" && ga.item_url.startsWith("http") ? ga.item_url : href ? `${hostOf(shop, country)}${href}` : null;
+    // The tile's own href first: on the Gulf domains `item_url` drops the "-SA" suffix and answers 410.
+    const url = href ? `${hostOf(shop, country)}${href}` : typeof ga.item_url === "string" && ga.item_url.startsWith("http") ? ga.item_url : null;
     if (!url) continue;
     const avail = c.match(/data-availability="([^"]+)"/)?.[1];
     out.push({
