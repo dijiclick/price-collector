@@ -109,7 +109,7 @@ export const isRtl = (l: AppLang): boolean => l === "ar";
  * French reader's English pushes Turkish. Flip to true once that collector is
  * live; nothing else needs to change.
  */
-export const STORE_FULL_LANG = false;
+export const STORE_FULL_LANG = true; // on 2026-10-22: collector bb070ca (per-language copy) synced and live
 
 /**
  * The language to store for server-written copy. Turkish for a missing or

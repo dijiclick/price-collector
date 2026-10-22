@@ -1,0 +1,96 @@
+name: embed
+
+# Product-photo embeddings for "Shop the look", on free runners (2026-10-22).
+#
+# The main box embeds ~190 photos a minute next to Postgres; ~870k were left.
+# This splits the same backfill over N runners by product id (id % N = k).
+# embed/embed_batch.py imports embed/embed_service.py, the code the box runs,
+# so a row written here is the vector the box's /embed gives for that photo.
+# The model file is the box's own, byte for byte: release embed-model-v2 of
+# this repo, checked against the sha256 below before anything runs.
+# Model: Marqo FashionSigLIP (Apache-2.0), image tower, ONNX int8.
+#
+# Manual only. THE COLLECTOR REPOSITORY IS PUBLIC — same trigger rules as
+# collect.yml: never pull_request_target or workflow_run. Each runner holds
+# ONE database connection.
+#
+# Every free job slot this takes is one the collectors cannot use (20 per
+# account): collect-intl runs 10 markets at once every 4 h at :52. Keep
+# shards + 10 under 20 across those windows, or accept that intl waits.
+on:
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: "Split rows over this many runners (id % shards)"
+        default: "10"
+      only:
+        description: "Run only these shard numbers, comma-separated (empty = all)"
+        default: ""
+      minutes:
+        description: "Each runner stops after this many minutes"
+        default: "290"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: embed
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.p.outputs.list }}
+    steps:
+      - id: p
+        env:
+          SHARDS: ${{ inputs.shards }}
+          ONLY: ${{ inputs.only }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          n = int(os.environ["SHARDS"])
+          assert 1 <= n <= 256
+          only = [int(x) for x in os.environ.get("ONLY", "").replace(" ", "").split(",") if x]
+          ks = only or list(range(n))
+          assert all(0 <= k < n for k in ks)
+          print("list=" + json.dumps(ks))
+          PY
+
+  embed:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.list) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The box's versions exactly: Pillow decodes and resizes, onnxruntime runs
+      # the int8 kernels — a different version could move the vectors.
+      - run: pip install -q onnxruntime==1.31.0 numpy==2.5.2 pillow==12.3.0 "psycopg[binary]==3.3.6"
+      - name: Model (release embed-model-v2, sha256-checked)
+        env:
+          BASE: https://github.com/${{ github.repository }}/releases/download/embed-model-v2
+        run: |
+          mkdir -p model
+          curl -fsSL --retry 5 -o model/visual.int8.onnx "$BASE/visual.int8.onnx"
+          curl -fsSL --retry 5 -o model/meta.json "$BASE/meta.json"
+          echo "bc12c772fc7b5901a501ca54e0152f55dd44ffd31ad904b3b5b5e5c0a8a1fd73  model/visual.int8.onnx" | sha256sum -c -
+          python3 -c 'import json; m=json.load(open("model/meta.json")); assert m["name"]=="marqo-fashionSigLIP/onnx-int8-v2" and m["dim"]==768, m'
+      - name: Embed shard ${{ matrix.shard }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EMBED_MODEL_DIR: model
+          SHARDS: ${{ inputs.shards }}
+          SHARD: ${{ matrix.shard }}
+          MINUTES: ${{ inputs.minutes }}
+        run: python3 scripts/embed/embed_batch.py --shards "$SHARDS" --shard "$SHARD" --minutes "$MINUTES"
