@@ -15,11 +15,17 @@ export interface PagePrice {
   currency: string | null;
 }
 
-/** An AggregateOffer's low/high: the shape of a size/variant range. */
+/**
+ * An AggregateOffer's low/high: the shape of a size/variant range — but only
+ * when it spans more than one offer. Nahdi writes a single product's sale and
+ * regular price as lowPrice/highPrice with offerCount 1 (2026-10-22).
+ */
 export interface PriceRange {
   low: number;
   high: number;
   currency: string | null;
+  /** offerCount ≥ 2, or at least two distinct prices among its nested offers. */
+  multi: boolean;
 }
 
 export interface PageFacts {
@@ -92,7 +98,12 @@ export function pageFacts(html: string): PageFacts {
         if (r.highPrice != null) add(r.highPrice, c);
         const low = priceToMinor(r.lowPrice);
         const high = priceToMinor(r.highPrice);
-        if (type === "AggregateOffer" && low !== null && high !== null) ranges.push({ low, high, currency: c });
+        if (type === "AggregateOffer" && low !== null && high !== null) {
+          const nested = Array.isArray(r.offers) ? r.offers : [];
+          const distinct = new Set(nested.map((x) => priceToMinor((x as Record<string, unknown>)?.price)).filter((x) => x !== null));
+          const multi = Number(r.offerCount) >= 2 ? distinct.size !== 1 : distinct.size >= 2;
+          ranges.push({ low, high, currency: c, multi });
+        }
       }
       for (const v of Object.values(r)) walk(v, c);
     };
@@ -103,7 +114,10 @@ export function pageFacts(html: string): PageFacts {
       .map((m) => m[0].match(/content=["']([^"']*)["']/i)?.[1] ?? null)
       .filter((x): x is string => x !== null);
   const ogCurrency = cur(meta("og:price:currency|product:price:currency")[0]);
-  for (const v of meta("product:price:amount|og:price:amount|product:sale_price:amount")) add(v, ogCurrency);
+  // Skechers writes a colour range here, "79.99 - 105.00": each end is a price,
+  // and read as one string the digits run together (7999105.00).
+  for (const v of meta("product:price:amount|og:price:amount|product:sale_price:amount"))
+    for (const part of v.split(/\s+[-–]\s+/)) add(part, ogCurrency);
   const shopCur = html.match(/Shopify\.currency\s*=\s*\{[^}]*"active"\s*:\s*"([A-Za-z]{3})"/)?.[1];
   const t = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
   return {

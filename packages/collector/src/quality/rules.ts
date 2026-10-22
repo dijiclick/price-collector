@@ -94,9 +94,12 @@ export function countPair(samples: SampleResult[], app: AppCheck | null, dbDeals
  * The pair's verdict and the reasons, in plain words for the fixer.
  *   bad  — the app's brand page is empty while the DB has deals, or at least
  *          two samples PROVED wrong (link, photo, price or fake "was" price,
- *          in any mix): one is bad luck, two is a pattern.
- *   warn — one sample proved wrong; most samples stale; the app's brand page
- *          errored, or shows deals without a photo.
+ *          in any mix): one is bad luck, two is a pattern. A price counts as
+ *          proof only where this box sees the market's own prices
+ *          (`priceTrusted`: TR, DE by default — see run.ts).
+ *   warn — one sample proved wrong; any untrusted price mismatch; most
+ *          samples stale; the app's brand page errored, or shows deals
+ *          without a photo.
  *   ok   — everything else, including pairs we could not verify at all
  *          (walled) and pairs with no deals (the crawler watchdog owns empties).
  */
@@ -104,14 +107,22 @@ export function judgePair(
   samples: SampleResult[],
   app: AppCheck | null,
   dbDeals: number,
+  { priceTrusted = true }: { priceTrusted?: boolean } = {},
 ): { counts: PairCounts; verdict: Verdict; reasons: string[] } {
   const c = countPair(samples, app, dbDeals);
   const reasons: string[] = [];
-  const bad = samples.filter(faulty).length;
+  // Abroad, a shop may price this German box differently from its own market
+  // (Lyko FI 10.50 € here, 8.75 € from Turkey; Springfield PT 29.99 € here,
+  // 23.99 € from Turkey — 2026-10-22). There a price mismatch alone only warns.
+  const proven = (s: SampleResult) => (priceTrusted ? faulty(s) : s.link === "bad" || s.img === "bad" || s.fake);
+  const bad = samples.filter(proven).length;
+  const priceWarn = !priceTrusted && c.price_mismatch > 0;
   if (c.app_empty) reasons.push(`app brand page empty while the DB has ${dbDeals} deals`);
   if (c.link_bad) reasons.push(`${c.link_bad}/${c.sampled} links broken (404, category or home page)`);
   if (c.img_bad) reasons.push(`${c.img_bad}/${c.sampled} photos broken`);
-  if (c.price_mismatch) reasons.push(`${c.price_mismatch}/${c.sampled} prices differ from the shop`);
+  if (c.price_mismatch) {
+    reasons.push(`${c.price_mismatch}/${c.sampled} prices differ from the shop${priceTrusted ? "" : " (as seen from Germany: may be geo pricing)"}`);
+  }
   if (c.fake_discount) reasons.push(`${c.fake_discount}/${c.sampled} discounts the shop does not show (no was-price / size range)`);
   const staleMany = c.sampled > 0 && c.stale * 2 > c.sampled;
   if (staleMany) reasons.push(`${c.stale}/${c.sampled} deals not seen by the collector for 24 h+`);
@@ -120,6 +131,6 @@ export function judgePair(
   const noImg = !!app && app.noImage > 0;
   if (noImg) reasons.push(`app brand page shows ${app!.noImage} deals without a photo`);
 
-  const verdict: Verdict = c.app_empty || bad >= 2 ? "bad" : bad === 1 || staleMany || appErr || noImg ? "warn" : "ok";
+  const verdict: Verdict = c.app_empty || bad >= 2 ? "bad" : bad === 1 || priceWarn || staleMany || appErr || noImg ? "warn" : "ok";
   return { counts: c, verdict, reasons };
 }

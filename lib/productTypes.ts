@@ -469,8 +469,18 @@ export const PRODUCT_TYPE_ORDER = [
  * added without an English name shows "Triko" — recognisable — instead of
  * "triko" reading as a bug.
  */
+/**
+ * Not a type: the shelf a brand page puts its unclassified products on, and
+ * the `type` its "Tümü" sends (lib/db.ts UNTYPED_SHELF, 2026-10-22).
+ */
+export const UNTYPED = "diger";
+const UNTYPED_LABEL: Record<AppLang, string> = {
+  tr: "Diğer ürünler", en: "Other products", fr: "Autres produits", es: "Otros productos",
+  zh: "其他商品", ja: "その他の商品", ko: "기타 상품",
+};
+
 export const productTypeLabel = (key: string, l: AppLang = appLang()): string =>
-  translated(TYPE_LABELS, key, l) ?? PRODUCT_TYPE_LABELS[key] ?? key;
+  key === UNTYPED ? UNTYPED_LABEL[l] ?? UNTYPED_LABEL.tr : translated(TYPE_LABELS, key, l) ?? PRODUCT_TYPE_LABELS[key] ?? key;
 
 export const productGroupLabel = (key: string, l: AppLang = appLang()): string =>
   translated(GROUP_LABELS, key, l) ??

@@ -510,3 +510,42 @@ export const brandsFor = (country: CountryCode): string[] =>
 /** True when this brand can be collected in this country. */
 export const brandServes = (slug: string, country: CountryCode): boolean =>
   !!brandInfo(slug)?.countries.includes(country);
+
+/** A brand name reduced to letters and digits: "Pull&Bear" and "pull & bear" → "pullbear". */
+const brandKey = (s: string): string =>
+  s
+    .toLocaleLowerCase("tr-TR")
+    .replace(/[çğıöşü]/g, (c) => ({ ç: "c", ğ: "g", ı: "i", ö: "o", ş: "s", ü: "u" })[c] ?? c)
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]/g, "");
+const SLUGS = new Set(BRANDS.map((b) => b.slug));
+const BY_KEY = new Map<string, string>();
+for (const b of BRANDS) {
+  BY_KEY.set(b.slug, b.slug);
+  if (!BY_KEY.has(brandKey(b.label))) BY_KEY.set(brandKey(b.label), b.slug);
+}
+
+/**
+ * A `brand`/`brands` query value as slugs (owner 2026-10-22: "when I filter by
+ * brands it doesn't show"). `brand=zara,adidas` answered 0 — the comma list
+ * was compared to the column as one string — and so did `brand=ZARA` or
+ * `brand=H%26M`, a label where a slug belongs. Splits on commas, maps a label
+ * or any casing to its slug, and keeps an unknown value lowercased, so a
+ * filter on a brand we do not carry still finds nothing rather than vanishing
+ * into the unfiltered feed.
+ */
+export function toBrandSlugs(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  const out: string[] = [];
+  for (const part of raw.split(",")) {
+    const v = part.trim();
+    if (!v || v === "all") continue;
+    // An exact slug wins before the letters-only key: "jd-sports" (AU) and
+    // "jdsports" (Europe/CA) share the key "jdsports", and mapping the AU slug
+    // to the other one emptied JD Sports AU's brand page (2026-10-22).
+    const lower = v.toLowerCase();
+    const slug = SLUGS.has(lower) ? lower : BY_KEY.get(brandKey(v)) ?? BY_KEY.get(brandKey(v.replace(/&/g, ""))) ?? lower;
+    if (!out.includes(slug)) out.push(slug);
+  }
+  return out;
+}

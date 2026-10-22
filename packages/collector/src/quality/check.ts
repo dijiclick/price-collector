@@ -174,7 +174,7 @@ export function judgePrice(
   const list = s.list ?? 0;
   if (list > s.price) {
     const range = facts.ranges.find(
-      (r) => (r.currency === null || r.currency === ours) && r.low < r.high && near(r.low, s.price) && near(r.high, list),
+      (r) => r.multi && (r.currency === null || r.currency === ours) && r.low < r.high && near(r.low, s.price) && near(r.high, list),
     );
     if (range) {
       fake = true;
@@ -192,7 +192,11 @@ export async function checkSample(
   s: Sample,
   opts: { timeoutMs?: number; fetchImpl?: typeof fetch; now?: number } = {},
 ): Promise<SampleResult> {
-  const lang = s.country === "TR" ? "tr-TR,tr;q=0.9,en;q=0.8" : "en-US,en;q=0.9";
+  // Abroad, NO accept-language: with one, Shopify Markets answers this German
+  // box as its en-DE market — EUR prices, often still labelled USD/AUD (Quay,
+  // Glossier, Spell, Benetton IT, 2026-10-22). Without one it answers the
+  // store's own market (content-language en-US, en-AU, it-IT).
+  const lang = s.country === "TR" ? "tr-TR,tr;q=0.9,en;q=0.8" : "";
   const page = await fetchPage(s.url, { timeoutMs: opts.timeoutMs, fetchImpl: opts.fetchImpl, lang });
   const facts = page.html ? pageFacts(page.html) : { title: null, prices: [], ranges: [], currency: null, shopify: false };
   const link = linkState(s, page, facts.title);
@@ -216,7 +220,10 @@ export async function checkSample(
         /* not json: a theme that does not serve .js */
       }
     }
-    pr = judgePrice(s, facts, shop);
+    const market = marketOf(page.contentLanguage);
+    pr = facts.shopify && market && market !== s.country
+      ? { price: "unknown", shopPrices: [], note: `Shopify answered for its ${market} market`, fake: false }
+      : judgePrice(s, facts, shop);
   }
 
   const imgR = s.image_url && /^https?:\/\//.test(s.image_url)

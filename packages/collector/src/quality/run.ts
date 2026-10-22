@@ -8,6 +8,7 @@
  *
  *   tsx packages/collector/src/quality/run.ts             # one pass, writes brand_qa
  *   QA_DRY_RUN=1 QA_BRANDS=zara QA_COUNTRIES=TR … run.ts  # check + log, write nothing
+ *   QA_REPLAY=1 … run.ts                                  # write the last run's saved results again
  *
  * For every brand × launched market in lib/brands.ts: QA_PER (5) random
  * in-stock deals from feed_items are checked against the shop (check.ts), and
@@ -23,6 +24,8 @@
  * (QA_DEADLINE_MIN) keeps the run inside its systemd timeout; samples not
  * reached by then are recorded as unknown.
  */
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { connect, type Db } from "../db";
 import { politeMap } from "../link-check";
 import { BRANDS } from "../../../../lib/brands";
@@ -41,6 +44,9 @@ export interface Opts {
   deadlineMin: number;
   api: string;
   dryRun: boolean;
+  stateDir: string;
+  /** Markets whose price mismatches count as proof (rules.ts `priceTrusted`). */
+  priceTrusted: string[];
 }
 
 export function optsFromEnv(env: NodeJS.ProcessEnv = process.env): Opts {
@@ -58,6 +64,10 @@ export function optsFromEnv(env: NodeJS.ProcessEnv = process.env): Opts {
     deadlineMin: num(env.QA_DEADLINE_MIN, 38),
     api: (env.QA_API ?? "https://modadrop.vercel.app").replace(/\/$/, ""),
     dryRun: env.QA_DRY_RUN === "1",
+    stateDir: env.MODADROP_STATE_DIR ?? "/var/lib/modadrop",
+    // The box is in Germany: DE prices are local; Turkish shops either wall it
+    // or answer with their one Turkish price.
+    priceTrusted: list(env.QA_PRICE_TRUSTED, ["TR", "DE"]),
   };
 }
 
@@ -98,10 +108,10 @@ export const WRITE_SQL = `
   INSERT INTO brand_qa (day, brand, country, sampled, link_bad, img_bad, price_mismatch, fake_discount,
                         blocked, app_empty, stale, app_items, db_deals, samples, reasons, verdict, checked_at)
   SELECT $1::date, brand, country, sampled, link_bad, img_bad, price_mismatch, fake_discount,
-         blocked, app_empty, stale, app_items, db_deals, samples::jsonb,
+         blocked, app_empty <> 0, stale, app_items, db_deals, samples::jsonb,
          CASE WHEN reasons = '' THEN '{}'::text[] ELSE string_to_array(reasons, E'\\n') END, verdict, now()
     FROM unnest($2::text[], $3::text[], $4::int[], $5::int[], $6::int[], $7::int[], $8::int[], $9::int[],
-                $10::bool[], $11::int[], $12::int[], $13::int[], $14::text[], $15::text[], $16::text[])
+                $10::int[], $11::int[], $12::int[], $13::int[], $14::text[], $15::text[], $16::text[])
       AS i(brand, country, sampled, link_bad, img_bad, price_mismatch, fake_discount, blocked,
            app_empty, stale, app_items, db_deals, samples, reasons, verdict)
   ON CONFLICT (day, brand, country) DO UPDATE SET
@@ -211,7 +221,7 @@ export async function runOnce(
     const dbDeals = counts.get(k) ?? 0;
     const ss = byPair.get(k) ?? [];
     const a = appBy.get(k) ?? null;
-    const j = judgePair(ss, a, dbDeals);
+    const j = judgePair(ss, a, dbDeals, { priceTrusted: o.priceTrusted.includes(p.country) });
     return { ...p, dbDeals, app: a, samples: ss, verdict: j.verdict, reasons: j.reasons, counts: j.counts };
   });
 
@@ -221,32 +231,50 @@ export async function runOnce(
     for (const r of out.filter((x) => x.verdict === v)) log(`  ${v} ${r.country} ${r.brand}: ${r.reasons.join("; ")}`);
   }
 
+  const day = new Date(t0).toISOString().slice(0, 10);
+  // Kept on disk so a failed write is redone with QA_REPLAY=1, not a 30-min re-run.
+  try {
+    mkdirSync(o.stateDir, { recursive: true });
+    writeFileSync(join(o.stateDir, "quality-last.json"), JSON.stringify({ day, out }));
+  } catch {
+    /* best-effort */
+  }
   if (o.dryRun) {
     log("quality: dry run, nothing written");
     return out;
   }
-  const day = new Date(t0).toISOString().slice(0, 10);
+  await writeResults(db, day, out);
+  log(`quality: wrote ${out.length} rows for ${day}`);
+  return out;
+}
+
+export async function writeResults(db: Db, day: string, out: PairResult[]): Promise<void> {
   for (let i = 0; i < out.length; i += 300) {
     const c = out.slice(i, i + 300);
     await db.query(WRITE_SQL, [
       day,
       c.map((r) => r.brand), c.map((r) => r.country), c.map((r) => r.counts.sampled), c.map((r) => r.counts.link_bad),
       c.map((r) => r.counts.img_bad), c.map((r) => r.counts.price_mismatch), c.map((r) => r.counts.fake_discount),
-      c.map((r) => r.counts.blocked), c.map((r) => r.counts.app_empty), c.map((r) => r.counts.stale),
+      // As 0/1: postgres.js cannot send a boolean[] parameter.
+      c.map((r) => r.counts.blocked), c.map((r) => (r.counts.app_empty ? 1 : 0)), c.map((r) => r.counts.stale),
       c.map((r) => r.app?.items ?? null), c.map((r) => r.dbDeals),
       c.map((r) => JSON.stringify(r.samples)),
       c.map((r) => r.reasons.join("\n")), c.map((r) => r.verdict),
     ]);
   }
   await db.query(RETENTION_SQL);
-  log(`quality: wrote ${out.length} rows for ${day}`);
-  return out;
 }
 
 async function main(): Promise<number> {
   const o = optsFromEnv();
   const db = await connect();
   try {
+    if (process.env.QA_REPLAY === "1") {
+      const { day, out } = JSON.parse(readFileSync(join(o.stateDir, "quality-last.json"), "utf8")) as { day: string; out: PairResult[] };
+      await writeResults(db, day, out);
+      console.log(`quality: replayed ${out.length} rows for ${day}`);
+      return 0;
+    }
     await runOnce(db, o);
     return 0;
   } finally {
