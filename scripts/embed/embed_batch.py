@@ -16,8 +16,16 @@ POST /embed must be interchangeable:
     it from the repo's release and checks its sha256);
   - one image per run (embed_one): the int8 model's activation scale is taken
     over the whole batch, so batching would change the vector.
-Check after a run: re-embed random rows it wrote through the box's /embed;
-cosine must be >= 0.999.
+Before touching the database it embeds a fixed synthetic picture and
+compares the vector with selftest_ref.json, made on the main box: int8
+kernels differ by CPU (an Apple M4 gives 0.990-0.998 on the same input), so
+a runner whose CPU computes differently refuses to write anything.
+(`--selftest --write-ref` on the box rewrites the reference.)
+
+What the self-test cannot pin is the photo itself: several shop CDNs hand a
+US runner and the box in Turkey differently encoded bytes for the same url
+(modanisa, fashfed), and the int8 model moves 0.97-0.999 between two
+encodings of one photo. That is noise the box has against itself too.
 
 Different from the service, deliberately:
   - only rows with id % SHARDS == SHARD, so runners never pick the same row;
@@ -51,6 +59,8 @@ ap.add_argument("--shards", type=int, default=1)
 ap.add_argument("--shard", type=int, default=0)
 ap.add_argument("--minutes", type=float, default=290)
 ap.add_argument("--chunk", type=int, default=5000)
+ap.add_argument("--selftest", action="store_true", help="only run the CPU self-test")
+ap.add_argument("--write-ref", action="store_true", help="with --selftest: write selftest_ref.json (main box only)")
 args = ap.parse_args()
 assert 0 <= args.shard < args.shards
 
@@ -64,6 +74,40 @@ SESSIONS = Queue()
 SESSIONS.put(es.SESSION)
 for _ in range(WORKERS - 1):
     SESSIONS.put(es.make_session(1))
+
+
+REF = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selftest_ref.json")
+
+
+def selftest():
+    """Embed a fixed synthetic picture; True when it matches the box's vector."""
+    import json
+    import numpy as np
+    from PIL import Image
+    rs = np.random.RandomState(20261022)
+    img = Image.fromarray(rs.randint(0, 256, (14, 14, 3)).astype(np.uint8)).resize((es.SIZE, es.SIZE), Image.BICUBIC)
+    a = np.asarray(img, dtype=np.int16) + (np.arange(es.SIZE)[:, None, None] // 2 - es.SIZE // 4)
+    v = es.embed_one(es.to_tensor(Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))))
+    cpu = "?"
+    try:
+        with open("/proc/cpuinfo") as f:
+            info = f.read()
+        cpu = info.split("model name", 1)[1].split(":", 1)[1].split("\n", 1)[0].strip()
+        flags = info.split("flags", 1)[1].split("\n", 1)[0].split()
+        cpu += " [" + " ".join(x for x in ("avx2", "avx512bw", "avx512_vnni", "avx_vnni") if x in flags) + "]"
+    except Exception:
+        pass
+    if args.write_ref:
+        with open(REF, "w") as f:
+            json.dump({"model": es.MODEL_NAME, "cpu": cpu, "emb": [round(float(x), 7) for x in v]}, f)
+        es.log(f"self-test reference written ({cpu})")
+        return True
+    with open(REF) as f:
+        ref = json.load(f)
+    cos = float(np.dot(v, np.array(ref["emb"])))
+    ok = ref["model"] == es.MODEL_NAME and cos >= 0.9999
+    es.log(f"self-test on {cpu}: cosine {cos:.6f} to the box ({ref['cpu']}) -> {'ok' if ok else 'MISMATCH'}")
+    return ok
 
 
 def work(row):
@@ -155,4 +199,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if not selftest():
+        sys.exit(2)
+    if not args.selftest:
+        main()
