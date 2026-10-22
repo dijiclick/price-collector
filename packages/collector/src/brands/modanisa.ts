@@ -147,17 +147,53 @@ async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise
 
 export const brand = "modanisa";
 
-export async function listProducts(): Promise<ProductRecord[]> {
-  const started = Date.now();
+/**
+ * Pages worth asking again: every page between the first and last page an id
+ * turned up on, plus one either side.
+ *
+ * The BFF's default order is not stable past roughly page 380: products that
+ * tie on its sort key come back in a different order from one request to the
+ * next (the same page fetched six times gave two different id sets, and
+ * repeated walks report totalCount 72843/72845/72840 — several backends).
+ * A product that hops a page boundary between two requests is seen twice and
+ * its neighbour never: on 2026-10-20 one walk returned every page full
+ * (72,843 rows) but only 72,064 distinct ids, 779 duplicated, every one of
+ * them on adjacent pages (1-4 apart), none on the same page and none before
+ * page 389. The products it skipped sit on those same pages, so asking them
+ * again draws a different order and fills the hole.
+ */
+export function suspectPages(pagesOf: Map<string, Set<number>>, lastPage: number): number[] {
+  const out = new Set<number>();
+  for (const ps of pagesOf.values()) {
+    if (ps.size < 2) continue;
+    const min = Math.min(...ps);
+    const max = Math.max(...ps);
+    // A shuffle moves a product a few pages at most; an id seen far apart
+    // gets only its own pages' neighbours, so one stray never re-walks the catalogue.
+    const spans = max - min <= MAX_SHUFFLE_SPAN ? [[min, max]] : [...ps].map((p) => [p, p]);
+    for (const [a, b] of spans) {
+      for (let p = Math.max(1, a - 1); p <= Math.min(lastPage, b + 1); p++) out.add(p);
+    }
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+/** Widest page gap the tail shuffle was seen to move a product (4 on 10-20), with margin. */
+const MAX_SHUFFLE_SPAN = 8;
+
+/** Re-ask the suspect pages at most this many times; one round recovered 700 of 779 on 10-20. */
+const MEND_ROUNDS = 2;
+
+/** The listing walk, with the page fetch injectable for tests. */
+export async function walkListing(fetchPage: (page: number) => Promise<any>, concurrency = CONCURRENCY) {
   const byId = new Map<string, ProductRecord>();
-  const seen = new Set<string>();
-  // Direct only: ~80 MB a run is not something to send through the metered
-  // residential proxy, and Turkey never uses it.
-  const fetchPage = (page: number) =>
-    getJson<any>(`${BFF}?page=${page}&perPage=${PER_PAGE}`, { headers: BFF_HEADERS }).catch(() => null);
-  const absorb = (data: any) => {
+  const pagesOf = new Map<string, Set<number>>();
+  const absorb = (page: number, data: any) => {
     for (const it of data?.items ?? []) {
-      if (it?.id != null) seen.add(String(it.id));
+      if (it?.id != null) {
+        const id = String(it.id);
+        pagesOf.set(id, (pagesOf.get(id) ?? new Set()).add(page));
+      }
       const r = mapItem(it);
       if (r) byId.set(r.externalId, r);
     }
@@ -166,7 +202,7 @@ export async function listProducts(): Promise<ProductRecord[]> {
   const first = await fetchPage(1);
   const total = Number(first?.metadata?.totalCount ?? 0);
   if (!first?.items || !(total > 0)) throw new Error("modanisa: listing page 1 failed — partial catalogue refused");
-  absorb(first);
+  absorb(1, first);
   const pages = Math.ceil(total / PER_PAGE);
   if (pages > MAX_PAGES) throw new Error(`modanisa: catalogue has ${pages} pages, over the cap of ${MAX_PAGES}`);
 
@@ -174,15 +210,37 @@ export async function listProducts(): Promise<ProductRecord[]> {
   const walk = (queue: number[], workers: number) =>
     pool(queue, workers, async (n) => {
       const d = await fetchPage(n);
-      if (d?.items) absorb(d);
+      if (d?.items) absorb(n, d);
       else failed.push(n);
     });
-  await walk(Array.from({ length: pages - 1 }, (_, i) => i + 2), CONCURRENCY);
+  await walk(Array.from({ length: pages - 1 }, (_, i) => i + 2), concurrency);
   await walk(failed.splice(0), 2); // one more try each, then refuse
   if (failed.length) throw new Error(`modanisa: ${failed.length} listing pages failed — partial catalogue refused`);
-  // Paging a live listing shifts rows between pages mid-walk; more than 1%
-  // short of the shop's own count would sell out real stock.
-  if (seen.size < total * 0.99) throw new Error(`modanisa: walk saw ${seen.size} of ${total} products — partial catalogue refused`);
+
+  // Mend the unstable tail: ask the pages that shuffled again. A page that
+  // fails here costs nothing — the walk already has a copy of it.
+  const walked = pagesOf.size;
+  for (let round = 0; round < MEND_ROUNDS && pagesOf.size < total; round++) {
+    const before = pagesOf.size;
+    await walk(suspectPages(pagesOf, pages), concurrency);
+    failed.length = 0;
+    if (pagesOf.size === before) break;
+  }
+  if (pagesOf.size > walked) console.log(`modanisa: walk saw ${walked} of ${total}, re-asking shuffled pages brought it to ${pagesOf.size}`);
+  // Still more than 1% short of the shop's own count: something other than
+  // the shuffle is wrong, and returning it would sell out real stock.
+  if (pagesOf.size < total * 0.99) throw new Error(`modanisa: walk saw ${pagesOf.size} of ${total} products — partial catalogue refused`);
+  return { byId, seen: pagesOf.size, total };
+}
+
+export async function listProducts(): Promise<ProductRecord[]> {
+  const started = Date.now();
+  // Direct only: ~80 MB a run (plus about half again when the tail shuffles)
+  // is not something to send through the metered residential proxy, and
+  // Turkey never uses it.
+  const fetchPage = (page: number) =>
+    getJson<any>(`${BFF}?page=${page}&perPage=${PER_PAGE}`, { headers: BFF_HEADERS }).catch(() => null);
+  const { byId } = await walkListing(fetchPage);
 
   // Sizes: deals first, then a random slice of full price; the upsert keeps
   // what earlier runs found, so coverage rotates.

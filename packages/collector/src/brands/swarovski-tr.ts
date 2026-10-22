@@ -141,9 +141,24 @@ async function speedKitBuild(): Promise<SpeedKitBuild> {
   return FALLBACK_BUILD;
 }
 
-function fetchListing(page: number, build: SpeedKitBuild, inStock: boolean, whole = false) {
+/**
+ * One listing page. With `run`, every request carries that cache-buster (plus
+ * the retry's own), so the whole walk is one fresh snapshot. The plain URLs
+ * come out of Baqend's cache from different hours: on 2026-10-20 a cached
+ * page 0 still said "523 Sonuç" while fresh pages served 518 tiles, and the
+ * stale pages repeated 4 ids and skipped others — 514 unique, the 99% guard
+ * refused every run. Fresh: 518 of 518.
+ */
+function fetchListing(page: number, build: SpeedKitBuild, inStock: boolean, whole = false, run?: string) {
   const headers = { Origin: SITE, Referer: `${SITE}/`, Accept: "text/html" };
-  return withFreshCopies((bust) => getText(trListingUrl(page, build, inStock, bust, whole), { headers, timeoutMs: TIMEOUT }));
+  return withFreshCopies((bust) =>
+    getText(trListingUrl(page, build, inStock, walkBust(run, bust), whole), { headers, timeoutMs: TIMEOUT }),
+  );
+}
+
+/** The cache-buster for one request of a walk: the walk's token, then the retry's. */
+export function walkBust(run: string | undefined, bust: string | undefined): string | undefined {
+  return run ? `${run}${bust ?? ""}` : bust;
 }
 
 async function readListing(build: SpeedKitBuild, inStock: boolean) {
@@ -175,7 +190,7 @@ async function readListing(build: SpeedKitBuild, inStock: boolean) {
 const off = (r: ProductRecord) => (r.listPrice! - r.price) / r.listPrice!;
 
 /** Every tile of one listing's in-stock facet; throws rather than return part of it. */
-async function walkInStock(build: SpeedKitBuild, whole: boolean): Promise<ProductRecord[]> {
+async function walkInStock(build: SpeedKitBuild, whole: boolean, run?: string): Promise<ProductRecord[]> {
   const what = whole ? "catalogue" : "outlet";
   const rows: ProductRecord[] = [];
   const ids = new Set<string>();
@@ -183,7 +198,7 @@ async function walkInStock(build: SpeedKitBuild, whole: boolean): Promise<Produc
   let total = 0;
   for (let page = 0; page < pages; page++) {
     if (page > 0) await sleep(PAUSE_MS);
-    const html = await fetchListing(page, build, true, whole);
+    const html = await fetchListing(page, build, true, whole, run);
     if (html == null) throw new Error(`swarovski/TR: ${what} page ${page} never served (build ${build.bqcv}/${build.bqsk}) — partial walk refused`);
     if (page === 0) {
       total = trResultCount(html);
@@ -202,6 +217,22 @@ async function walkInStock(build: SpeedKitBuild, whole: boolean): Promise<Produc
 }
 
 /**
+ * The cached walk first; when it comes back short (stale pages from different
+ * hours repeat some ids and skip others: 514 of 523 on 10-20) or a page is
+ * never served, the facet is walked again with one cache-buster on every
+ * request, so it is a single fresh snapshot. Fresh copies 400 more often
+ * (3 of 6 on probe 39124363303), which is why they are the retry, not the default.
+ */
+async function walkTwice(build: SpeedKitBuild, whole: boolean): Promise<ProductRecord[]> {
+  try {
+    return await walkInStock(build, whole);
+  } catch (err) {
+    console.warn(`${(err as Error).message}; walking it again on fresh copies`);
+    return walkInStock(build, whole, `w${Date.now().toString(36)}`);
+  }
+}
+
+/**
  * The whole in-stock shop: the outlet's in-stock facet (its markdowns, as
  * before) plus the `Kategoriler` root's — the root does NOT list the outlet
  * (519 of 520 stored outlet rows are absent from it), so both are walked.
@@ -210,8 +241,8 @@ async function walkInStock(build: SpeedKitBuild, whole: boolean): Promise<Produc
 export async function listProducts(): Promise<ProductRecord[]> {
   const build = await speedKitBuild();
   const byId = new Map<string, ProductRecord>();
-  for (const r of await walkInStock(build, false)) byId.set(r.externalId, r);
-  for (const r of await walkInStock(build, true)) if (!byId.has(r.externalId)) byId.set(r.externalId, r);
+  for (const r of await walkTwice(build, false)) byId.set(r.externalId, r);
+  for (const r of await walkTwice(build, true)) if (!byId.has(r.externalId)) byId.set(r.externalId, r);
   if (byId.size > CATALOGUE_CAP) throw new Error(`swarovski/TR: ${byId.size} products, over the cap of ${CATALOGUE_CAP}`);
   const all = [...byId.values()];
   return [...all.filter((r) => r.listPrice != null).sort((a, z) => off(z) - off(a)), ...all.filter((r) => r.listPrice == null)];

@@ -12,9 +12,8 @@
  *
  * Hit shape is the EU one, so guess.ts's `mapHit` does the mapping; only the
  * storefront host (guess.com, not guess.eu) and the Cloudinary folder (`NA`,
- * not `EU`) differ. Only discounted rows are collected — `isSale:true`
- * (~4,600 on 2026-10-18) and `master_price_retail > master_price` — in-stock
- * first, capped.
+ * not `EU`) differ. Only discounted rows are kept
+ * (`master_price_retail > master_price`), in-stock first, capped.
  */
 import type { ProductRecord } from "../types";
 import { getJson } from "../http";
@@ -27,7 +26,12 @@ export const US_MARKET: Market = { country: "US", index: "production__products__
 const SITE = "https://www.guess.com";
 const PER_PAGE = 1000;
 const CAP = 1500;
-const MAX_REQ = 8;
+/** Request budget per run (playbook: <= ~60). */
+const MAX_REQ = 60;
+/** Upper bound of the first price slice; nothing in the index is near it. */
+const MAX_PRICE = 100000;
+/** Nearly everything is under $1,024; starting there saves ~7 halvings per section. */
+const SPLIT_AT = 1024;
 
 export function usImageUrl(objectID: string): string {
   return `https://img.guess.com/image/upload/f_auto,q_auto,fl_strip_profile,w_640,ar_2:3,c_fill/v1/NA/Style/ECOMM/${objectID}`;
@@ -44,14 +48,28 @@ export function mapUsHit(h: any, m: Market = US_MARKET): ProductRecord | null {
   };
 }
 
-export const saleParams = (filters: string[][], page = 0, hits = PER_PAGE, extra = "") =>
-  `query=&hitsPerPage=${hits}&page=${page}&${extra}facetFilters=${encodeURIComponent(JSON.stringify([["isSale:true"], ...filters]))}`;
+/** Only what `mapHit` reads — whole hits are ~10x larger. */
+const ATTRS = [
+  "objectID", "baseProductID", "name", "url", "currencyCode", "in_stock", "variants",
+  "master_price", "master_price_retail", "guess_gender", "guess_colorDisplayName", "color",
+];
+
+/** One price slice of one section: `lo <= master_price < hi`. */
+export const rangeParams = (section: string, lo: number, hi: number, hits = PER_PAGE) =>
+  `query=&hitsPerPage=${hits}&attributesToRetrieve=${encodeURIComponent(JSON.stringify(ATTRS))}` +
+  `&facetFilters=${encodeURIComponent(JSON.stringify([[`guess_gender:${section}`]]))}` +
+  `&numericFilters=${encodeURIComponent(JSON.stringify([`master_price>=${lo}`, `master_price<${hi}`]))}`;
 
 /**
- * The index answers at most 1,000 hits per query (`paginationLimitedTo`), so a
- * single sale query stops at 1,000 of ~4,600. The sale set is split by the
- * index's own section facet (`guess_gender`), one query per section; "Home"
- * (candles, homeware) is skipped.
+ * Collected from the WHOLE index, not `isSale:true`. By 2026-10-20 the flag
+ * had come off most markdowns: 525 hits carried it, while the very puffer in
+ * guess-us.test.ts (isSale:true on 10-18) sat at isSale:false still $140.94
+ * vs $238 — the price its guess.com page shows. The markdown itself
+ * (`master_price_retail > master_price`, checked by `mapUsHit`) is the signal.
+ *
+ * The index answers at most 1,000 hits per query (`paginationLimitedTo`) and
+ * Women alone holds ~5,200, so each section ("Home" skipped) is bisected on
+ * `master_price` until every slice fits under the cap — 41 requests on 2026-10-20.
  */
 export async function listGuessUs(country: CountryCode): Promise<ProductRecord[]> {
   if (country !== "US") return [];
@@ -62,19 +80,33 @@ export async function listGuessUs(country: CountryCode): Promise<ProductRecord[]
       headers: { "X-Algolia-Application-Id": APP_ID, "X-Algolia-API-Key": API_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({ params }),
     });
-  const head = await search(saleParams([], 0, 0, `facets=${encodeURIComponent(JSON.stringify(["guess_gender"]))}&`));
+  const head = await search(`query=&hitsPerPage=0&facets=${encodeURIComponent(JSON.stringify(["guess_gender"]))}`);
   const sections = Object.keys(head?.facets?.guess_gender ?? {}).filter((v) => v !== "Home");
   const byId = new Map<string, ProductRecord>();
-  for (const section of sections.slice(0, MAX_REQ)) {
-    const d = await search(saleParams([[`guess_gender:${section}`]]));
+  let requests = 1;
+  const slice = async (section: string, lo: number, hi: number): Promise<void> => {
+    requests++;
+    const d = await search(rangeParams(section, lo, hi));
+    // Over the cap and still splittable: halve the price range instead.
+    if ((d?.nbHits ?? 0) > PER_PAGE && hi - lo > 1 && requests < MAX_REQ) {
+      const mid = Math.round((lo + hi) / 2);
+      await slice(section, lo, mid);
+      await slice(section, mid, hi);
+      return;
+    }
     for (const h of d?.hits ?? []) {
       const r = mapUsHit(h);
       if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
     }
+  };
+  for (const section of sections) {
+    await slice(section, 0, SPLIT_AT);
+    await slice(section, SPLIT_AT, MAX_PRICE);
   }
   // Women and Men each exceed the cap on their own; interleave so neither
   // section crowds the other out of the 1,500 kept.
   const all = [...byId.values()];
+  console.log(`guess/US: ${all.length} markdowns in ${requests} requests`);
   const inStock = all.filter((r) => r.inStock);
   const groups = new Map<string, ProductRecord[]>();
   for (const r of inStock) groups.set(String(r.gender), [...(groups.get(String(r.gender)) ?? []), r]);

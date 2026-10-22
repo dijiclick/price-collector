@@ -662,3 +662,32 @@ CREATE TABLE IF NOT EXISTS stylist_looks (
   PRIMARY KEY (product_id, occasion)
 );
 CREATE TABLE IF NOT EXISTS stylist_judge_queue (product_id BIGINT PRIMARY KEY, queued_at TIMESTAMPTZ NOT NULL DEFAULT now());
+
+-- Daily brand QA (2026-10-22, packages/collector/src/quality/run.ts on the
+-- main box, modadrop-quality.timer). One row per brand × market per day: of
+-- `sampled` random in-stock deals, how many links/photos proved broken, how
+-- many prices differ from the shop's page, how many "was" prices the shop does
+-- not show, how many the shop refused to show this box (blocked — never a
+-- failure), how many were stale; and whether the app's brand page was empty
+-- while the DB had deals. `samples` is the per-deal evidence, `reasons` the
+-- verdict's plain words. Served by /api/health/quality; 30 days kept.
+CREATE TABLE IF NOT EXISTS brand_qa (
+  day            DATE    NOT NULL,
+  brand          TEXT    NOT NULL,
+  country        TEXT    NOT NULL,
+  sampled        INTEGER NOT NULL,
+  link_bad       INTEGER NOT NULL DEFAULT 0,
+  img_bad        INTEGER NOT NULL DEFAULT 0,
+  price_mismatch INTEGER NOT NULL DEFAULT 0,
+  fake_discount  INTEGER NOT NULL DEFAULT 0,
+  blocked        INTEGER NOT NULL DEFAULT 0,
+  app_empty      BOOLEAN NOT NULL DEFAULT false,
+  stale          INTEGER NOT NULL DEFAULT 0,
+  app_items      INTEGER,
+  db_deals       INTEGER NOT NULL DEFAULT 0,
+  samples        JSONB   NOT NULL DEFAULT '[]',
+  reasons        TEXT[]  NOT NULL DEFAULT '{}',
+  verdict        TEXT    NOT NULL,
+  checked_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, brand, country)
+);

@@ -23,6 +23,22 @@ export const LOCALES: Partial<Record<CountryCode, string>> = {
   FI: "en_FI", CH: "en_CH", SE: "en_SE", DK: "en_DK", NO: "en_NO",
 };
 
+/**
+ * The same storefront's local-language index, used when the English one is
+ * gutted. On 2026-10-20 `en_DK` held 388 products and `en_BE` 425 — the
+ * en-dk/en-be storefronts query exactly those indexes — while `da_DK` held
+ * 6,773 and `nl_BE` 7,223, same currency, same objectIDs. Local hits carry the
+ * English name in `descriptive_data_EN.name` (present on every hit sampled),
+ * so names stay English for `lib/productTypes.ts`. Every twin below answered
+ * 200 with the market's currency; `nb_NO` does not exist.
+ */
+export const LOCAL_TWINS: Partial<Record<CountryCode, string>> = {
+  DE: "de_DE", FR: "fr_FR", NL: "nl_NL", BE: "nl_BE", AT: "de_AT", ES: "es_ES",
+  IT: "it_IT", PT: "pt_PT", FI: "fi_FI", CH: "de_CH", SE: "sv_SE", DK: "da_DK",
+};
+/** Switch to the twin when the English index holds under this share of it. */
+export const TWIN_RATIO = 0.5;
+
 export interface Market {
   country: CountryCode;
   /** Algolia index name. */
@@ -31,6 +47,8 @@ export interface Market {
   path: string;
   /** ISO 4217, from lib/countries. */
   currency: string;
+  /** Local-language index: take the name from `descriptive_data_EN.name`. */
+  englishName?: boolean;
 }
 
 export function market(country: CountryCode): Market {
@@ -42,6 +60,23 @@ export function market(country: CountryCode): Market {
     path: locale.toLowerCase().replace("_", "-"),
     currency: COUNTRIES[country].currency,
   };
+}
+
+/** The market read through its local-language index, or null if it has none. */
+export function twinMarket(country: CountryCode): Market | null {
+  const locale = LOCAL_TWINS[country];
+  if (!locale) return null;
+  return {
+    ...market(country),
+    index: `production__products__${locale}`,
+    path: locale.toLowerCase().replace("_", "-"),
+    englishName: true,
+  };
+}
+
+/** Prefer the English index unless it is a gutted fraction of its twin. */
+export function pickIndex(enHits: number, twinHits: number): "en" | "twin" {
+  return twinHits > 0 && enHits < twinHits * TWIN_RATIO ? "twin" : "en";
 }
 
 /**
@@ -116,7 +151,7 @@ export function mapHit(h: any, m: Market = market("TR")): ProductRecord | null {
   return {
     brand: "guess",
     externalId: id,
-    name: h.name ?? "",
+    name: (m.englishName && h.descriptive_data_EN?.name) || (h.name ?? ""),
     // guess.eu 301s to guess.com for every product (2026-10-21).
     url: h.url ? `https://www.guess.com${h.url}` : `https://www.guess.com/${m.path}/`,
     imageUrl: imageUrl(id),
@@ -185,12 +220,20 @@ async function drain(
 }
 
 export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
-  const m = market(country);
+  let m = market(country);
   const byId = new Map<string, ProductRecord>();
-  const head = await search(
-    m,
-    `query=&hitsPerPage=0&facets=${encodeURIComponent(JSON.stringify([SPLIT_FACET]))}`,
-  );
+  const headParams = `query=&hitsPerPage=0&facets=${encodeURIComponent(JSON.stringify([SPLIT_FACET]))}`;
+  let head = await search(m, headParams);
+  const twin = twinMarket(country);
+  if (twin) {
+    // A missing twin must never cost the market its English crawl.
+    const twinHead = await search(twin, headParams).catch(() => ({ nbHits: 0 }));
+    if (pickIndex(head.nbHits ?? 0, twinHead.nbHits ?? 0) === "twin") {
+      console.log(`guess/${country}: ${m.index} has ${head.nbHits} vs ${twinHead.nbHits} in ${twin.index}; using ${twin.index}`);
+      m = twin;
+      head = twinHead;
+    }
+  }
   const values = Object.keys(head.facets?.[SPLIT_FACET] ?? {});
 
   for (const value of values) {

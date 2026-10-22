@@ -70,6 +70,13 @@ export const FL_SLICES: [path: string, gender: ProductRecord["gender"], pages: n
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 const CAP = 1500;
 const PAUSE_MS = Number(process.env.FL_PAUSE_MS ?? 1200);
+/**
+ * Fastly keys its cache on Accept-Encoding (`vary`), and has cached the origin's
+ * own render failure (`STATE_FROM_SERVER: false`, "fetch failed") in the gzip
+ * copy of a URL while the identity and br copies stayed whole (kids/shoes,
+ * adidas, 2026-10-21). So each retry asks for a different cache object.
+ */
+const RETRY_ENCODINGS = ["identity", "br"];
 /** Waits before fetching a page again that came back without its listing. */
 const SHELL_RETRY_MS = [3000, 8000].map((ms) => (process.env.FL_PAUSE_MS === "0" ? 0 : ms));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -180,7 +187,7 @@ async function fetchListing(banner: FlBanner, country: CountryCode, slice: strin
     html = await getText(url, {
       country,
       timeoutMs: 45_000,
-      headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
+      headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml", ...(attempt > 0 ? { "Accept-Encoding": RETRY_ENCODINGS[attempt - 1] } : {}) },
     });
     const got = parseFlPage(html);
     if (got) return got;

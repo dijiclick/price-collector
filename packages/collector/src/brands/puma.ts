@@ -240,30 +240,69 @@ async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise
 
 export const brand = "puma";
 
-async function walkTree(tree: string): Promise<{ cards: PumaCard[]; ga4: Map<string, any> }> {
-  let total: number | null = null;
-  const cards: PumaCard[] = [];
+/** One ajax listing page of a tree. */
+const fetchTreePage = (tree: string, page: number) =>
+  // ?p=1 redirects to the bare url; ask for the bare one. Direct only:
+  // Turkey never goes through the proxy (owner rule).
+  getJson<any>(`${SITE}/${tree}.html?${page > 1 ? `p=${page}&` : ""}ajax=1`, { headers: AJAX, retries: 2 });
+
+/**
+ * Walks to rest between a short walk and the next one. On 2026-10-20 two runs
+ * in a row came back short (outlet 1,699 of 1,726, then kadın 665 of 677) in
+ * the hour the range grew (3,047 → 3,052 products, outlet 1,726 → 1,730) and
+ * every run either side was whole: while the shop is re-indexing, rows move
+ * between pages under a walk, so it sees some twice and skips others. The
+ * next walk a few seconds later is whole again (four walks from here the
+ * same afternoon: 1,730/1,730, 676/676, 894/894, 182/182).
+ */
+const WALKS = 2; // a third outlet walk would crowd the 300 s brand timeout
+const REWALK_PAUSE_MS = Number(process.env.PUMA_REWALK_PAUSE_MS ?? 5000);
+
+export interface WalkDeps {
+  fetchPage?: (tree: string, page: number) => Promise<any>;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Every card of a tree. A walk that comes back short of the header's count is
+ * walked again and the walks are pooled (a sku either walk saw was on sale
+ * minutes ago); one that is still >1% short of the latest count, an error
+ * page, or a page cap THROWS — the run's sweep would mark anything unseen as
+ * sold out.
+ */
+export async function walkTree(tree: string, deps: WalkDeps = {}): Promise<{ cards: PumaCard[]; ga4: Map<string, any> }> {
+  const fetchPage = deps.fetchPage ?? fetchTreePage;
+  const pause = deps.sleep ?? sleep;
+  const bySku = new Map<string, PumaCard>();
   const ga4 = new Map<string, any>();
-  const seen = new Set<string>();
-  for (let page = 1; ; page++) {
-    if (page > MAX_PAGES) throw new Error(`puma: ${tree} over ${MAX_PAGES} pages — raise PUMA_MAX_PAGES`);
-    if (page > 1) await sleep(PAUSE_MS);
-    // ?p=1 redirects to the bare url; ask for the bare one.
-    const data = await getJson<any>(`${SITE}/${tree}.html?${page > 1 ? `p=${page}&` : ""}ajax=1`, { headers: AJAX, proxy: true, retries: 2 }).catch((e) => {
-      throw new Error(`puma: ${tree} page ${page} failed (${e?.message ?? e})`);
-    });
-    if (total == null) total = totalOf(data?.header);
-    const got = parseCards(String(data?.content ?? ""));
-    if (got.length === 0) break;
-    for (const [k, v] of parseGa4(data?.ga4_view_item_list)) ga4.set(k, v);
-    for (const c of got) {
-      seen.add(c.sku);
-      cards.push(c);
+  let total: number | null = null;
+  for (let walk = 1; walk <= WALKS; walk++) {
+    if (walk > 1) {
+      console.log(`puma: ${tree} walk ${walk - 1} saw ${bySku.size} of ${total ?? "?"} — walking it again`);
+      await pause(REWALK_PAUSE_MS);
     }
-    if (total != null && seen.size >= total) break;
+    total = null; // each walk reads the count it is walking against
+    const seen = new Set<string>();
+    for (let page = 1; ; page++) {
+      if (page > MAX_PAGES) throw new Error(`puma: ${tree} over ${MAX_PAGES} pages — raise PUMA_MAX_PAGES`);
+      if (page > 1) await pause(PAUSE_MS);
+      const data = await fetchPage(tree, page).catch((e) => {
+        throw new Error(`puma: ${tree} page ${page} failed (${e?.message ?? e})`);
+      });
+      if (total == null) total = totalOf(data?.header);
+      const got = parseCards(String(data?.content ?? ""));
+      if (got.length === 0) break;
+      for (const [k, v] of parseGa4(data?.ga4_view_item_list)) ga4.set(k, v);
+      for (const c of got) {
+        seen.add(c.sku);
+        bySku.set(c.sku, c);
+      }
+      if (total != null && seen.size >= total) break;
+    }
+    if (total != null && bySku.size >= total) break;
   }
-  if (!total || seen.size < total * 0.99) throw new Error(`puma: ${tree} walked ${seen.size} of ${total ?? "?"} products`);
-  return { cards, ga4 };
+  if (!total || bySku.size < total * 0.99) throw new Error(`puma: ${tree} walked ${bySku.size} of ${total ?? "?"} products`);
+  return { cards: [...bySku.values()], ga4 };
 }
 
 export async function listProducts(): Promise<ProductRecord[]> {

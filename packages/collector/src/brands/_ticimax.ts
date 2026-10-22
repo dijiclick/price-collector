@@ -31,8 +31,13 @@
  * 20 requests (~40 s), Elifstil 2, Note 4. `MinStockAmount: 1` is NOT an
  * in-stock filter (it drops cards with exactly one left), so the walk is
  * unfiltered and the card's own `inStock` decides. Out-of-stock full-price
- * cards are dropped; discounted ones are kept exactly as before. Bath & Body
- * Works keeps the deals-only walk above.
+ * cards are dropped; discounted ones are kept exactly as before.
+ *
+ * Bath & Body Works TR joined them on 2026-10-19: its sale ended (557 cards,
+ * all in stock, exactly one with cart < sell, `discountRate` > 0 or the
+ * discount flag), so deals-only shrank it from ~76 rows to 1 and the watchdog
+ * read `drop` for 20 runs. 557 cards are 3 requests. A sale was back on
+ * 2026-10-22 (444 of 515 reduced); the full walk keeps both kinds.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -52,7 +57,7 @@ export interface TicimaxShop {
 }
 
 export const TICIMAX_SHOPS: Record<string, TicimaxShop> = {
-  bathandbodyworks: { brand: "bathandbodyworks", site: "https://www.bathandbodyworks.com.tr", defaultGender: null, sizes: false },
+  bathandbodyworks: { brand: "bathandbodyworks", site: "https://www.bathandbodyworks.com.tr", defaultGender: null, sizes: false, fullCatalogue: true },
   desa: { brand: "desa", site: "https://www.desa.com.tr", defaultGender: null, sizes: true, fullCatalogue: true },
   elifstil: { brand: "elifstil", site: "https://www.elifstil.com", defaultGender: "kadin", sizes: true, fullCatalogue: true },
   noteshop: { brand: "noteshop", site: "https://www.noteshop.com.tr", defaultGender: null, sizes: false, fullCatalogue: true },

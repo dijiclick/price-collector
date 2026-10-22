@@ -13,6 +13,12 @@
  * `strike-through list` value). The listing only shows sellable products;
  * ring sizes come from `im_product_size_avail` / `_no_avail` ("SZ01_14").
  *
+ * Prices are session-bound: a cookieless request (and a fresh session from a
+ * non-Spanish IP, which the site geolocates to the US) renders every price as
+ * `content="null"`, so no tile has a struck price and the run comes back
+ * empty. The `dwsid` session cookie set by the home page resolves the EUR
+ * price book, so the home response's cookies ride on every listing call.
+ *
  * Shelves: the nav links every leaf of "precios-especiales" (bolsos,
  * accesorios, anillos, pendientes, …); each is read round-robin with its name
  * as the category, then the root as a catch-all.
@@ -75,6 +81,16 @@ export function sizeCodes(v: unknown): string[] {
   return v.split(",").map((s) => s.trim().replace(/^SZ\d+_0*/i, "")).filter(Boolean);
 }
 
+/** Set-Cookie lines → one Cookie header value. Pure. */
+export function cookieHeader(setCookies: string[]): string {
+  return setCookies.map((sc) => sc.split(";")[0].trim()).filter((kv) => kv.indexOf("=") > 0).join("; ");
+}
+
+/** Tiles rendered without a session price (`content="null"`). Pure. */
+export function unpricedTiles(tiles: string[]): number {
+  return tiles.filter((t) => /<span class="sales">\s*<span class="value" content="null"/.test(t)).length;
+}
+
 export function tousTiles(html: string): string[] {
   return html.split('<div class="product js-product"').slice(1).map((t) => '<div class="product js-product"' + t);
 }
@@ -123,8 +139,15 @@ export async function listTous(country: CountryCode): Promise<ProductRecord[]> {
   const prefix = MARKETS[country];
   if (!prefix) return [];
   const root = ROOTS[country]!;
-  const opts = { country, timeoutMs: 45_000, headers: { "User-Agent": UA, "Accept-Language": LANGS[country]! } };
-  const shelves = tousShelves(await getText(`${ORIGIN}${prefix}/`, opts), prefix, root);
+  const headers = { "User-Agent": UA, "Accept-Language": LANGS[country]! };
+  const homeUrl = `${ORIGIN}${prefix}/`;
+  // Prices are bound to the SFCC session: a cookieless listing renders every
+  // price as null (ES, 2026-10-21). Keep the home page's cookies for the walk.
+  const home = await fetch(homeUrl, { headers, signal: AbortSignal.timeout(45_000) });
+  if (!home.ok) throw new Error(`HTTP ${home.status} for ${homeUrl}`);
+  const cookie = cookieHeader(home.headers.getSetCookie?.() ?? []);
+  const opts = { country, timeoutMs: 45_000, headers: { ...headers, ...(cookie ? { Cookie: cookie } : {}) } };
+  const shelves = tousShelves(await home.text(), prefix, root);
   if (!shelves.length) return []; // no markdown running
   const byId = new Map<string, ProductRecord>();
   const next = new Map<string, number>(shelves.map((s) => [s, 0]));
@@ -135,6 +158,9 @@ export async function listTous(country: CountryCode): Promise<ProductRecord[]> {
       await sleep(PAUSE_MS);
       requests++;
       const tiles = tousTiles(await getText(`${ORIGIN}${path}?start=${start}&sz=${PAGE}`, opts));
+      if (tiles.length && unpricedTiles(tiles) === tiles.length) {
+        throw new Error(`tous: ${path} rendered all ${tiles.length} tiles without a price — session cookie not honoured`);
+      }
       for (const t of tiles) {
         const r = mapTous(t, tousShelf(path, root), country);
         if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);

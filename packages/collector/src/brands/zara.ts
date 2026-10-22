@@ -159,6 +159,13 @@ export function mapComponent(
   country: CountryCode = "TR",
 ): ProductRecord | null {
   if (!c?.id || !c?.seo?.keyword || !c?.seo?.seoProductId) return null;
+  // A Bundle is a set or a "LOOK" — blazer + trousers, sweatshirt + bermuda —
+  // named after ONE piece but priced at the sum of all of them, and its pieces
+  // are listed on their own as well (96% of them, TR 2026-10-22). Taken as a
+  // product it showed "ÇAN KESİM PANTOLON" at 2.880 TL (the trousers are
+  // 1.090), and one kids' set at double its price because the same bundle id
+  // holds one piece in one category and two in another. Gift cards are bundles too.
+  if (c.type === "Bundle") return null;
   // Another brand's product sold on zara.com (see ownSections) — not Zara's.
   const group = c?.brand?.brandGroupCode;
   if (group && group !== "zara") return null;

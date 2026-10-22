@@ -287,6 +287,11 @@ export function externalIdsFromUrl(brand: string | undefined, raw: string): stri
       return one(path.match(/productpage\.(\d{7,})\.html/i));
     case "guess":
       return one(path.match(/\/([A-Z0-9]{6,}-[A-Z0-9]{2,})\.html$/i)).map((s) => s.toUpperCase());
+    case "adidas":
+      // `/tr/samba-og-ayakkabi/JP9501.html` — the article number is the stored
+      // id (adidas.ts). The shop's own links never matched the collector's
+      // `/-/JP9501.html` form, so a pasted adidas link found nothing (2026-10-22).
+      return one(path.match(/\/([A-Z0-9]{6})\.html$/i)).map((s) => s.toUpperCase());
     case "mango":
       return one(path.match(/\/p\/.*?\/(\d{6,9})(?:\/|$)/));
     case "beymen":

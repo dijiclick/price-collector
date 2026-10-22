@@ -55,7 +55,13 @@ const GENDER_ROOTS: Record<string, NonNullable<ProductRecord["gender"]>> = {
 
 const ROWS = 200;
 const CAP = 1500;
-const MAX_REQUESTS = 16;
+/**
+ * The red-price tag also files full-price rows (Type 1, no Reference): on
+ * 2026-10-22 only ~30-45% of a page under "Alla kläder" was actually reduced,
+ * so SE needs ~22 pages to reach its targets. 16 ran out at 729 rows and
+ * failed every run. The walk still stops at numFound, so this only bounds it.
+ */
+const MAX_REQUESTS = 32;
 const PAUSE_MS = Number(process.env.STADIUM_PAUSE_MS ?? 600);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

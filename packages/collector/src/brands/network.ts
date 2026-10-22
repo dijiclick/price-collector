@@ -96,7 +96,29 @@ const pageUrl = (n: number) =>
   `&dropListingPageSize=${PAGE_SIZE}&orderOption=NewProducts`;
 const XHR = { "X-Requested-With": "XMLHttpRequest" };
 
-export async function listProducts(): Promise<ProductRecord[]> {
+/**
+ * Imperva (Incapsula) sits in front of the site and rate-limits a datacenter
+ * IP: after ~100 listing XHRs in a burst it answers 403 HTML, and keeps
+ * refusing for as long as requests keep coming, then lets them through again
+ * after a few quiet seconds (measured 2026-10-19 from a datacenter egress; the
+ * runners lost pages 102-122 of 122 every run). Hammering retries through the
+ * block is what kept it shut, so on any refusal every worker pauses for one
+ * shared cooldown and the page goes back in the queue.
+ */
+const COOLDOWN_MS = Number(process.env.NETWORK_COOLDOWN_MS ?? 8000);
+const MAX_COOLDOWNS = 12;
+
+export interface WalkDeps {
+  fetchPage?: (n: number) => Promise<any>;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+export const listProducts = (): Promise<ProductRecord[]> => walkCatalogue();
+
+/** The listing walk, with the fetch and the clock injectable for tests. */
+export async function walkCatalogue(deps: WalkDeps = {}): Promise<ProductRecord[]> {
+  const fetchPage = deps.fetchPage ?? ((n: number) => getJson<any>(pageUrl(n), { headers: XHR, retries: 0 }));
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const byId = new Map<string, ProductRecord>();
   const take = (data: any) => {
     for (const p of data?.Result?.ProductListItems ?? []) {
@@ -104,33 +126,43 @@ export async function listProducts(): Promise<ProductRecord[]> {
       if (r) byId.set(r.externalId, r);
     }
   };
-  const first = await getJson<any>(pageUrl(1), { headers: XHR });
+  const page = (n: number) => fetchPage(n).catch(() => null);
+  let first = await page(1);
+  if (!first?.Result) {
+    await sleep(COOLDOWN_MS);
+    first = await page(1);
+  }
   if (!first?.Result) throw new Error("network: first listing page carried no Result");
   take(first);
   const total = Number(first?.Result?.PaginationInfo?.TotalPageCount ?? 1);
   // A cap that cut pages would let the delist sweep mark their rows sold out: refuse instead.
   if (total > MAX_PAGES) throw new Error(`network: ${total} pages, over the cap of ${MAX_PAGES}`);
-  let next = 2;
-  const failed: number[] = [];
-  const page = (n: number) => getJson<any>(pageUrl(n), { headers: XHR }).catch(() => null);
+  const queue = Array.from({ length: Math.max(0, total - 1) }, (_, i) => i + 2);
+  let cooldowns = 0;
+  let pause: Promise<void> | null = null;
   await Promise.all(
     Array.from({ length: CONCURRENCY }, async () => {
-      while (next <= total) {
-        const n = next++;
+      while (queue.length && cooldowns <= MAX_COOLDOWNS) {
+        if (pause) await pause;
+        const n = queue.shift();
+        if (n == null) break;
         const d = await page(n);
-        if (d?.Result) take(d);
-        else failed.push(n);
+        if (d?.Result) {
+          take(d);
+          continue;
+        }
+        queue.push(n);
+        if (!pause) {
+          cooldowns++;
+          pause = sleep(COOLDOWN_MS).then(() => {
+            pause = null;
+          });
+        }
       }
     }),
   );
-  // A lost page is 48 rows the collector would mark sold out: one more try
-  // each, then refuse a partial catalogue rather than return it.
-  for (const n of failed.splice(0)) {
-    const d = await page(n);
-    if (d?.Result) take(d);
-    else failed.push(n);
-  }
-  if (failed.length) throw new Error(`network: listing pages ${failed.join(",")} failed — partial catalogue refused`);
+  // A lost page is 48 rows the collector would mark sold out: refuse a partial catalogue rather than return it.
+  if (queue.length) throw new Error(`network: listing pages ${queue.sort((a, b) => a - b).join(",")} failed — partial catalogue refused`);
   if (byId.size > MAX_PRODUCTS) throw new Error(`network: ${byId.size} products, over the cap of ${MAX_PRODUCTS}`);
   return [...byId.values()];
 }

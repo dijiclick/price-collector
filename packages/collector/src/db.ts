@@ -249,20 +249,27 @@ export async function upsertProducts(db: Db, records: ProductRecord[]): Promise<
     }
   }
 
-  // Unchanged: nothing to write but the freshness marker delisting reads.
-  // Grouped by brand AND country, because the UPDATE names both: a chunk that
-  // straddled two countries would bump one country's rows under the other's
-  // external ids and silently leave real rows looking stale to the sweep.
+  // Unchanged: nothing to write but the freshness marker delisting reads —
+  // and the stock flag. The fingerprint says what the adapter last REPORTED,
+  // but `in_stock` can have moved without it: the delist sweep sets it false
+  // for a product one run missed. When that product came back the next run
+  // found the fingerprint unchanged and only bumped last_seen, so it stayed
+  // "sold out" for good while the shop sold it (2026-10-22: 1,710 Zara TR
+  // products, 47 of them live markdowns missing from the feed). Writing the
+  // flag here is free — the UPDATE rewrites the row anyway.
+  // Grouped by brand, country AND stock, because the UPDATE names all three: a
+  // chunk that straddled two countries would bump one country's rows under the
+  // other's external ids and silently leave real rows looking stale to the sweep.
   const byScope = new Map<string, ProductRecord[]>();
   for (const r of unchanged) {
-    const scope = r.brand + "|" + countryOf(r);
+    const scope = r.brand + "|" + countryOf(r) + "|" + (r.inStock ? 1 : 0);
     (byScope.get(scope) ?? byScope.set(scope, []).get(scope)!).push(r);
   }
   for (const group of byScope.values()) {
     await inChunks(group, 5000, async (chunk) => {
       await db.query(
-        "UPDATE products SET last_seen=now() WHERE brand=$1 AND country=$2 AND external_id = ANY($3)",
-        [chunk[0].brand, countryOf(chunk[0]), chunk.map((r) => r.externalId)],
+        "UPDATE products SET last_seen=now(), in_stock=$4 WHERE brand=$1 AND country=$2 AND external_id = ANY($3)",
+        [chunk[0].brand, countryOf(chunk[0]), chunk.map((r) => r.externalId), chunk[0].inStock],
       );
     });
   }
@@ -460,7 +467,9 @@ export async function markMissingOutOfStock(
        )`
     : "";
   const rows = await db.query<{ id: number }>(
-    "UPDATE products SET in_stock=FALSE WHERE brand=$1 AND country=$2 AND in_stock=TRUE AND last_seen < $3" +
+    // content_hash=NULL: the stored fingerprint still says "in stock", so the
+    // product's next sighting must take the full write, not the cheap path.
+    "UPDATE products SET in_stock=FALSE, content_hash=NULL WHERE brand=$1 AND country=$2 AND in_stock=TRUE AND last_seen < $3" +
       guard +
       " RETURNING id",
     [brand, country, since],
@@ -533,7 +542,10 @@ export async function applyReprice(
 ): Promise<void> {
   await db.query(
     `UPDATE products
-        SET current_price = $2, current_list_price = $3, in_stock = $4, last_seen = now()
+        SET current_price = $2, current_list_price = $3, in_stock = $4, last_seen = now(),
+            -- The fingerprint no longer describes this row; the next listing
+            -- sighting must rewrite price and stock rather than skip it.
+            content_hash = NULL
       WHERE id = $1`,
     [row.id, row.price, row.listPrice, row.inStock],
   );
