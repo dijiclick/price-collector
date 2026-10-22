@@ -35,7 +35,7 @@ export const ja: LibLabelsPartial = {
   subtypes: {
     "alt:etek": "スカート",
     "alt:sort": "ショートパンツ",
-    "alt:tayt": "レギンス",
+    "alt:tayt": "レギンス・ジョガー",
     "alt:jean": "デニムパンツ",
     "alt:pantolon": "パンツ",
 

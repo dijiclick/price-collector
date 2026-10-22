@@ -68,5 +68,17 @@ export function serverCopy(lang: string | null | undefined): ServerCopy {
   return hit;
 }
 
+/**
+ * An email body wrapped as a whole document in the reader's language: `lang`
+ * on <html>, and `dir="rtl"` for Arabic. Gmail drops the <html>/<body>
+ * attributes, so the direction also goes on the content's own wrapper div,
+ * which is what actually right-aligns the text there.
+ */
+export function emailDocument(lang: string | null | undefined, inner: (dirAttr: string) => string): string {
+  const l = copyLang(lang);
+  const dir = l === "ar" ? "rtl" : "ltr";
+  return `<!doctype html><html lang="${l}" dir="${dir}"><head><meta charset="utf-8"></head><body dir="${dir}" style="margin:0">${inner(` dir="${dir}"`)}</body></html>`;
+}
+
 /** For tests: every language's own (unmerged) file. */
 export const SERVER_COPY_FILES = COPY;

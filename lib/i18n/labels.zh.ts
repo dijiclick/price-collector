@@ -3,7 +3,8 @@ import type { LibLabelsPartial } from "./types";
 /**
  * Simplified Chinese display names for the browse taxonomy. Same keys as
  * labels.en.ts (see its header: keys stay Turkish, subtypes are keyed
- * `type:subtype`). Taobao/Tmall/Sephora CN category wording.
+ * `type:subtype`). Taobao/Tmall/Sephora CN category wording; a Turkish
+ * "A & B" pair is written "A/B", the way Taobao names its shelves.
  */
 export const zh: LibLabelsPartial = {
   /** Shelf names, keyed by productTypes.ts type key. */
@@ -19,7 +20,7 @@ export const zh: LibLabelsPartial = {
     "ic-giyim": "内衣",
     elbise: "连衣裙",
     "dis-giyim": "外套",
-    triko: "针织卫衣",
+    triko: "针织/卫衣",
     ust: "上装",
     alt: "下装",
     aksesuar: "配饰",
@@ -35,27 +36,27 @@ export const zh: LibLabelsPartial = {
   subtypes: {
     "alt:etek": "半身裙",
     "alt:sort": "短裤",
-    "alt:tayt": "打底裤",
+    "alt:tayt": "打底裤/运动裤",
     "alt:jean": "牛仔裤",
-    "alt:pantolon": "休闲裤",
+    "alt:pantolon": "长裤",
 
     "ust:tisort": "T恤",
     "ust:gomlek": "衬衫",
-    "ust:bluz": "雪纺衫",
+    "ust:bluz": "罩衫",
     "ust:atlet": "背心吊带",
     "ust:tunik": "长款上衣",
 
     "dis-giyim:trenckot": "风衣",
     "dis-giyim:blazer": "西装外套",
     "dis-giyim:yelek": "马甲",
-    "dis-giyim:mont": "大衣羽绒服",
+    "dis-giyim:mont": "大衣/羽绒服",
     "dis-giyim:ceket": "夹克",
 
     "ayakkabi:bot": "靴子",
     "ayakkabi:topuklu": "高跟鞋",
     "ayakkabi:sneaker": "运动鞋",
-    "ayakkabi:sandalet": "凉拖鞋",
-    "ayakkabi:babet": "平底鞋",
+    "ayakkabi:sandalet": "凉鞋/拖鞋",
+    "ayakkabi:babet": "平底鞋/乐福鞋",
 
     "cilt-bakim:gunes": "防晒",
     "cilt-bakim:maske": "面膜",
@@ -63,7 +64,7 @@ export const zh: LibLabelsPartial = {
     "cilt-bakim:goz": "眼部护理",
     "cilt-bakim:dudak": "唇部护理",
     "cilt-bakim:temizleyici": "洁面",
-    "cilt-bakim:nemlendirici": "乳液面霜",
+    "cilt-bakim:nemlendirici": "乳液/面霜",
 
     "elbise:tulum": "连体裤",
     "elbise:abiye": "礼服裙",
@@ -72,33 +73,33 @@ export const zh: LibLabelsPartial = {
     "elbise:midi": "中长款",
     "elbise:mini": "短款",
 
-    "kisisel-bakim:hijyen": "卫生巾",
+    "kisisel-bakim:hijyen": "经期护理",
     "kisisel-bakim:agiz": "口腔护理",
     "kisisel-bakim:banyo": "沐浴",
-    "kisisel-bakim:tiras": "剃须脱毛",
+    "kisisel-bakim:tiras": "剃须/脱毛",
     "kisisel-bakim:mendil": "湿巾",
     "kisisel-bakim:yara": "创可贴",
 
     "triko:hirka": "开衫",
-    "triko:sweatshirt": "卫衣",
+    "triko:sweatshirt": "卫衣/连帽衫",
     "triko:polo": "Polo衫",
     "triko:kazak": "毛衣",
 
     "ic-giyim:pijama": "睡衣",
-    "ic-giyim:corap": "袜子丝袜",
+    "ic-giyim:corap": "袜子/丝袜",
     "ic-giyim:sutyen": "文胸",
     "ic-giyim:kulot": "内裤",
-    "ic-giyim:atlet": "背心连体衣",
+    "ic-giyim:atlet": "背心/连体衣",
 
     "mayo:bikini": "比基尼",
     "mayo:mayo": "连体泳衣",
     "mayo:deniz-sortu": "沙滩裤",
     "mayo:plaj": "沙滩装",
 
-    "canta:cuzdan": "钱包卡包",
+    "canta:cuzdan": "钱包/卡包",
     "canta:sirt": "双肩包",
     "canta:tote": "托特包",
-    "canta:capraz": "单肩斜挎包",
+    "canta:capraz": "斜挎/单肩包",
     "canta:el": "手提包",
     "canta:valiz": "旅行箱包",
     "canta:canta-aksesuar": "包包配件",
@@ -106,7 +107,7 @@ export const zh: LibLabelsPartial = {
     "aksesuar:gozluk": "眼镜",
     "aksesuar:sapka": "帽子",
     "aksesuar:kemer": "腰带",
-    "aksesuar:sal": "围巾",
+    "aksesuar:sal": "围巾/披肩",
     "aksesuar:taki": "首饰",
     "aksesuar:kolye": "项链",
     "aksesuar:kupe": "耳环",
@@ -125,13 +126,13 @@ export const zh: LibLabelsPartial = {
     "parfum:deodorant": "止汗露",
     "parfum:edp": "浓香水",
     "parfum:edt": "淡香水",
-    "parfum:vucut": "身体喷雾",
+    "parfum:vucut": "香体喷雾",
     "parfum:ev": "家居香氛",
     "parfum:set": "香水礼盒",
 
     "sac:boya": "染发",
     "sac:sampuan": "洗发水",
-    "sac:maske": "发膜精油",
+    "sac:maske": "发膜/精油",
     "sac:sekillendirici": "造型",
     "sac:krem": "护发素",
   },
@@ -139,7 +140,7 @@ export const zh: LibLabelsPartial = {
   untyped: "其他商品",
   /** Colour-filter names, keyed by colors.ts COLOR_FAMILIES key. */
   colors: {
-    lacivert: "藏青",
+    lacivert: "藏青色",
     siyah: "黑色",
     beyaz: "白色",
     gri: "灰色",

@@ -48,6 +48,11 @@ export const tr: ServerCopy = {
     week7Title: (n: string) => `Bu hafta ${n} yeni indirim`,
     week7Body: "Beğendiğin bir ürünü takibe al, sadece senin ürünlerin için haber verelim.",
   },
+  signIn: {
+    subject: (code: string) => `Modadrop giriş kodun: ${code}`,
+    intro: "Giriş kodun:",
+    note: "Kod 10 dakika geçerli. Bu isteği sen yapmadıysan bu e-postayı yok sayabilirsin — hesabında hiçbir şey değişmez.",
+  },
   stilist: {
     alarmTitle: (n: number) => `Asistan alarmı: ${n} yeni eşleşme`,
     interestTitle: (what: string, n: number) => (n === 1 ? `${what} için yeni ürün` : `${what} için ${n} yeni ürün`),

@@ -15,7 +15,7 @@ export const ko: LibLabelsPartial = {
     "kisisel-bakim": "바디·생활용품",
     ayakkabi: "신발",
     canta: "가방",
-    mayo: "수영복",
+    mayo: "수영복·비치웨어",
     "ic-giyim": "언더웨어",
     elbise: "원피스",
     "dis-giyim": "아우터",
@@ -35,7 +35,7 @@ export const ko: LibLabelsPartial = {
   subtypes: {
     "alt:etek": "스커트",
     "alt:sort": "쇼츠",
-    "alt:tayt": "레깅스",
+    "alt:tayt": "레깅스·조거",
     "alt:jean": "청바지",
     "alt:pantolon": "팬츠",
 
@@ -54,8 +54,8 @@ export const ko: LibLabelsPartial = {
     "ayakkabi:bot": "부츠",
     "ayakkabi:topuklu": "힐",
     "ayakkabi:sneaker": "스니커즈",
-    "ayakkabi:sandalet": "샌들",
-    "ayakkabi:babet": "플랫슈즈",
+    "ayakkabi:sandalet": "샌들·슬리퍼",
+    "ayakkabi:babet": "플랫·로퍼",
 
     "cilt-bakim:gunes": "선케어",
     "cilt-bakim:maske": "마스크팩",
@@ -66,7 +66,7 @@ export const ko: LibLabelsPartial = {
     "cilt-bakim:nemlendirici": "크림·로션",
 
     "elbise:tulum": "점프수트",
-    "elbise:abiye": "드레스",
+    "elbise:abiye": "파티 드레스",
     "elbise:gomlek": "셔츠 원피스",
     "elbise:maksi": "롱 원피스",
     "elbise:midi": "미디 원피스",
@@ -80,7 +80,7 @@ export const ko: LibLabelsPartial = {
     "kisisel-bakim:yara": "밴드·반창고",
 
     "triko:hirka": "가디건",
-    "triko:sweatshirt": "맨투맨",
+    "triko:sweatshirt": "맨투맨·후드",
     "triko:polo": "폴로 셔츠",
     "triko:kazak": "니트·스웨터",
 
@@ -97,7 +97,7 @@ export const ko: LibLabelsPartial = {
 
     "canta:cuzdan": "지갑·카드지갑",
     "canta:sirt": "백팩",
-    "canta:tote": "토트백",
+    "canta:tote": "토트·쇼퍼백",
     "canta:capraz": "숄더·크로스백",
     "canta:el": "핸드백",
     "canta:valiz": "캐리어",
@@ -133,7 +133,7 @@ export const ko: LibLabelsPartial = {
     "sac:sampuan": "샴푸",
     "sac:maske": "헤어팩·오일",
     "sac:sekillendirici": "스타일링",
-    "sac:krem": "린스·컨디셔너",
+    "sac:krem": "컨디셔너·트리트먼트",
   },
   /** The shelf for products no type caught (productTypes.ts UNTYPED). */
   untyped: "기타 상품",

@@ -4,7 +4,7 @@ import { fromMinor } from "./normalize";
 // here and had already drifted — Boyner and Beymen were missing, so their alert
 // emails would have shown the raw slug as the brand name.
 import { BRAND_LABELS, percent } from "../../../lib/format";
-import { copyLang, serverCopy } from "./i18n/server";
+import { copyLang, emailDocument, serverCopy } from "./i18n/server";
 import { canSign, unsubscribePostUrl, unsubscribeUrl } from "../../../lib/unsubscribe";
 
 export interface DropRow {
@@ -101,18 +101,19 @@ const SITE = process.env.EXPO_PUBLIC_API_URL ?? "https://modadrop.vercel.app";
 export function emailHtml(items: DropRow[], unsubUrl: string): string {
   // Every item in one email belongs to one subscriber, so the first row's
   // language is the whole email's.
-  const c = copyFor(items[0]?.lang ?? null);
+  const lang = items[0]?.lang ?? null;
+  const c = copyFor(lang);
   const rows = items.map(itemHtml).join("");
   const allBack = items.every((i) => i.type === "back_in_stock");
   const heading = allBack ? c.headingBack : c.heading;
-  return `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#17141a">
+  return emailDocument(lang, (dir) => `<div${dir} style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;color:#17141a">
     <h2 style="font-size:20px">${heading}</h2>
     <table style="width:100%;border-collapse:collapse">${rows}</table>
     <p style="color:#6f6a75;font-size:12px;margin-top:20px">
       ${c.footer}<br>
       <a href="${unsubUrl}" style="color:#6f6a75">${c.unsubscribe}</a>
     </p>
-  </div>`;
+  </div>`);
 }
 
 async function send(key: string, to: string, items: DropRow[]): Promise<boolean> {

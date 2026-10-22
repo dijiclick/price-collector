@@ -16,7 +16,7 @@ export const fr: LibLabelsPartial = {
     ayakkabi: "Chaussures",
     canta: "Sacs",
     mayo: "Bain et plage",
-    "ic-giyim": "Lingerie",
+    "ic-giyim": "Lingerie et sous-vêtements",
     elbise: "Robes",
     "dis-giyim": "Manteaux et vestes",
     triko: "Maille et sweats",
@@ -126,7 +126,7 @@ export const fr: LibLabelsPartial = {
     "parfum:edp": "Eaux de parfum",
     "parfum:edt": "Eaux de toilette",
     "parfum:vucut": "Brumes parfumées",
-    "parfum:ev": "Parfums d'intérieur",
+    "parfum:ev": "Parfums d’intérieur",
     "parfum:set": "Coffrets parfum",
 
     "sac:boya": "Colorations",
@@ -162,6 +162,6 @@ export const fr: LibLabelsPartial = {
     over: (p: string) => `plus de ${p}`,
     size: (s: string) => `Taille ${s}`,
     sale: "En promo",
-    cheapest: "Moins cher",
+    cheapest: "Les moins chers",
   },
 };

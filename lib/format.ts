@@ -49,32 +49,58 @@ export function tl(minor: number): string {
  *     carry print prices that way, and Arabic-Indic digits next to a Latin
  *     currency code read as two scripts fighting.
  */
-type NumberStyle = { group: string; decimal: string; pct: "before" | "after" | "after-space" };
+type NumberStyle = {
+  group: string;
+  decimal: string;
+  pct: "before" | "after" | "after-space";
+  /**
+   * "after" writes the currency AFTER the amount ("49,95 €", "27,99 £"), the
+   * way German, French, Spanish, Italian, Portuguese and Nordic shops print
+   * prices — Zalando.de shows "49,95 €", never "€49,95". The symbol is still
+   * the currency's; only its place is the reader's. Absent = where the currency
+   * puts it (before, except "kr").
+   */
+  cur?: "after";
+};
 const NBSP = "\u00a0";
 const NNBSP = "\u202f";
 const NUMBER_STYLE: Record<AppLang, NumberStyle> = {
   tr: { group: ".", decimal: ",", pct: "before" },
   en: { group: ",", decimal: ".", pct: "after" },
-  fr: { group: NNBSP, decimal: ",", pct: "after-space" },
-  es: { group: ".", decimal: ",", pct: "after" },
+  fr: { group: NNBSP, decimal: ",", pct: "after-space", cur: "after" },
+  es: { group: ".", decimal: ",", pct: "after", cur: "after" },
   zh: { group: ",", decimal: ".", pct: "after" },
   // Japanese and Korean write numbers the English way ("1,310.00").
   ja: { group: ",", decimal: ".", pct: "after" },
   ko: { group: ",", decimal: ".", pct: "after" },
-  de: { group: ".", decimal: ",", pct: "after-space" },
-  it: { group: ".", decimal: ",", pct: "after" },
-  pt: { group: NBSP, decimal: ",", pct: "after" },
+  de: { group: ".", decimal: ",", pct: "after-space", cur: "after" },
+  it: { group: ".", decimal: ",", pct: "after", cur: "after" },
+  pt: { group: NBSP, decimal: ",", pct: "after", cur: "after" },
+  // Dutch keeps the sign in front ("€ 49,95"), like English.
   nl: { group: ".", decimal: ",", pct: "after" },
-  sv: { group: NBSP, decimal: ",", pct: "after-space" },
-  da: { group: ".", decimal: ",", pct: "after-space" },
-  nb: { group: NBSP, decimal: ",", pct: "after-space" },
-  fi: { group: NBSP, decimal: ",", pct: "after-space" },
+  sv: { group: NBSP, decimal: ",", pct: "after-space", cur: "after" },
+  da: { group: ".", decimal: ",", pct: "after-space", cur: "after" },
+  nb: { group: NBSP, decimal: ",", pct: "after-space", cur: "after" },
+  fi: { group: NBSP, decimal: ",", pct: "after-space", cur: "after" },
   ar: { group: ",", decimal: ".", pct: "after" },
   "zh-Hant": { group: ",", decimal: ".", pct: "after" },
 };
 
 /** Group separator and decimal mark for a language. Turkish for anything unknown. */
 const SEPARATORS = (l: AppLang): NumberStyle => NUMBER_STYLE[l] ?? NUMBER_STYLE.tr;
+
+/**
+ * A number with its currency's symbol, on the side the READER's language puts
+ * it. Before: a multi-letter code needs air ("AED 1.200,00"), a glyph does not
+ * ("₺1.310,00"). After: always a no-break space ("49,95 €", "1 200 kr"), so the
+ * sign can never wrap onto its own line.
+ */
+function withSymbol(number: string, code: string, l: AppLang): string {
+  const style = CURRENCY_STYLE[code] ?? { symbol: code, symbolBefore: true };
+  const before = style.symbolBefore && SEPARATORS(l).cur !== "after";
+  if (before) return `${style.symbol}${style.symbol.length > 1 ? " " : ""}${number}`;
+  return `${number}${style.symbolBefore ? NBSP : " "}${style.symbol}`;
+}
 
 /**
  * Integer minor units → a printed price, in the currency the shop charges.
@@ -107,7 +133,6 @@ export function formatMoney(
   l: AppLang = lang,
 ): string {
   const code = currency || "TRY";
-  const style = CURRENCY_STYLE[code] ?? { symbol: code, symbolBefore: true };
   const { group, decimal } = SEPARATORS(l);
 
   const neg = minor < 0;
@@ -118,10 +143,7 @@ export function formatMoney(
   // Yen and won have no minor unit: stored ×100 like every currency, printed
   // whole (¥5.990 / ₩39.000, never ¥5.990,00).
   const number = ZERO_DECIMAL.has(code) ? grouped : `${grouped}${decimal}${cents}`;
-  // A multi-letter code needs air between it and the digits ("AED 1.200,00");
-  // a glyph does not ("₺1.310,00").
-  const gap = style.symbol.length > 1 ? " " : "";
-  const body = style.symbolBefore ? `${style.symbol}${gap}${number}` : `${number}${gap}${style.symbol}`;
+  const body = withSymbol(number, code, l);
   return neg ? `-${body}` : body;
 }
 
@@ -167,17 +189,24 @@ export function money(minor: number, cur?: string | null): string {
  * — with a currency SYMBOL now, rather than a Turkish word appended to every
  * amount in every language.
  */
-export function moneyRound(minor: number, cur?: string | null): string {
+export function moneyRound(minor: number, cur?: string | null, l: AppLang = lang): string {
   const code = cur || COUNTRIES[market].currency;
-  const style = CURRENCY_STYLE[code] ?? { symbol: code, symbolBefore: true };
-  const gap = style.symbol.length > 1 ? " " : "";
-  const n = numberRound(minor);
-  return style.symbolBefore ? `${style.symbol}${gap}${n}` : `${n}${gap}${style.symbol}`;
+  return withSymbol(numberRound(minor, l), code, l);
+}
+
+/**
+ * A price range with ONE symbol, on the reader's side: "₺500–1.500",
+ * "500–1.500 €". Repeating the symbol reads as two prices; putting a trailing
+ * one in the middle ("500 €–1.500") reads as a typo.
+ */
+export function moneyRange(lo: number, hi: number, cur?: string | null, l: AppLang = lang): string {
+  const code = cur || COUNTRIES[market].currency;
+  return withSymbol(`${numberRound(lo, l)}–${numberRound(hi, l)}`, code, l);
 }
 
 /** The grouped whole-unit number alone — the second half of a "₺500–1.500" range. */
-export function numberRound(minor: number): string {
-  const { group } = SEPARATORS(lang);
+export function numberRound(minor: number, l: AppLang = lang): string {
+  const { group } = SEPARATORS(l);
   return String(Math.round(minor / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, group);
 }
 

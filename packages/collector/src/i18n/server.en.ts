@@ -70,6 +70,15 @@ export const en = {
     week7Title: (n: string) => `${n} new deals this week`,
     week7Body: "Track one item you like and we'll only message you about what's yours.",
   },
+  /**
+   * The sign-in code email (lib/auth/mailer.ts), sent the moment someone taps
+   * "Send a code" in the app. The code itself is placed by the mailer.
+   */
+  signIn: {
+    subject: (code: string) => `Your Modadrop sign-in code: ${code}`,
+    intro: "Your sign-in code:",
+    note: "The code is valid for 10 minutes. If you didn't ask for it, ignore this email — nothing changes in your account.",
+  },
   /** Assistant alarms and remembered searches (stilist-alarms.ts). */
   stilist: {
     alarmTitle: (n: number) => `Assistant alarm: ${n} new ${n === 1 ? "match" : "matches"}`,

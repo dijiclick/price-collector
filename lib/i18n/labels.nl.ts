@@ -3,9 +3,162 @@ import type { LibLabelsPartial } from "./types";
 /**
  * Dutch labels: shelf names, colour names, assistant chips.
  *
- * Translate from labels.en.ts (same keys; its header explains them), with the
- * Turkish source names in productTypes.ts for nuance. Every key is optional:
- * anything left out shows in English. A key that does not exist in
- * labels.en.ts fails to compile.
+ * Translated from labels.en.ts (same keys; its header explains them), with the
+ * Turkish source names in productTypes.ts for nuance. Plural, sentence case,
+ * in the wording Dutch and Flemish fashion shops use (Zalando/H&M NL-BE).
  */
-export const nl: LibLabelsPartial = {};
+export const nl: LibLabelsPartial = {
+  types: {
+    makyaj: "Make-up",
+    parfum: "Parfum",
+    sac: "Haarverzorging",
+    "cilt-bakim": "Huidverzorging",
+    "kisisel-bakim": "Persoonlijke verzorging",
+    ayakkabi: "Schoenen",
+    canta: "Tassen",
+    mayo: "Badmode",
+    "ic-giyim": "Lingerie & ondergoed",
+    elbise: "Jurken",
+    "dis-giyim": "Jassen",
+    triko: "Truien & sweaters",
+    ust: "Tops",
+    alt: "Broeken & rokken",
+    aksesuar: "Accessoires",
+  },
+  groups: {
+    giyim: "Kleding",
+    ayakkabi: "Schoenen",
+    canta: "Tassen",
+    aksesuar: "Accessoires",
+    kozmetik: "Beauty",
+  },
+  subtypes: {
+    "alt:etek": "Rokken",
+    "alt:sort": "Shorts",
+    "alt:tayt": "Leggings & joggers",
+    "alt:jean": "Jeans",
+    "alt:pantolon": "Broeken",
+
+    "ust:tisort": "T-shirts",
+    "ust:gomlek": "Overhemden",
+    "ust:bluz": "Blouses",
+    "ust:atlet": "Hemdjes & croptops",
+    "ust:tunik": "Tunieken",
+
+    "dis-giyim:trenckot": "Trenchcoats",
+    "dis-giyim:blazer": "Blazers",
+    "dis-giyim:yelek": "Gilets",
+    "dis-giyim:mont": "Winter- & pufferjassen",
+    "dis-giyim:ceket": "Jacks",
+
+    "ayakkabi:bot": "Laarzen & boots",
+    "ayakkabi:topuklu": "Pumps & hakken",
+    "ayakkabi:sneaker": "Sneakers",
+    "ayakkabi:sandalet": "Sandalen & slippers",
+    "ayakkabi:babet": "Ballerina's & loafers",
+
+    "cilt-bakim:gunes": "Zonnebrand",
+    "cilt-bakim:maske": "Maskers",
+    "cilt-bakim:serum": "Serums",
+    "cilt-bakim:goz": "Oogverzorging",
+    "cilt-bakim:dudak": "Lippenverzorging",
+    "cilt-bakim:temizleyici": "Reinigers",
+    "cilt-bakim:nemlendirici": "Hydraterende crèmes",
+
+    "elbise:tulum": "Jumpsuits",
+    "elbise:abiye": "Feest- & avondjurken",
+    "elbise:gomlek": "Blousejurken",
+    "elbise:maksi": "Maxi",
+    "elbise:midi": "Midi",
+    "elbise:mini": "Mini",
+
+    "kisisel-bakim:hijyen": "Maandverband & tampons",
+    "kisisel-bakim:agiz": "Mondverzorging",
+    "kisisel-bakim:banyo": "Bad & douche",
+    "kisisel-bakim:tiras": "Scheren & ontharen",
+    "kisisel-bakim:mendil": "Vochtige doekjes",
+    "kisisel-bakim:yara": "Pleisters",
+
+    "triko:hirka": "Vesten",
+    "triko:sweatshirt": "Sweaters & hoodies",
+    "triko:polo": "Polo's",
+    "triko:kazak": "Truien",
+
+    "ic-giyim:pijama": "Pyjama's & nachtmode",
+    "ic-giyim:corap": "Sokken & panty's",
+    "ic-giyim:sutyen": "Bh's",
+    "ic-giyim:kulot": "Slips & boxers",
+    "ic-giyim:atlet": "Hemden & body's",
+
+    "mayo:bikini": "Bikini's",
+    "mayo:mayo": "Badpakken",
+    "mayo:deniz-sortu": "Zwemshorts",
+    "mayo:plaj": "Strandkleding",
+
+    "canta:cuzdan": "Portemonnees & pashouders",
+    "canta:sirt": "Rugzakken",
+    "canta:tote": "Shoppers & totes",
+    "canta:capraz": "Crossbody- & schoudertassen",
+    "canta:el": "Handtassen",
+    "canta:valiz": "Koffers & reistassen",
+    "canta:canta-aksesuar": "Tasaccessoires",
+
+    "aksesuar:gozluk": "Zonnebrillen & brillen",
+    "aksesuar:sapka": "Hoeden & mutsen",
+    "aksesuar:kemer": "Riemen",
+    "aksesuar:sal": "Sjaals & omslagdoeken",
+    "aksesuar:taki": "Sieraden",
+    "aksesuar:kolye": "Kettingen",
+    "aksesuar:kupe": "Oorbellen",
+    "aksesuar:bileklik": "Armbanden",
+    "aksesuar:yuzuk": "Ringen",
+    "aksesuar:saat": "Horloges",
+    "aksesuar:toka": "Haaraccessoires",
+
+    "makyaj:dudak": "Lippen",
+    "makyaj:goz": "Ogen",
+    "makyaj:yuz": "Gezicht",
+    "makyaj:oje": "Nagels",
+    "makyaj:firca": "Kwasten & tools",
+    "makyaj:temizleme": "Make-upremovers",
+
+    "parfum:deodorant": "Deodorant",
+    "parfum:edp": "Eau de parfum",
+    "parfum:edt": "Eau de toilette",
+    "parfum:vucut": "Bodymists",
+    "parfum:ev": "Huisparfum",
+    "parfum:set": "Parfumsets",
+
+    "sac:boya": "Haarverf",
+    "sac:sampuan": "Shampoo",
+    "sac:maske": "Maskers & oliën",
+    "sac:sekillendirici": "Styling",
+    "sac:krem": "Conditioner & verzorging",
+  },
+  untyped: "Overige producten",
+  colors: {
+    lacivert: "Marineblauw",
+    siyah: "Zwart",
+    beyaz: "Wit",
+    gri: "Grijs",
+    bej: "Beige",
+    kahverengi: "Bruin",
+    kirmizi: "Rood",
+    pembe: "Roze",
+    mor: "Paars",
+    mavi: "Blauw",
+    yesil: "Groen",
+    sari: "Geel",
+    turuncu: "Oranje",
+    metalik: "Metallic",
+    "cok-renkli": "Meerkleurig",
+  },
+  chips: {
+    gender: { kadin: "Dames", erkek: "Heren", cocuk: "Kinderen" },
+    under: (p: string) => `onder ${p}`,
+    over: (p: string) => `boven ${p}`,
+    size: (s: string) => `Maat ${s}`,
+    sale: "In de sale",
+    cheapest: "Goedkoopste",
+  },
+};
