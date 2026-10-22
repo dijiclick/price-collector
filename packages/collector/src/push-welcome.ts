@@ -22,7 +22,8 @@ import type { Db } from "./db";
 import { newsAwake, localDate, type NewsDevice } from "./push-news";
 import { classifyToken, loadCreds, sendApns, sendFcm, type PushContent } from "./push-transport";
 import { logPushes, nudgeAllowed } from "./push-log";
-import { BRAND_LABELS, money } from "../../../lib/format";
+import { BRAND_LABELS, money, nf, percent } from "../../../lib/format";
+import { copyLang, serverCopy } from "./i18n/server";
 
 type Outcome = "ok" | "dead" | "retry";
 export type WelcomeSend = (token: string, c: PushContent) => Promise<Outcome>;
@@ -42,29 +43,32 @@ const label = (b: string) => BRAND_LABELS[b] ?? b;
 const short = (s: string, n = 42) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 
 export function drops1(lang: string | null, n: number, brands: string[]): { title: string; body: string } {
-  const top = brands.slice(0, 2).map(label).join(lang === "en" ? " and " : " ve ");
-  return lang === "en"
-    ? { title: `${n} items dropped 30%+ today`, body: `${top} lead today's drops. Have a look before your size goes.` }
-    : { title: `Bugün ${n} üründe %30+ indirim`, body: `${top} başı çekiyor. Bedenin tükenmeden göz at.` };
+  const c = serverCopy(lang).welcome;
+  const top = brands.slice(0, 2).map(label).join(c.and);
+  return { title: c.drops1Title(n, percent(30, {}, copyLang(lang))), body: c.drops1Body(top) };
 }
 
 export function deal3(lang: string | null, d: { brand: string; name: string; price: number; currency: string | null; pct: number }): { title: string; body: string } {
+  const c = serverCopy(lang).welcome;
   const price = money(d.price, d.currency);
-  return lang === "en"
-    ? { title: `${label(d.brand)}: ${d.pct}% off`, body: `${short(d.name)} is now ${price}. Tap ♡ to track it — we'll tell you if it drops again.` }
-    : { title: `${label(d.brand)}: %${d.pct} indirim`, body: `${short(d.name)} şimdi ${price}. ♡ ile takibe al, daha da düşerse ilk sen öğren.` };
+  return { title: c.deal3Title(label(d.brand), percent(d.pct, {}, copyLang(lang))), body: c.deal3Body(short(d.name), price) };
 }
 
+/**
+ * The stylist's own headline exists in Turkish and English only (stylist_looks
+ * headline_tr / headline_en); any other language gets its generic title rather
+ * than an English headline over a translated body.
+ */
 export function look5(lang: string | null, headline: { tr: string; en: string } | null): { title: string; body: string } {
-  return lang === "en"
-    ? { title: headline?.en ?? "A look picked for you", body: "Our stylist put an outfit together from today's deals. Swap any piece with one tap." }
-    : { title: headline?.tr ?? "Sana özel bir kombin", body: "Stilistimiz bugünün indirimlerinden bir kombin hazırladı. Her parçayı tek dokunuşla değiştir." };
+  const l = copyLang(lang);
+  const c = serverCopy(lang).welcome;
+  const own = l === "tr" ? headline?.tr : l === "en" ? headline?.en : undefined;
+  return { title: own ?? c.look5Title, body: c.look5Body };
 }
 
 export function week7(lang: string | null, n: number): { title: string; body: string } {
-  return lang === "en"
-    ? { title: `${n.toLocaleString("en-GB")} new deals this week`, body: "Track one item you like and we'll only message you about what's yours." }
-    : { title: `Bu hafta ${n.toLocaleString("tr-TR")} yeni indirim`, body: "Beğendiğin bir ürünü takibe al, sadece senin ürünlerin için haber verelim." };
+  const c = serverCopy(lang).welcome;
+  return { title: c.week7Title(nf(n, copyLang(lang))), body: c.week7Body };
 }
 
 async function realSend(token: string, c: PushContent): Promise<Outcome> {

@@ -23,6 +23,7 @@ import type { Db } from "./db";
 import { devicePrefs, inQuietHours } from "./push";
 import { classifyToken, hasCoinChannel, loadCreds, sendApns, sendFcm, type PushContent } from "./push-transport";
 import { BRAND_LABELS, money } from "../../../lib/format";
+import { serverCopy } from "./i18n/server";
 
 type Outcome = "ok" | "dead" | "retry";
 export type AlarmSend = (token: string, c: PushContent) => Promise<Outcome>;
@@ -101,22 +102,16 @@ export function alarmWhere(f: AlarmFilters, country: string, since: string, newO
 
 export function alarmMessage(lang: string | null, summary: string | null, n: number, top: { brand: string; name: string; price: number; currency: string | null }): { title: string; body: string } {
   const item = `${BRAND_LABELS[top.brand] ?? top.brand} ${top.name} ${money(top.price, top.currency)}`;
-  if (lang === "en") {
-    return { title: `Assistant alarm: ${n} new ${n === 1 ? "match" : "matches"}`, body: summary ? `${summary} — ${item}` : item };
-  }
-  return { title: `Asistan alarmı: ${n} yeni eşleşme`, body: summary ? `${summary} — ${item}` : item };
+  return { title: serverCopy(lang).stilist.alarmTitle(n), body: summary ? `${summary} — ${item}` : item };
 }
 
 /** "You searched for X: N new products" — the brand of the best one named. */
 export function interestMessage(lang: string | null, summary: string | null, n: number, top: { brand: string; name: string; price: number; currency: string | null }): { title: string; body: string } {
+  const c = serverCopy(lang).stilist;
   const brand = BRAND_LABELS[top.brand] ?? top.brand;
   const item = `${brand} ${top.name} ${money(top.price, top.currency)}`;
-  if (lang === "en") {
-    const what = summary ? `“${summary}”` : "your search";
-    return { title: n === 1 ? `New for ${what}` : `${n} new for ${what}`, body: `${item} just arrived.` };
-  }
-  const what = summary ? `“${summary}”` : "aradığın ürün";
-  return { title: n === 1 ? `${what} için yeni ürün` : `${what} için ${n} yeni ürün`, body: `${item} yeni geldi.` };
+  const what = summary ? `“${summary}”` : c.yourSearch;
+  return { title: c.interestTitle(what, n), body: c.interestBody(item) };
 }
 
 async function realSend(token: string, c: PushContent): Promise<Outcome> {

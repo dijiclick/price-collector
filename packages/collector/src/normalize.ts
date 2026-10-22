@@ -1,4 +1,5 @@
 import { formatMoney } from "../../../lib/format";
+import { copyLang } from "./i18n/server";
 
 /** Convert a major-unit price (e.g. 590.00 TRY) to integer minor units (kuruş). */
 export const toMinor = (major: number): number => Math.round(major * 100);
@@ -18,13 +19,13 @@ export const toMinor = (major: number): number => Math.round(major * 100);
 export function fromMinor(
   minor: number,
   currency: string | null | undefined,
-  lang: "tr" | "en" | null = "tr",
+  lang: string | null = "tr",
 ): string {
-  return formatMoney(minor, currency ?? "TRY", lang === "en" ? "en" : "tr");
+  return formatMoney(minor, currency ?? "TRY", copyLang(lang));
 }
 
 /** The lira-only form, kept for callers that genuinely mean lira. */
-export function fromMinorTRY(minor: number, lang: "tr" | "en" | null = "tr"): string {
+export function fromMinorTRY(minor: number, lang: string | null = "tr"): string {
   return fromMinor(minor, "TRY", lang);
 }
 

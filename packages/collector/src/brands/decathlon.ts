@@ -74,7 +74,7 @@ export const MARKETS: Partial<Record<CountryCode, Market>> = {
   IT: { locale: "it-IT", currency: "EUR", host: "https://www.decathlon.it", rpUrl: true },
   NL: { locale: "nl-NL", currency: "EUR", host: "https://www.decathlon.nl" },
   // French and Dutch Belgium are one catalogue (same ids and prices); French
-  // names classify better (lib/productLabels.fr).
+  // names classify better (lib/i18n/labels.fr.ts).
   BE: { locale: "fr-BE", currency: "EUR", host: "https://www.decathlon.be" },
   TR: { locale: "tr-TR", currency: "TRY", host: "https://www.decathlon.com.tr", rpUrl: true },
   DE: { locale: "de-DE", currency: "EUR", host: "https://www.decathlon.de" },

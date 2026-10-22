@@ -16,6 +16,7 @@
  */
 import { logPushes, nudgeAllowed } from "./push-log";
 import type { Db } from "./db";
+import { serverCopy } from "./i18n/server";
 import { devicePrefs, inQuietHours } from "./push";
 import { classifyToken, loadCreds, sendApns, sendFcm, type PushContent } from "./push-transport";
 
@@ -23,16 +24,8 @@ type Outcome = "ok" | "dead" | "retry";
 export type ReminderSend = (token: string, c: PushContent) => Promise<Outcome>;
 
 export function buildReminder(lang: string | null, n: number): { title: string; body: string } {
-  if (lang === "en") {
-    return {
-      title: "Still watching for you 👀",
-      body: `We're watching your ${n} ${n === 1 ? "item" : "items"}: you'll hear when the price drops or your size is back. Meanwhile, see today's deals.`,
-    };
-  }
-  return {
-    title: "Takibin sürüyor 👀",
-    body: `${n} ürününü izliyoruz: fiyatı düşünce ya da bedenin gelince haber vereceğiz. Bu arada bugünkü indirimlere göz at.`,
-  };
+  const c = serverCopy(lang).reminder;
+  return { title: c.title, body: c.body(n) };
 }
 
 interface Row {

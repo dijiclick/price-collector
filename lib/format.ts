@@ -32,20 +32,49 @@ export function tl(minor: number): string {
   return formatMoney(minor, "TRY");
 }
 
-/** Group separator and decimal mark per language. See formatMoney. */
-const SEPARATORS: Record<AppLang, { group: string; decimal: string }> = {
-  tr: { group: ".", decimal: "," },
-  en: { group: ",", decimal: "." },
-  // French groups with a NARROW no-break space (U+202F), the Imprimerie
-  // nationale rule every French shop prints — a plain space would let a price
-  // wrap between its digits.
-  fr: { group: "\u202f", decimal: "," },
-  es: { group: ".", decimal: "," },
-  zh: { group: ",", decimal: "." },
+/**
+ * How each language writes a number: group separator, decimal mark, and where
+ * the percent sign goes. See formatMoney and percent.
+ *
+ * One table for every language, so a translator never has to touch it: the
+ * words live in the per-language files, the punctuation lives here.
+ *
+ *   - NARROW no-break space (U+202F) for French and the Nordic/German percent
+ *     sign: the typographic rule those languages print, and "no-break" so a
+ *     price or "61 %" can never wrap between its digits and its sign.
+ *   - Plain no-break space (U+00A0) where the group separator is a space
+ *     (Swedish, Norwegian, Finnish, Portuguese) — what CLDR and every shop there
+ *     prints, and again unbreakable.
+ *   - Arabic uses Western digits with English separators: the Gulf shops we
+ *     carry print prices that way, and Arabic-Indic digits next to a Latin
+ *     currency code read as two scripts fighting.
+ */
+type NumberStyle = { group: string; decimal: string; pct: "before" | "after" | "after-space" };
+const NBSP = "\u00a0";
+const NNBSP = "\u202f";
+const NUMBER_STYLE: Record<AppLang, NumberStyle> = {
+  tr: { group: ".", decimal: ",", pct: "before" },
+  en: { group: ",", decimal: ".", pct: "after" },
+  fr: { group: NNBSP, decimal: ",", pct: "after-space" },
+  es: { group: ".", decimal: ",", pct: "after" },
+  zh: { group: ",", decimal: ".", pct: "after" },
   // Japanese and Korean write numbers the English way ("1,310.00").
-  ja: { group: ",", decimal: "." },
-  ko: { group: ",", decimal: "." },
+  ja: { group: ",", decimal: ".", pct: "after" },
+  ko: { group: ",", decimal: ".", pct: "after" },
+  de: { group: ".", decimal: ",", pct: "after-space" },
+  it: { group: ".", decimal: ",", pct: "after" },
+  pt: { group: NBSP, decimal: ",", pct: "after" },
+  nl: { group: ".", decimal: ",", pct: "after" },
+  sv: { group: NBSP, decimal: ",", pct: "after-space" },
+  da: { group: ".", decimal: ",", pct: "after-space" },
+  nb: { group: NBSP, decimal: ",", pct: "after-space" },
+  fi: { group: NBSP, decimal: ",", pct: "after-space" },
+  ar: { group: ",", decimal: ".", pct: "after" },
+  "zh-Hant": { group: ",", decimal: ".", pct: "after" },
 };
+
+/** Group separator and decimal mark for a language. Turkish for anything unknown. */
+const SEPARATORS = (l: AppLang): NumberStyle => NUMBER_STYLE[l] ?? NUMBER_STYLE.tr;
 
 /**
  * Integer minor units → a printed price, in the currency the shop charges.
@@ -79,7 +108,7 @@ export function formatMoney(
 ): string {
   const code = currency || "TRY";
   const style = CURRENCY_STYLE[code] ?? { symbol: code, symbolBefore: true };
-  const { group, decimal } = SEPARATORS[l] ?? SEPARATORS.tr;
+  const { group, decimal } = SEPARATORS(l);
 
   const neg = minor < 0;
   const abs = Math.round(Math.abs(minor));
@@ -148,7 +177,7 @@ export function moneyRound(minor: number, cur?: string | null): string {
 
 /** The grouped whole-unit number alone — the second half of a "₺500–1.500" range. */
 export function numberRound(minor: number): string {
-  const { group } = SEPARATORS[lang] ?? SEPARATORS.tr;
+  const { group } = SEPARATORS(lang);
   return String(Math.round(minor / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, group);
 }
 
@@ -173,18 +202,19 @@ export const dateLocale = (): string => LOCALE_TAG[lang];
  * used, so Turkish output is byte-for-byte what the screens hardcoded before.
  */
 export function percent(n: number, opts: { off?: boolean } = {}, l: AppLang = lang): string {
-  // Turkish leads with the sign; French puts a narrow no-break space before it
-  // ("61 %"); English, Spanish, Chinese, Japanese and Korean write "61%".
-  const body = l === "tr" ? `%${n}` : l === "fr" ? `${n}\u202f%` : `${n}%`;
+  // Turkish leads with the sign; French, German and the Nordic languages put a
+  // narrow no-break space before it ("61 %"); the rest write "61%".
+  const pos = SEPARATORS(l).pct;
+  const body = pos === "before" ? `%${n}` : pos === "after-space" ? `${n}${NNBSP}%` : `${n}%`;
   return opts.off ? `−${body}` : body;
 }
 
-/** Plain grouped integer: 3037 -> "3.037" / "3,037". Counts, not money. */
-export const nf = (n: number): string => {
+/** Plain grouped integer: 3037 -> "3.037" / "3,037". Counts, not money. `l` for server copy. */
+export const nf = (n: number, l: AppLang = lang): string => {
   // By hand, like formatMoney: Hermes may lack the ICU data for fr/es/zh, and
   // `toLocaleString` would then quietly print the wrong separators on device.
-  if (!Number.isInteger(n)) return n.toLocaleString(LOCALE_TAG[lang]);
-  const { group } = SEPARATORS[lang] ?? SEPARATORS.tr;
+  if (!Number.isInteger(n)) return n.toLocaleString(LOCALE_TAG[l] ?? LOCALE_TAG.tr);
+  const { group } = SEPARATORS(l);
   const body = String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, group);
   return n < 0 ? `-${body}` : body;
 };

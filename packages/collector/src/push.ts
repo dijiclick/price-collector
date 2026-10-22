@@ -1,7 +1,8 @@
 import { logPushes } from "./push-log";
 import type { Db } from "./db";
 import { fromMinor } from "./normalize";
-import { BRAND_LABELS } from "../../../lib/format";
+import { BRAND_LABELS, percent } from "../../../lib/format";
+import { copyLang, serverCopy } from "./i18n/server";
 import { hasCoinChannel,
   classifyToken, loadCreds, sendApns, sendFcm, type PushContent,
 } from "./push-transport";
@@ -19,7 +20,7 @@ export interface PushRow {
   size: string | null;
   type: "price_drop" | "back_in_stock";
   /** null for devices that synced before the language setting existed. */
-  lang: "tr" | "en" | null;
+  lang: string | null;
   /**
    * The product's currency (`products.currency`). null for rows written before
    * the column had a non-TRY value in it, which means lira.
@@ -84,7 +85,8 @@ export interface PushMessage {
 }
 
 /**
- * Notification copy, per language.
+ * Notification copy, per language: packages/collector/src/i18n/server.<lang>.ts
+ * (`alert`).
  *
  * A device that synced before the language setting existed has `lang` null and
  * keeps getting Turkish — which is what it was already receiving, so nothing
@@ -96,25 +98,8 @@ export interface PushMessage {
  * invent a price nobody is charging, and a lira sign over a British amount is
  * that mistake in the smallest possible space.
  */
-const COPY = {
-  tr: {
-    restock: (size: string | null) => (size ? `Beden ${size} tekrar stokta 🎉` : "Tekrar stokta 🎉"),
-    target: (drop: string) => `🎯 Hedefe ulaştı — ${drop}`,
-    refund: (saving: string, now: string) => `Aldığından ${saving} ucuz: ${now}. İade edip yeniden alabilirsin.`,
-    withSize: (size: string, base: string) => `Beden ${size} · ${base}`,
-    pct: (n: number) => `−%${n}`,
-  },
-  en: {
-    restock: (size: string | null) => (size ? `Size ${size} is back in stock 🎉` : "Back in stock 🎉"),
-    target: (drop: string) => `🎯 Hit your target — ${drop}`,
-    refund: (saving: string, now: string) => `${saving} cheaper than you paid: ${now}. You can return it and buy it again.`,
-    withSize: (size: string, base: string) => `Size ${size} · ${base}`,
-    pct: (n: number) => `−${n}%`,
-  },
-};
-
 export function buildMessage(r: PushRow): PushMessage {
-  const c = COPY[r.lang ?? "tr"] ?? COPY.tr;
+  const c = serverCopy(r.lang).alert;
   const title = `${BRAND_LABELS[r.brand] ?? r.brand} · ${r.name}`;
   if (r.type === "back_in_stock") {
     return {
@@ -138,7 +123,7 @@ export function buildMessage(r: PushRow): PushMessage {
       channelId: "price-drops",
     };
   }
-  const drop = `${money(r.old_price)} → ${money(r.new_price)} (${c.pct(Math.abs(r.pct))})`;
+  const drop = `${money(r.old_price)} → ${money(r.new_price)} (${percent(Math.abs(r.pct), { off: true }, copyLang(r.lang))})`;
   const goal = r.target != null && r.new_price <= r.target;
   const base = goal ? c.target(drop) : drop;
   return {

@@ -18,6 +18,7 @@ import { devicePrefs, inQuietHours } from "./push";
 import { classifyToken, loadCreds, sendApns, sendFcm, type PushContent } from "./push-transport";
 import { BRAND_LABELS } from "../../../lib/format";
 import { dueCampaigns } from "./sale-calendar";
+import { serverCopy } from "./i18n/server";
 import { logPushes, nudgeAllowed } from "./push-log";
 
 type Outcome = "ok" | "dead" | "retry";
@@ -56,21 +57,15 @@ export function localDate(tz: string | null, now: Date): string {
 }
 
 export function buildDigest(lang: string | null, n: number, brands: string[]): { title: string; body: string } {
+  const c = serverCopy(lang).news;
   const names = brands.slice(0, 3).map((b) => BRAND_LABELS[b] ?? b);
-  const and = lang === "en" ? "and" : "ve";
-  const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} ${and} ${names[names.length - 1]}` : names[0] ?? "";
-  if (lang === "en") {
-    return { title: `${n} new ${n === 1 ? "drop" : "drops"} on your brands`, body: `${list}: prices just fell. Take a look before your size goes.` };
-  }
-  return { title: `Takip ettiğin markalarda ${n} yeni indirim`, body: `${list} fiyatlarını düşürdü. Bedenin tükenmeden göz at.` };
+  const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} ${c.and} ${names[names.length - 1]}` : names[0] ?? "";
+  return { title: c.digestTitle(n), body: c.digestBody(list) };
 }
 
 export function buildSaleStart(lang: string | null, brand: string): { title: string; body: string } {
-  const label = BRAND_LABELS[brand] ?? brand;
-  // No locative suffix ('da/'de/'ta/'te): it depends on how each brand name
-  // ends and sounds, and a wrong one reads as a machine wrote it.
-  if (lang === "en") return { title: `The ${label} sale has started`, body: "Check your tracked items and sizes before they go." };
-  return { title: `İndirim başladı: ${label}`, body: "Takip ettiğin ürünlere ve bedenine bak, ilk sen yakala." };
+  const c = serverCopy(lang).news;
+  return { title: c.saleStartTitle(BRAND_LABELS[brand] ?? brand), body: c.saleStartBody };
 }
 
 async function realSend(token: string, c: PushContent): Promise<Outcome> {
@@ -183,7 +178,8 @@ export async function pushNews(db: Db, opts: { now?: Date; send?: NewsSend } = {
     const c = due.find((x) => !have.has(x.key));
     if (!c) continue;
     tried++;
-    const m = d.lang === "en" ? c.en : c.tr;
+    const m = serverCopy(d.lang).saleCalendar[c.key];
+    if (!m) continue;
     const out = await send(d.token, { title: m.title, body: m.body, kind: "news", href: "/yeni" });
     if (out === "ok") {
       sent++;
