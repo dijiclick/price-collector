@@ -1,6 +1,7 @@
 /**
  * Small Turkish Ticimax shops by url (2026-10-23): Pumps Up
- * (`pumpsup.com/tracy-beyaz-deri-terlik-beyaz-deri-2107`). Same route as
+ * (`pumpsup.com/tracy-beyaz-deri-terlik-beyaz-deri-2107`), Pelinin Ayakkabıları
+ * (`pelininayakkabilari.com/weekend-siyah-deri-kovboy-cizme-15736`). Same route as
  * victoriassecret.ts: the product page is read once for
  * `productDetailModel.productId`, then the listing XHR filtered to that id
  * (`StrProductIds`) answers the card the collector maps
@@ -22,6 +23,7 @@ export interface TicimaxLiveShop {
 
 export const TICIMAX_LIVE_SHOPS: Record<string, TicimaxLiveShop> = {
   pumpsup: { brand: "pumpsup", site: "https://www.pumpsup.com", host: "pumpsup.com", gender: "kadin" },
+  pelininayakkabilari: { brand: "pelininayakkabilari", site: "https://www.pelininayakkabilari.com", host: "pelininayakkabilari.com", gender: "kadin" },
 };
 
 /** The shop and path of a pasted product url, or null if it is not one of ours. */

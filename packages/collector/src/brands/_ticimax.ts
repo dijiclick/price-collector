@@ -41,6 +41,14 @@
  *
  * Pumps Up (pumpsup.com, women's shoes) joined on 2026-10-23: 418 cards, 172
  * with cart < sell, `discountRate` set on 116 of them.
+ *
+ * Pelinin Ayakkabıları (pelininayakkabilari.com, women's shoes) the same day:
+ * 1,182 cards and not one strike price (cart == sell, marketPrice 0, even in
+ * its "İNDİRİM" category), so it is search-only until it marks one. Two quirks:
+ * it serves at most 200 cards a page whatever is asked (asking 250 skipped 50
+ * a page), and KATEGORISIRA ties shuffle between requests (1,182 cards walked
+ * came back as 1,004 distinct ids), so it walks 200 a page ordered by "ID"
+ * (1,182 of 1,182). The other shops page stably on KATEGORISIRA.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -57,6 +65,10 @@ export interface TicimaxShop {
   sizes: boolean;
   /** Walk the whole catalogue and return full-price in-stock cards too. */
   fullCatalogue?: boolean;
+  /** Full-walk page size when the shop caps it below 250 (Pelin: 200). */
+  pageSize?: number;
+  /** Full-walk order when KATEGORISIRA pages unstably (Pelin: "ID"). */
+  orderBy?: string;
 }
 
 export const TICIMAX_SHOPS: Record<string, TicimaxShop> = {
@@ -66,6 +78,11 @@ export const TICIMAX_SHOPS: Record<string, TicimaxShop> = {
   noteshop: { brand: "noteshop", site: "https://www.noteshop.com.tr", defaultGender: null, sizes: false, fullCatalogue: true },
   // Pumps Up (2026-10-23): women's shoes, 418 cards (172 reduced), 2 pages.
   pumpsup: { brand: "pumpsup", site: "https://www.pumpsup.com", defaultGender: "kadin", sizes: true, fullCatalogue: true },
+  // Pelinin Ayakkabıları (2026-10-23): women's shoes, 1,182 cards, no strike prices (search only).
+  pelininayakkabilari: {
+    brand: "pelininayakkabilari", site: "https://www.pelininayakkabilari.com", defaultGender: "kadin", sizes: true,
+    fullCatalogue: true, pageSize: 200, orderBy: "ID",
+  },
 };
 
 const PAGE_SIZE = 100;
@@ -96,11 +113,11 @@ export function filterJson(over: Record<string, unknown> = {}): string {
   });
 }
 
-export function listUrl(site: string, filter: string, page: number, size = PAGE_SIZE): string {
+export function listUrl(site: string, filter: string, page: number, size = PAGE_SIZE, orderBy = "KATEGORISIRA"): string {
   const q = new URLSearchParams({
     c: "1",
     FilterJson: filter,
-    PagingJson: JSON.stringify({ PageItemCount: size, PageNumber: page, OrderBy: "KATEGORISIRA", OrderDirection: "ASC" }),
+    PagingJson: JSON.stringify({ PageItemCount: size, PageNumber: page, OrderBy: orderBy, OrderDirection: "ASC" }),
     CreateFilter: "false",
     TransitionOrder: "0",
     PageType: "1",
@@ -185,20 +202,24 @@ export function treeSizes(tree: any[] | null | undefined): SizeVariant[] {
 /** The whole catalogue, 250 cards a page. Any failed page fails the run (a partial walk would sweep live cards). */
 async function walkAll(shop: TicimaxShop, pause: () => Promise<void>, count: () => void): Promise<any[]> {
   const filter = filterJson();
+  const size = shop.pageSize ?? FULL_PAGE_SIZE;
   const rows: any[] = [];
   let pages = 1;
   for (let n = 1; n <= pages; n++) {
     if (n > 1) await pause();
     count();
-    const d = await getJson<any>(listUrl(shop.site, filter, n, FULL_PAGE_SIZE), { retries: 2 }).catch((e) => {
+    const d = await getJson<any>(listUrl(shop.site, filter, n, size, shop.orderBy), { retries: 2 }).catch((e) => {
       throw new Error(`${shop.brand}: product list page ${n} failed (${e?.message ?? e})`);
     });
-    if (n === 1) {
-      pages = Math.ceil(Number(d?.totalProductCount ?? 0) / FULL_PAGE_SIZE);
-      // A cap that cut pages would let the delist sweep mark their cards sold out: refuse instead.
-      if (pages * FULL_PAGE_SIZE > FULL_MAX_PRODUCTS) throw new Error(`${shop.brand}: ${d?.totalProductCount} cards, over the cap of ${FULL_MAX_PRODUCTS}`);
-    }
     const got: any[] = d?.products ?? [];
+    if (n === 1) {
+      const total = Number(d?.totalProductCount ?? 0);
+      pages = Math.ceil(total / size);
+      // A cap that cut pages would let the delist sweep mark their cards sold out: refuse instead.
+      if (pages * size > FULL_MAX_PRODUCTS) throw new Error(`${shop.brand}: ${d?.totalProductCount} cards, over the cap of ${FULL_MAX_PRODUCTS}`);
+      // A shop that serves fewer cards a page than asked (Pelin caps at 200) would leave gaps between pages.
+      if (got.length && got.length < Math.min(size, total)) throw new Error(`${shop.brand}: asked ${size} a page, got ${got.length}; set pageSize`);
+    }
     // An empty page before the last is a glitch, not the end: refuse the partial walk.
     if (!got.length) {
       if (n < pages || n === 1) throw new Error(`${shop.brand}: product list page ${n} of ${pages} came back empty`);

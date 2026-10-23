@@ -485,6 +485,7 @@ export const BRAND_LABELS: Record<string, string> = {
   elifstil: "Elifstil",
   noteshop: "Note Cosmetics",
   pumpsup: "Pumps Up",
+  pelininayakkabilari: "Pelinin Ayakkabıları",
   yargici: "Yargıcı",
   hotic: "Hotiç",
   suwen: "Suwen",

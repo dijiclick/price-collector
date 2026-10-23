@@ -311,6 +311,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "elifstil", listProducts: (c) => listTicimaxBrand("elifstil", c) },
   { brand: "noteshop", listProducts: (c) => listTicimaxBrand("noteshop", c) },
   { brand: "pumpsup", listProducts: (c) => listTicimaxBrand("pumpsup", c) },
+  { brand: "pelininayakkabilari", listProducts: (c) => listTicimaxBrand("pelininayakkabilari", c) },
   { brand: "yargici", listProducts: (c) => listPhantomBrand("yargici", c) },
   { brand: "hotic", listProducts: (c) => listPhantomBrand("hotic", c) },
   { brand: "suwen", listProducts: tr(() => suwen.listProducts("TR")) },
