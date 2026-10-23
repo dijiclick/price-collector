@@ -347,7 +347,20 @@ export function classifyType(
   // "Wide Leg Jeans Baskılı"), the modifier was carrying the meaning — keep it.
   const trimmed = nounOnly(name ?? "");
   const t = classifyRaw(category, trimmed, brand);
-  return t ?? (trimmed === (name ?? "").replace(/\s+/g, " ").trim() ? t : classifyRaw(category, name ?? "", brand));
+  return t ?? (trimmed === (name ?? "").replace(/\s+/g, " ").trim() ? t : classifyRaw(category, name ?? "", brand)) ?? cowboyBoot(name);
+}
+
+/**
+ * A bare "Kovboy" is a cowboy BOOT: Pumps Up names its boots "ESCAPE KOVBOY
+ * KAHVE SÜET" under "ALÇAK TOPUK", so neither the shelf nor the name named a
+ * type and all 9 sat on no shelf (2026-10-23). Only a last resort — a hat,
+ * belt, shirt or costume names its own noun and is typed before this — and
+ * Turkish/stray spellings only: the English "Cowboys" is books and T-shirts.
+ */
+const COWBOY_NOT_BOOT = /kostum|yagmurluk|sapka|kemer|\bhat\b|kitap/;
+function cowboyBoot(name: string | null | undefined): string | null {
+  const n = fold(name ?? "");
+  return /\bko[vw]boy\b/.test(n) && !COWBOY_NOT_BOOT.test(n) ? "ayakkabi" : null;
 }
 
 function classifyRaw(
@@ -727,6 +740,9 @@ export function subtypeForName(type: string | null | undefined, name: string, br
   if (!subs) return null;
   const n = fold(name);
   for (const s of subs) if (s.re.test(n)) return s.key;
+  // A shoe named only "Kovboy" is a boot (see cowboyBoot); a "kovboy loafer" or
+  // "kovboy sandalet" names its own shelf above and keeps it.
+  if (type === "ayakkabi" && /\bko[vw]boy\b/.test(n)) return "bot";
   // Brand dialect: a sportswear brand's plain "Ayakkabı" is a trainer. Puma,
   // Nike and New Balance name shoes by model ("PUMA Catch SOLEIL Kadın
   // Ayakkabı", "Nike Air Force 1 '07") — 576 had no subtype, so "nike air"
