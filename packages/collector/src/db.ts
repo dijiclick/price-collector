@@ -106,10 +106,20 @@ export async function connect(): Promise<Db> {
  */
 export async function migrate(db: Db): Promise<void> {
   const sql = readFileSync(schemaPath, "utf8");
+  let catalog = await readCatalog(db);
   for (const stmt of sql.split(/;\s*\n/).map((s) => s.trim()).filter(Boolean)) {
+    // Even a no-op ALTER/CREATE INDEX takes its table lock first, and every
+    // collector job (27 markets × several runs an hour) migrates at startup:
+    // each one parked the feed behind a lock for up to 3 s (2026-10-23, the
+    // speed guard's "app is slow" mail). Statements whose result is already in
+    // the catalog are skipped without touching the table at all.
+    if (catalog && alreadyApplied(stmt, catalog)) continue;
     const guarded = `DO $migrate$ BEGIN PERFORM set_config('lock_timeout', '3s', true); EXECUTE $stmt$${stmt}$stmt$; END $migrate$`;
     try {
       await db.query(/^(--[^\n]*\n\s*)*(ALTER|CREATE)\b/i.test(stmt) ? guarded : stmt);
+      // Something changed (a fresh database creates its tables here): read the
+      // catalog again so later statements are judged against what now exists.
+      if (catalog && /^(--[^\n]*\n\s*)*(ALTER|CREATE|DO)\b/i.test(stmt)) catalog = await readCatalog(db);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       // schema uses IF NOT EXISTS; ignore benign "already exists" races
@@ -121,6 +131,77 @@ export async function migrate(db: Db): Promise<void> {
       throw err;
     }
   }
+}
+
+/** What the database already has, read from the catalog (no table locks). */
+export interface SchemaCatalog {
+  /** "table.column", lowercased. */
+  columns: Set<string>;
+  /** Tables, indexes and other relations in the search path, lowercased. */
+  relations: Set<string>;
+  /** Constraint names, lowercased. */
+  constraints: Set<string>;
+  /** Installed extensions. */
+  extensions: Set<string>;
+}
+
+async function readCatalog(db: Db): Promise<SchemaCatalog | null> {
+  try {
+    const cols = await db.query<{ t: string; c: string }>(
+      "SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE table_schema = current_schema()",
+    );
+    const rels = await db.query<{ n: string }>(
+      "SELECT c.relname AS n FROM pg_class c JOIN pg_namespace s ON s.oid = c.relnamespace WHERE s.nspname = current_schema()",
+    );
+    const cons = await db.query<{ n: string }>(
+      "SELECT con.conname AS n FROM pg_constraint con JOIN pg_namespace s ON s.oid = con.connamespace WHERE s.nspname = current_schema()",
+    );
+    const exts = await db.query<{ n: string }>("SELECT extname AS n FROM pg_extension");
+    return {
+      columns: new Set(cols.map((r) => `${r.t}.${r.c}`.toLowerCase())),
+      relations: new Set(rels.map((r) => r.n.toLowerCase())),
+      constraints: new Set(cons.map((r) => r.n.toLowerCase())),
+      extensions: new Set(exts.map((r) => r.n.toLowerCase())),
+    };
+  } catch {
+    return null; // no catalog → run every statement, as before
+  }
+}
+
+/**
+ * True when running `stmt` could not change anything the catalog shows:
+ * every table/index it would create exists, every column it would add is
+ * there, and the constraint it would drop is gone. Anything it cannot read
+ * with certainty returns false and runs as before.
+ */
+export function alreadyApplied(raw: string, cat: SchemaCatalog): boolean {
+  const stmt = raw.replace(/--[^\n]*(\n|$)/g, " ").replace(/\s+/g, " ").trim();
+  const name = (s: string) => s.replace(/^public\./i, "").replace(/"/g, "").toLowerCase();
+  if (!stmt) return true; // a chunk that is only comments
+  let m: RegExpMatchArray | null;
+  if ((m = stmt.match(/^CREATE TABLE IF NOT EXISTS ([\w."]+)/i))) return cat.relations.has(name(m[1]));
+  if ((m = stmt.match(/^CREATE (?:UNIQUE )?INDEX (?:CONCURRENTLY )?IF NOT EXISTS ([\w"]+)/i))) return cat.relations.has(name(m[1]));
+  if ((m = stmt.match(/^ALTER TABLE (?:IF EXISTS )?(?:ONLY )?([\w."]+) (.*)$/i))) {
+    const table = name(m[1]);
+    const body = m[2];
+    const drop = body.match(/^DROP CONSTRAINT IF EXISTS ([\w"]+)$/i);
+    if (drop) return !cat.constraints.has(name(drop[1]));
+    // Only a pure "ADD COLUMN IF NOT EXISTS …[, ADD COLUMN IF NOT EXISTS …]".
+    if (!/^ADD COLUMN IF NOT EXISTS /i.test(body)) return false;
+    if (/\b(ALTER COLUMN|DROP|ADD CONSTRAINT|RENAME|OWNER TO|ENABLE|DISABLE|VALIDATE)\b/i.test(body)) return false;
+    const added = [...body.matchAll(/ADD COLUMN IF NOT EXISTS ([\w"]+)/gi)].map((x) => name(x[1]));
+    const clauses = body.split(/,\s*(?=ADD\b)/i).length;
+    if (added.length === 0 || added.length !== clauses) return false;
+    return added.every((c) => cat.columns.has(`${table}.${c}`));
+  }
+  if (/^DO \$\$/i.test(stmt)) {
+    if (/\b(ALTER|DROP|UPDATE|INSERT|DELETE)\b/i.test(stmt)) return false;
+    const exts = [...stmt.matchAll(/CREATE EXTENSION IF NOT EXISTS ([\w"]+)/gi)].map((x) => name(x[1]));
+    const rels = [...stmt.matchAll(/CREATE (?:UNIQUE )?(?:INDEX|TABLE) (?:CONCURRENTLY )?IF NOT EXISTS ([\w"]+)/gi)].map((x) => name(x[1]));
+    if (exts.length + rels.length === 0) return false;
+    return exts.every((e) => cat.extensions.has(e)) && rels.every((r) => cat.relations.has(r));
+  }
+  return false;
 }
 
 /**
