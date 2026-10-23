@@ -198,6 +198,9 @@ const LABEL_NOT_CATEGORY = new Set(["beymen", "boyner"]);
  */
 function dialect(brand: string | null | undefined, name: string): string {
   if (brand === "penti") return name.replace(/\bBOT\b/gi, "bikini alt");
+  // Dilvin (2026-10-23): "Pamuk Top" is a cotton top, not cotton pads; "Bra-Free" is a
+  // line name, not a bra; "Pantalon" / "Süveter" are its spellings of pantolon / kazak.
+  if (brand === "dilvin") return name.replace(/\bBra-Free\b/gi, "").replace(/\bTop\b/gi, "bluz").replace(/\bPantalon\b/gi, "pantolon").replace(/\bSüveter\b/gi, "kazak");
   return name;
 }
 

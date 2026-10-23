@@ -312,6 +312,7 @@ export const BRAND_LABELS: Record<string, string> = {
   wcollection: "W Collection",
   jimmykey: "Jimmy Key",
   loft: "LOFT",
+  dilvin: "Dilvin",
   quzu: "QUZU",
   nisantasishoes: "Nişantaşı Shoes",
   lesbenjamins: "Les Benjamins",

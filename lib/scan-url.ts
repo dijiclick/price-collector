@@ -206,6 +206,7 @@ const CANONICAL_HOST: Record<string, string> = {
   "wcollection.com.tr": "www.wcollection.com.tr",
   "jimmykey.com": "www.jimmykey.com",
   "loft.com.tr": "www.loft.com.tr",
+  "dilvin.com.tr": "www.dilvin.com.tr",
   "quzu.com.tr": "quzu.com.tr",
   "nisantasishoes.com": "www.nisantasishoes.com",
   "lesbenjamins.com": "lesbenjamins.com",

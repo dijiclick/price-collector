@@ -95,6 +95,7 @@ export const BRANDS: BrandInfo[] = [
   { slug: "wcollection", label: "W Collection", category: "Giyim", logo: "/brands/wcollection.svg", countries: TR_ONLY },
   { slug: "jimmykey", label: "Jimmy Key", category: "Giyim", logo: "/brands/jimmykey.svg", countries: TR_ONLY },
   { slug: "loft", label: "LOFT", category: "Giyim", logo: "/brands/loft.svg", countries: ["TR", "US"] },
+  { slug: "dilvin", label: "Dilvin", category: "Giyim", logo: "/brands/dilvin.png", countries: TR_ONLY },
   { slug: "quzu", label: "QUZU", category: "Giyim", logo: "/brands/quzu.svg", countries: TR_ONLY },
   { slug: "nisantasishoes", label: "Nişantaşı Shoes", category: "Ayakkabı", logo: "/brands/nisantasishoes.svg", countries: TR_ONLY },
   { slug: "lesbenjamins", label: "Les Benjamins", category: "Giyim", logo: "/brands/lesbenjamins.svg", countries: TR_ONLY },

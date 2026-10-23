@@ -39,6 +39,7 @@ import * as lacoste from "./brands/lacoste";
 import { listLacosteIntl } from "./brands/lacoste-intl";
 import * as pierrecardin from "./brands/pierrecardin";
 import * as derimod from "./brands/derimod";
+import * as dilvin from "./brands/dilvin";
 import * as quzu from "./brands/quzu";
 import * as nisantasishoes from "./brands/nisantasishoes";
 import * as lesbenjamins from "./brands/lesbenjamins";
@@ -125,6 +126,7 @@ export const adapters: BrandAdapter[] = [
   { brand: pierrecardin.brand, country: "TR", listProducts: pierrecardin.listProducts },
   { brand: derimod.brand, country: "TR", listProducts: derimod.listProducts },
   // Added 2026-10-18 (owner: jewellery, watches and missing good brands).
+  { brand: dilvin.brand, country: "TR", listProducts: dilvin.listProducts },
   { brand: quzu.brand, country: "TR", listProducts: quzu.listProducts },
   { brand: nisantasishoes.brand, country: "TR", listProducts: nisantasishoes.listProducts },
   { brand: lesbenjamins.brand, country: "TR", listProducts: lesbenjamins.listProducts },
