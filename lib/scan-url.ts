@@ -115,7 +115,14 @@ export function countryFromUrl(raw: string): CountryCode | null {
 export function urlFromText(raw: string | null | undefined): string | null {
   const text = (raw ?? "").trim();
   if (!text) return null;
-  const clean = (s: string) => s.replace(/[.,;:!?)\]}>"'»”’]+$/u, "");
+  // A trailing ")" is the sentence's — "(https://…)" — unless the url opened
+  // it: Bobbi Brown's shade links end "?shade=Warm%20Sand%20(W-036)", and
+  // losing that paren made all 53 of them unmatchable (2026-10-23).
+  const clean = (s: string) => {
+    const c = s.replace(/[.,;:!?)\]}>"'»”’]+$/u, "");
+    const open = (c.match(/\(/g) ?? []).length - (c.match(/\)/g) ?? []).length;
+    return open > 0 && s.startsWith(c + ")") ? c + ")" : c;
+  };
   const withScheme = /https?:\/\/[^\s<>"'«»“”]+/i.exec(text);
   if (withScheme) return clean(withScheme[0]);
   // No scheme: only take something that is plainly a host with a path, so a
