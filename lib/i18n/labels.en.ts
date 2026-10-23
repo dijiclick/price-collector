@@ -176,6 +176,28 @@ export const en = {
     metalik: "Metallic",
     "cok-renkli": "Multicolour",
   },
+  /** Material-filter names, keyed by materials.ts MATERIALS key (Akıllı Arama chips). */
+  materials: {
+    knit: "Knitwear",
+    wool: "Wool",
+    cashmere: "Cashmere",
+    leather: "Leather",
+    "faux-leather": "Faux leather",
+    suede: "Suede",
+    linen: "Linen",
+    silk: "Silk",
+    satin: "Satin",
+    velvet: "Velvet",
+    corduroy: "Corduroy",
+    denim: "Denim",
+    cotton: "Cotton",
+    fleece: "Fleece",
+    sequin: "Sequins",
+    lace: "Lace",
+    chiffon: "Chiffon",
+    tweed: "Tweed",
+    mesh: "Mesh & tulle",
+  },
   /** The Akıllı Arama chips for what the assistant understood (assistant.ts). Prices arrive formatted. */
   chips: {
     gender: { kadin: "Women", erkek: "Men", cocuk: "Kids" },

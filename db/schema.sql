@@ -407,6 +407,20 @@ ALTER TABLE catalogue_items ADD COLUMN IF NOT EXISTS maker TEXT;
 -- no-op there. One line on purpose: the loaders split this file on ";\n".
 DO $$ BEGIN CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE INDEX IF NOT EXISTS idx_catalogue_items_name_trgm ON catalogue_items USING gin (lower(translate(name, 'ÇĞİÖŞÜIÂÎÛçğıöşüâîû', 'cgiosuiaiucgiosuaiu')) gin_trgm_ops); EXCEPTION WHEN others THEN NULL; END $$;
 
+-- The plain browse walks each brand's deals deepest cut first and checks each
+-- row against its colour group (lib/db.ts mixedPage, 2026-10-23): ranking the
+-- whole Turkish feed per request had reached 4-6 s. The type-led twin serves a
+-- category page in the same order. Built CONCURRENTLY on the server first, so
+-- these are no-ops there. After catalogue_items, whose LIKE … INCLUDING INDEXES
+-- would otherwise copy them onto a table that never needs them.
+CREATE INDEX IF NOT EXISTS idx_feed_items_brand_order ON feed_items (country, brand, pct DESC, current_price, id);
+CREATE INDEX IF NOT EXISTS idx_feed_items_type_order ON feed_items (country, product_type, brand, pct DESC, current_price, id);
+CREATE INDEX IF NOT EXISTS idx_feed_items_country_gk ON feed_items (country, gk);
+-- The mixed feed's shelves (lib/db.ts shelvesFast): each brand's best deals of
+-- one category in the shelf's own order — pct, then id, so a tie on pct does
+-- not read the brand's whole 50%-off band to sort it.
+CREATE INDEX IF NOT EXISTS idx_feed_items_shelf_order ON feed_items (country, product_type, brand, pct DESC, id);
+
 -- Full-catalogue tallies (browse-all counts), per brand, rewritten by the same
 -- refresh. /api/meta sums these instead of counting every in-stock product.
 CREATE TABLE IF NOT EXISTS catalogue_counts (
@@ -608,6 +622,13 @@ CREATE TABLE IF NOT EXISTS product_tags (
   error      TEXT,
   tagged_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- The search's material filter (2026-10-23, lib/materials.ts + materialClause
+-- in lib/db.ts) asks the tagger by family: "which products are leather".
+-- Without it every such question read all ~450k tag rows (0.5-0.8 s each).
+-- Built on production by hand with CREATE INDEX CONCURRENTLY (the tagger writes
+-- here all day), so this line is a no-op there.
+CREATE INDEX IF NOT EXISTS idx_product_tags_material_family ON product_tags ((tags->>'material_family'));
 
 -- ---------------------------------------------------------------------------
 -- Dead product links (2026-10-20). Owner: "open on site" on a Calvin Klein bag

@@ -24,6 +24,7 @@ import { devicePrefs, inQuietHours } from "./push";
 import { classifyToken, hasCoinChannel, loadCreds, sendApns, sendFcm, type PushContent } from "./push-transport";
 import { BRAND_LABELS, money } from "../../../lib/format";
 import { serverCopy } from "./i18n/server";
+import { materialSql } from "../../../lib/materials";
 
 type Outcome = "ok" | "dead" | "retry";
 export type AlarmSend = (token: string, c: PushContent) => Promise<Outcome>;
@@ -48,6 +49,7 @@ export interface AlarmFilters {
   subtype?: string | null;
   gender?: string | null;
   colors?: string[];
+  materials?: string[];
   pmin?: number | null;
   pmax?: number | null;
   sizes?: string[];
@@ -87,6 +89,15 @@ export function alarmWhere(f: AlarmFilters, country: string, since: string, newO
   if (f.type && f.subtype) add((i) => `c.product_subtype = $${i}`, f.subtype);
   if (f.gender) add((i) => `c.gender = $${i}`, f.gender);
   if (f.colors?.length) add((i) => `c.color_families && $${i}::text[]`, f.colors);
+  // Same reading as the search (lib/materials.ts): "kırmızı triko" must not
+  // push a new sweatshirt.
+  if (f.materials?.length) {
+    const m = materialSql(f.materials, (v) => {
+      params.push(v);
+      return `$${params.length}`;
+    }, { table: "c", narrow: true });
+    if (m) sql += ` AND ${m}`;
+  }
   if (f.pmin) add((i) => `c.current_price >= $${i}`, Math.round(f.pmin * 100));
   if (f.pmax) add((i) => `c.current_price <= $${i}`, Math.round(f.pmax * 100));
   if (f.sizes?.length) add((i) => `(c.sizeless OR c.avail_sizes && $${i}::text[])`, f.sizes.map((s) => s.toUpperCase()));

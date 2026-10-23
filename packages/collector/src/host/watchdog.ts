@@ -99,7 +99,7 @@ export function writeState(path: string, state: WatchdogState): void {
  * Resend, by hand. Ten lines and no shared state with the collector's notifier
  * — see the file header for why that separation is deliberate.
  */
-async function sendAlert(env: NodeJS.ProcessEnv, subject: string, body: string): Promise<boolean> {
+export async function sendAlert(env: NodeJS.ProcessEnv, subject: string, body: string): Promise<boolean> {
   const key = env.RESEND_API_KEY;
   const to = env.MODADROP_ALERT_EMAIL;
   if (!key || !to) {

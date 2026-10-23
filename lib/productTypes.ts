@@ -278,13 +278,22 @@ function sharedSection(cat: string): Set<string> | null {
  */
 const KNIT_GARMENT = /kaza[kg]|suveter|sweater|pullover|jumper|hirka|cardigan|sweat|hoodie|kapuson|\bpolo\b|yele[kg]|\bvest\b|panco|poncho|\bknit (?:top|jacket)/;
 const DRESS_NOUN = /(?<!takim\s)elbise|\bdress\b|\btulum\b|jumpsuit/;
-const BOTTOM_NOUN = /\bete[kg](?!\s*ucu)|\bskirt|pantolon|trouser|\bpants\b|\bsort\b|\bshorts?\b|bermuda|\btayt\b|legging|jogger|sweatpant/;
+const BOTTOM_NOUN = /\bete[kg](?!\s*ucu)|\bskirt|pantolon|trouser|\bpants?\b|\bsortu?\b|\bshorts?\b|bermuda|\btayti?\b|legging|jogger|sweatpant|esofman alti/;
 const TOP_NOUN = /tisort|t-?shirt|\btee\b|\bbluz|blouse|\btop\b|\batlet|bustiyer|bustier|gomle[kg]|\bshirt\b|\bcrop\b/;
+/**
+ * "Sweat" naming the FABRIC of a bottom, not a garment (owner 2026-10-23: "Red
+ * knitwear" showed Boyner's "Lastikli Basic Sweat Şort"): "Sweat Şort", "Sweat
+ * Pantolon", "Sweatshirt Kumaşı Şort", "Sweatpants". A set ("Sweat Pantolonlu
+ * Takım", "Sweatshirt ve Pantolon Seti") is not stripped — it holds the top too.
+ */
+const SWEAT_FABRIC = /sweat(?:shirt)?(?: kumasi)?\s*(?=(?:sort|short|pantolon|pants?\b|tayt|jogger|bermuda|ete[kg]|skirt))/g;
+const SET_WORD = /takim|\bset\b|\bseti\b|\bsett\b|s\u00e6t\b|\d'?li\b|ikili|uclu|alt ust/;
 
 function knitOverride(name: string): string | null {
   if (DRESS_NOUN.test(name)) return "elbise";
-  if (KNIT_GARMENT.test(name)) return null;
-  if (BOTTOM_NOUN.test(name)) return "alt";
+  const garment = SET_WORD.test(name) ? name : name.replace(SWEAT_FABRIC, " ");
+  if (KNIT_GARMENT.test(garment)) return null;
+  if (BOTTOM_NOUN.test(garment)) return "alt";
   if (TOP_NOUN.test(name)) return "ust";
   return null;
 }
