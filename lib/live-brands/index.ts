@@ -49,6 +49,7 @@ import { atasayUrl } from "./atasay";
 import { zenpirlantaUrl } from "./zenpirlanta";
 import { aldoUrl } from "./aldo";
 import { quzuUrl } from "./quzu";
+import { nisantasishoesUrl } from "./nisantasishoes";
 import { lesbenjaminsUrl } from "./lesbenjamins";
 import { altinbasUrl } from "./altinbas";
 import { swarovskiUrl } from "./swarovski";
@@ -97,6 +98,7 @@ export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduc
   zenpirlanta: zenpirlantaUrl,
   aldo: aldoUrl,
   quzu: quzuUrl,
+  nisantasishoes: nisantasishoesUrl,
   lesbenjamins: lesbenjaminsUrl,
   altinbas: altinbasUrl,
   swarovski: swarovskiUrl,
