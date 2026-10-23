@@ -38,6 +38,9 @@
  * discount flag), so deals-only shrank it from ~76 rows to 1 and the watchdog
  * read `drop` for 20 runs. 557 cards are 3 requests. A sale was back on
  * 2026-10-22 (444 of 515 reduced); the full walk keeps both kinds.
+ *
+ * Pumps Up (pumpsup.com, women's shoes) joined on 2026-10-23: 418 cards, 172
+ * with cart < sell, `discountRate` set on 116 of them.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -61,6 +64,8 @@ export const TICIMAX_SHOPS: Record<string, TicimaxShop> = {
   desa: { brand: "desa", site: "https://www.desa.com.tr", defaultGender: null, sizes: true, fullCatalogue: true },
   elifstil: { brand: "elifstil", site: "https://www.elifstil.com", defaultGender: "kadin", sizes: true, fullCatalogue: true },
   noteshop: { brand: "noteshop", site: "https://www.noteshop.com.tr", defaultGender: null, sizes: false, fullCatalogue: true },
+  // Pumps Up (2026-10-23): women's shoes, 418 cards (172 reduced), 2 pages.
+  pumpsup: { brand: "pumpsup", site: "https://www.pumpsup.com", defaultGender: "kadin", sizes: true, fullCatalogue: true },
 };
 
 const PAGE_SIZE = 100;

@@ -70,6 +70,7 @@ import { maviUrl } from "./mavi";
 import { colinsUrl } from "./colins";
 import { mudoUrl } from "./mudo";
 import { SHOPIFY_RESOLVERS } from "./shopify";
+import { TICIMAX_RESOLVERS } from "./ticimax";
 
 export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduct | null>> = {
   lefties: leftiesUrl,
@@ -118,4 +119,6 @@ export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduc
   mudo: mudoUrl,
   // 2026-10-11: every Shopify storefront (shopify-sites.ts) through one resolver.
   ...SHOPIFY_RESOLVERS,
+  // 2026-10-23: small Turkish Ticimax shops (ticimax.ts), direct egress.
+  ...TICIMAX_RESOLVERS,
 };

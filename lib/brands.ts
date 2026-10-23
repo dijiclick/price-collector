@@ -290,6 +290,7 @@ export const BRANDS: BrandInfo[] = [
   { slug: "desa", label: "Desa", category: "Çanta", logo: "/brands/desa.svg", countries: ["TR"] },
   { slug: "elifstil", label: "Elifstil", category: "Giyim", logo: "/brands/elifstil.svg", countries: ["TR"] },
   { slug: "noteshop", label: "Note Cosmetics", category: "Kozmetik", logo: "/brands/noteshop.svg", countries: ["TR"] },
+  { slug: "pumpsup", label: "Pumps Up", category: "Ayakkabı", logo: "/brands/pumpsup.png", countries: ["TR"] },
   { slug: "yargici", label: "Yargıcı", category: "Giyim", logo: "/brands/yargici.svg", countries: ["TR"] },
   { slug: "hotic", label: "Hotiç", category: "Ayakkabı", logo: "/brands/hotic.svg", countries: ["TR"] },
   { slug: "suwen", label: "Suwen", category: "İç giyim", logo: "/brands/suwen.svg", countries: ["TR"] },
