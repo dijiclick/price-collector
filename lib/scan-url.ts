@@ -224,6 +224,7 @@ const CANONICAL_HOST: Record<string, string> = {
   "mudo.com.tr": "www.mudo.com.tr",
   "pumpsup.com": "www.pumpsup.com",
   "pelininayakkabilari.com": "www.pelininayakkabilari.com",
+  "lutvelizade.com.tr": "www.lutvelizade.com.tr",
   "coralshop.com.tr": "www.coralshop.com.tr",
 };
 

@@ -73,6 +73,7 @@ import { colinsUrl } from "./colins";
 import { mudoUrl } from "./mudo";
 import { SHOPIFY_RESOLVERS } from "./shopify";
 import { TICIMAX_RESOLVERS } from "./ticimax";
+import { lutvelizadeUrl } from "./lutvelizade";
 
 export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduct | null>> = {
   lefties: leftiesUrl,
@@ -125,4 +126,5 @@ export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduc
   ...SHOPIFY_RESOLVERS,
   // 2026-10-23: small Turkish Ticimax shops (ticimax.ts), direct egress.
   ...TICIMAX_RESOLVERS,
+  lutvelizade: lutvelizadeUrl,
 };

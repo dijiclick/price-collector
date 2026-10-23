@@ -119,6 +119,7 @@ import { listTicimaxBrand } from "./brands/_ticimax";
 import { listPhantomBrand } from "./brands/_phantom";
 import * as suwen from "./brands/suwen";
 import * as haydigiy from "./brands/haydigiy";
+import * as lutvelizade from "./brands/lutvelizade";
 import { listBoohooGroup } from "./brands/boohoogroup";
 import { listTfgLondon } from "./brands/tfglondon";
 import { listGymshark } from "./brands/gymshark";
@@ -319,6 +320,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "hotic", listProducts: (c) => listPhantomBrand("hotic", c) },
   { brand: "suwen", listProducts: tr(() => suwen.listProducts("TR")) },
   { brand: "haydigiy", listProducts: tr(() => haydigiy.listProducts("TR")) },
+  { brand: "lutvelizade", listProducts: tr(() => lutvelizade.listProducts("TR")) },
   // United States / Canada
   { brand: "oldnavy", listProducts: (c) => listGapInc("oldnavy", c) },
   { brand: "bananarepublic", listProducts: (c) => listGapInc("bananarepublic", c) },

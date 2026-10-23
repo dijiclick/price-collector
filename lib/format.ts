@@ -488,6 +488,7 @@ export const BRAND_LABELS: Record<string, string> = {
   noteshop: "Note Cosmetics",
   pumpsup: "Pumps Up",
   pelininayakkabilari: "Pelinin Ayakkabıları",
+  lutvelizade: "Lutvelizade",
   coral: "Coral",
   yargici: "Yargıcı",
   hotic: "Hotiç",
