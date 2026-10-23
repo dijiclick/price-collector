@@ -24,6 +24,7 @@ export interface TicimaxLiveShop {
 export const TICIMAX_LIVE_SHOPS: Record<string, TicimaxLiveShop> = {
   pumpsup: { brand: "pumpsup", site: "https://www.pumpsup.com", host: "pumpsup.com", gender: "kadin" },
   pelininayakkabilari: { brand: "pelininayakkabilari", site: "https://www.pelininayakkabilari.com", host: "pelininayakkabilari.com", gender: "kadin" },
+  coral: { brand: "coral", site: "https://www.coralshop.com.tr", host: "coralshop.com.tr", gender: "kadin" },
 };
 
 /** The shop and path of a pasted product url, or null if it is not one of ours. */
@@ -62,7 +63,8 @@ export function mapTicimaxCard(shop: TicimaxLiveShop, p: any): LiveProduct | nul
     externalId: String(p.productId),
     name,
     url: `${shop.site}${p.url ?? p.defaultUrl ?? ""}`,
-    imageUrl: img ? String(img).replace("/UrunResimleri/thumb/", "/UrunResimleri/buyuk/") : null,
+    // Coral's cards come through Cloudflare resizing (`/cdn-cgi/image/width=422,…/`): use the original.
+    imageUrl: img ? String(img).replace("/UrunResimleri/thumb/", "/UrunResimleri/buyuk/").replace(/\/cdn-cgi\/image\/[^/]+\//, "/") : null,
     price: toMinor(price),
     listPrice: shelf - price > 0.005 ? toMinor(shelf) : null,
     inStock: p.inStock === true && Number(p.totalStockAmount ?? 1) > 0,

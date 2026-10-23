@@ -49,6 +49,9 @@
  * a page), and KATEGORISIRA ties shuffle between requests (1,182 cards walked
  * came back as 1,004 distinct ids), so it walks 200 a page ordered by "ID"
  * (1,182 of 1,182). The other shops page stably on KATEGORISIRA.
+ *
+ * Coral (coralshop.com.tr, women's clothing) joined the same day: 575 cards, 327
+ * reduced (cart < sell, 20% across the board), every card in stock.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -83,6 +86,8 @@ export const TICIMAX_SHOPS: Record<string, TicimaxShop> = {
     brand: "pelininayakkabilari", site: "https://www.pelininayakkabilari.com", defaultGender: "kadin", sizes: true,
     fullCatalogue: true, pageSize: 200, orderBy: "ID",
   },
+  // Coral (coralshop.com.tr, 2026-10-23): women's clothing, 575 cards; serves at most 200 a page like Pelin.
+  coral: { brand: "coral", site: "https://www.coralshop.com.tr", defaultGender: "kadin", sizes: true, fullCatalogue: true, pageSize: 200, orderBy: "ID" },
 };
 
 const PAGE_SIZE = 100;
@@ -151,7 +156,9 @@ export function mapTicimax(shop: TicimaxShop, p: any): ProductRecord | null {
   const path = String(p.url ?? p.defaultUrl ?? "");
   if (path.includes(":")) return null;
   const price = Number.isFinite(cart) && cart > 0 ? Math.min(cart, shelf) : shelf;
-  const big = (u: unknown) => (typeof u === "string" && u ? u.replace("/UrunResimleri/thumb/", "/UrunResimleri/buyuk/") : null);
+  // Coral serves its cards through Cloudflare resizing (`/cdn-cgi/image/width=422,…/`): ask for the original.
+  const big = (u: unknown) =>
+    typeof u === "string" && u ? u.replace("/UrunResimleri/thumb/", "/UrunResimleri/buyuk/").replace(/\/cdn-cgi\/image\/[^/]+\//, "/") : null;
   const first = big(p.imageThumbPath) ?? big(p.imageLoadingPath);
   const extra = (p.imageList ?? []).map((im: any) => big(im?.imagePath ?? im?.bigImagePath ?? im));
   const name = String(p.name).trim();
