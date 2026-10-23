@@ -388,6 +388,7 @@ export const BRAND_LABELS: Record<string, string> = {
   converse: "Converse",
   gant: "GANT",
   maccosmetics: "M·A·C",
+  bobbibrown: "Bobbi Brown",
   flormar: "Flormar",
   fashfed: "FashFed",
   sportive: "Sportive",

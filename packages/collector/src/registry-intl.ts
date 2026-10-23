@@ -22,6 +22,7 @@ import * as cacharel from "./brands/cacharel";
 import * as converse from "./brands/converse";
 import * as gant from "./brands/gant";
 import * as maccosmetics from "./brands/maccosmetics";
+import * as bobbibrown from "./brands/bobbibrown";
 import * as flormar from "./brands/flormar";
 import * as fashfed from "./brands/fashfed";
 import * as sportive from "./brands/sportive";
@@ -300,6 +301,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "converse", listProducts: byMarket(converse.listProducts, listConverseUs) },
   { brand: "gant", listProducts: tr(gant.listProducts) },
   { brand: "maccosmetics", listProducts: tr(maccosmetics.listProducts) },
+  { brand: "bobbibrown", listProducts: tr(bobbibrown.listProducts) },
   { brand: "flormar", listProducts: tr(flormar.listProducts) },
   { brand: "fashfed", listProducts: tr(fashfed.listProducts) },
   { brand: "sportive", listProducts: tr(sportive.listProducts) },

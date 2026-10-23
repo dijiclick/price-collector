@@ -150,6 +150,7 @@ export const BRANDS: BrandInfo[] = [
   { slug: "converse", label: "Converse", category: "Ayakkabı", logo: "/brands/converse.svg", countries: ["TR", "US"] },
   { slug: "gant", label: "GANT", category: "Giyim", logo: "/brands/gant.svg", countries: ["TR"] },
   { slug: "maccosmetics", label: "M·A·C", category: "Kozmetik", logo: "/brands/maccosmetics.svg", countries: ["TR"] },
+  { slug: "bobbibrown", label: "Bobbi Brown", category: "Kozmetik", logo: "/brands/bobbibrown.svg", countries: ["TR"] },
   { slug: "flormar", label: "Flormar", category: "Kozmetik", logo: "/brands/flormar.svg", countries: ["TR"] },
   { slug: "fashfed", label: "FashFed", category: "Çok markalı", logo: "/brands/fashfed.svg", countries: ["TR"] },
   { slug: "sportive", label: "Sportive", category: "Spor", logo: "/brands/sportive.svg", countries: ["TR"] },
