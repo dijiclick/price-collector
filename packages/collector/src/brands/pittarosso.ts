@@ -1,39 +1,40 @@
 /**
  * PittaRosso (pittarosso.com) — Italy's shoe chain, EUR.
  *
- * The site is a headless Shopify store (Next.js) whose search runs on Algolia:
- * app `CMQTX6QV1X`, public search key and index from the site's own bundle
- * (`NEXT_PUBLIC_ALGOLIA_*`). Algolia answers a GitHub runner directly (probe run
- * 39635106148), no proxy.
+ * The site is a headless Shopify store (Next.js). Its search moved from Algolia
+ * to Typesense around 2026-10-21 — the old Algolia app now answers 403 "the
+ * application is blocked". The new route, both keys public in the site's own
+ * bundle (`NEXT_PUBLIC_TYPESENSE_*`, `NEXT_PUBLIC_SHOPIFY_ACCESS_TOKEN`):
  *
- * - One Algolia record per VARIANT (size), with `price`, `compare_at_price`,
- *   `price_ratio` (price / compare, 0 when there is no compare price),
- *   `inventory_available`, `option1` (= size), `named_tags.GENDER`,
- *   `product_type` and the product's `collections`.
- * - Deals filter: `price_ratio` in (0, 0.99) and in stock. All records of a
- *   product are grouped back into one row with per-size stock.
+ * - Typesense `tpsns-pit.xphub-run.com`, collection `pittarosso_products_it`
+ *   (one document per product, scoped search key). It carries the shop's own
+ *   collections, `named_tags.GENDER`/`COLOR`, `stock_level`, title, handle,
+ *   image — but NO prices. The deal list is collection `articoli-in-sconto`
+ *   with `stock_level > 0`.
+ * - Prices and sizes from the Shopify Storefront API (`nodes(ids:)`, 100 a
+ *   call): each variant's `price` / `compareAtPrice` / `availableForSale` /
+ *   size option, turned into the per-variant records the mapper reads.
  * - NOT a deal: rows in the `omnibus-label-omnibus-not-compliant` collection.
  *   Their PDP shows the strike price but also "Precedentemente era <current
  *   price>" — the lowest price of the last 30 days equals today's, so the
  *   strike price is not a reduction the shop can claim under the Omnibus rule
  *   (547 of 1,367 in-stock deals on 2026-10-21). They are excluded.
- * - Algolia stops at 1,000 hits per query, so the walk is split by gender and,
- *   when a slice is still larger, by price band — every slice must come back
- *   whole or the run throws.
  */
 import type { ProductRecord, SizeVariant } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
 import type { CountryCode } from "../../../../lib/countries";
 
-const APP = "CMQTX6QV1X";
-const KEY = "506d21d2a74394abc76c10684c5c90ea";
-const INDEX = "shopify_prod_products_custom_ranking";
+const TS_HOST = "https://tpsns-pit.xphub-run.com";
+const TS_COLLECTION = "pittarosso_products_it";
+const TS_KEY = "dHhGRXBCSVdWejRpUlZLMUZYS2VtQXMwaW9tdE9aSDd1ZkN4SVBUV1Mvdz1UQXM5eyJmaWx0ZXJfYnkiOiJoaWRkZW5faTo9MCIsImxpbWl0X211bHRpX3NlYXJjaGVzIjoyNX0=";
+const SF_URL = "https://pittarosso.myshopify.com/api/2025-01/graphql.json";
+const SF_TOKEN = "3b73d2cdbe54bba09e4cc07d6d213adf";
 const SITE = "https://www.pittarosso.com";
-const URL_Q = `https://${APP}-dsn.algolia.net/1/indexes/${INDEX}/query`;
+const ON_SALE = "articoli-in-sconto";
 const NOT_COMPLIANT = "omnibus-label-omnibus-not-compliant";
-/** Only what the mapper reads — full records carry body_html and ~40 collections (9.5 MB per 1,000). */
-const ATTRS = "id,title,handle,image,vendor,product_type,named_tags.COLOR,collections,inventory_available,price,compare_at_price,option1,barcode,position";
+const TS_PAGE = 250;
+const SF_BATCH = 100;
 const CAP = 1500;
 const MAX_REQUESTS = 40;
 const PAUSE_MS = 250;
@@ -49,9 +50,6 @@ export const GENDERS: [string, ProductRecord["gender"]][] = [
   ["RAGAZZA", "cocuk"],
   ["RAGAZZO", "cocuk"],
 ];
-
-export const baseFilters = (gender: string): string =>
-  `inventory_available:true AND named_tags.GENDER:"${gender}" AND NOT collections:${NOT_COMPLIANT}`;
 
 /** Group variant records into one row per product (deals only). Pure. */
 export function mapPittaRosso(hits: any[], gender: ProductRecord["gender"], country: CountryCode = "IT"): ProductRecord[] {
@@ -113,41 +111,76 @@ export function mapPittaRosso(hits: any[], gender: ProductRecord["gender"], coun
   return out;
 }
 
-async function query(params: string): Promise<any> {
-  return getJson<any>(URL_Q, {
-    method: "POST",
-    country: "IT",
-    timeoutMs: 30_000,
-    headers: { "X-Algolia-Application-Id": APP, "X-Algolia-API-Key": KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ params }),
-  });
+/** Typesense filter for one gender's in-stock markdowns. */
+export const baseFilters = (gender: string): string =>
+  `collections:=${ON_SALE} && collections:!=${NOT_COMPLIANT} && stock_level:>0 && named_tags.GENDER:=${gender}`;
+
+const SF_QUERY = `query($ids:[ID!]!){nodes(ids:$ids){... on Product{id variants(first:100){nodes{availableForSale barcode selectedOptions{name value} price{amount currencyCode} compareAtPrice{amount}}}}}}`;
+
+/**
+ * A Typesense document + its Storefront variants → the per-variant records
+ * `mapPittaRosso` reads (in-stock variants only, as the Algolia query was). Pure.
+ */
+export function toVariantHits(doc: any, product: any): any[] {
+  const vs: any[] = product?.variants?.nodes ?? [];
+  const colour = Array.isArray(doc?.named_tags?.COLOR) ? doc.named_tags.COLOR[0] : doc?.named_tags?.COLOR;
+  return vs
+    .map((v, i) => ({ v, i }))
+    .filter(({ v }) => v?.availableForSale === true && (v?.price?.currencyCode ?? "EUR") === "EUR")
+    .map(({ v, i }) => ({
+      id: doc.id,
+      title: doc.title,
+      handle: doc.handle,
+      image: doc.image ?? doc.main_image?.src ?? null,
+      vendor: doc.vendor,
+      product_type: doc.product_type,
+      named_tags: { COLOR: colour ?? null },
+      collections: doc.collections ?? [],
+      inventory_available: true,
+      price: Number(v.price?.amount),
+      compare_at_price: v.compareAtPrice ? Number(v.compareAtPrice.amount) : 0,
+      option1: (v.selectedOptions ?? []).find((o: any) => !/^(title|colou?r|colore)$/i.test(String(o?.name)))?.value ?? null,
+      barcode: v.barcode ?? null,
+      position: i,
+    }));
 }
 
 /** Register as `listPittaRosso(country)`. IT only. */
 export async function listPittaRosso(country: CountryCode): Promise<ProductRecord[]> {
   if (country !== "IT") return [];
   let requests = 0;
-  const rows = new Map<string, ProductRecord>();
-  // One slice = gender × price band; split the band until Algolia can return it whole.
-  const slice = async (g: string, lo: number, hi: number): Promise<any[]> => {
+  const tick = async () => {
     if (++requests > MAX_REQUESTS) throw new Error(`pittarosso/${country}: request budget (${MAX_REQUESTS}) spent`);
     if (requests > 1) await sleep(PAUSE_MS);
-    const numeric = `price_ratio>0,price_ratio<0.99,price>=${lo},price<${hi}`;
-    const d = await query(
-      `hitsPerPage=1000&filters=${encodeURIComponent(baseFilters(g))}&numericFilters=${encodeURIComponent(numeric)}` +
-        `&attributesToRetrieve=${encodeURIComponent(ATTRS)}&attributesToHighlight=${encodeURIComponent("[]")}`,
-    );
-    const nb = Number(d?.nbHits);
-    if (!Array.isArray(d?.hits) || !Number.isFinite(nb)) throw new Error(`pittarosso/${country}: bad Algolia answer for ${g}`);
-    if (nb <= 1000) return d.hits;
-    if (hi - lo < 1) throw new Error(`pittarosso/${country}: ${g} slice ${lo}-${hi} has ${nb} variants (> 1000)`);
-    const mid = Math.round(((lo + hi) / 2) * 100) / 100;
-    return [...(await slice(g, lo, mid)), ...(await slice(g, mid, hi))];
   };
+  const rows = new Map<string, ProductRecord>();
   for (const [g, gender] of GENDERS) {
-    const hits = await slice(g, 0, 1000);
-    for (const r of mapPittaRosso(hits, gender, country)) if (!rows.has(r.externalId)) rows.set(r.externalId, r);
+    const docs: any[] = [];
+    for (let page = 1; ; page++) {
+      await tick();
+      const q = new URLSearchParams({ q: "*", filter_by: baseFilters(g), per_page: String(TS_PAGE), page: String(page), include_fields: "id,title,handle,image,vendor,product_type,named_tags,collections" });
+      const d = await getJson<any>(`${TS_HOST}/collections/${TS_COLLECTION}/documents/search?${q}`, { country, timeoutMs: 30_000, headers: { "X-TYPESENSE-API-KEY": TS_KEY } });
+      if (!Array.isArray(d?.hits)) throw new Error(`pittarosso/${country}: bad Typesense answer for ${g}`);
+      docs.push(...d.hits.map((h: any) => h?.document).filter((x: any) => x?.id));
+      if (d.hits.length < TS_PAGE || page * TS_PAGE >= Number(d.found ?? 0)) break;
+    }
+    for (let i = 0; i < docs.length; i += SF_BATCH) {
+      await tick();
+      const batch = docs.slice(i, i + SF_BATCH);
+      const d = await getJson<any>(SF_URL, {
+        method: "POST",
+        country,
+        timeoutMs: 30_000,
+        headers: { "Content-Type": "application/json", "X-Shopify-Storefront-Access-Token": SF_TOKEN },
+        body: JSON.stringify({ query: SF_QUERY, variables: { ids: batch.map((x) => `gid://shopify/Product/${x.id}`) } }),
+      });
+      const nodes: any[] = d?.data?.nodes;
+      if (!Array.isArray(nodes)) throw new Error(`pittarosso/${country}: bad Storefront answer (${JSON.stringify(d?.errors ?? d).slice(0, 120)})`);
+      const hits = batch.flatMap((doc, k) => toVariantHits(doc, nodes[k]));
+      for (const r of mapPittaRosso(hits, gender, country)) if (!rows.has(r.externalId)) rows.set(r.externalId, r);
+    }
   }
+  if (!rows.size) throw new Error(`pittarosso/${country}: no reduced in-stock products`);
   const all = [...rows.values()];
   return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
 }

@@ -48,6 +48,7 @@ interface Market {
 }
 
 export const BONPRIX_MARKETS: Partial<Record<CountryCode, Market>> = {
+  // AT left the bff shop for the Next.js one on 2026-10-23: bonprix.ts collects it.
   AT: { kind: "bff", site: "https://www.bonprix.at", currency: "EUR", lang: "de-AT,de;q=0.9", trees: [{ path: "/kategorie/damen-sale/", gender: "kadin", pages: 14 }, { path: "/kategorie/herren-sale/", gender: "erkek", pages: 3 }] },
   CH: { kind: "legacy", site: "https://www.bonprix.ch", currency: "CHF", lang: "de-CH,de;q=0.9", trees: [{ path: "/kategorie/damen-sale/", gender: "kadin", pages: 15 }, { path: "/kategorie/herren-sale/", gender: "erkek", pages: 3 }] },
   IT: { kind: "legacy", site: "https://www.bonprix.it", currency: "EUR", lang: "it-IT,it;q=0.9", trees: [{ path: "/categoria/donna-sconti/", gender: "kadin", pages: 15 }, { path: "/categoria/uomo-sconti/", gender: "erkek", pages: 3 }] },

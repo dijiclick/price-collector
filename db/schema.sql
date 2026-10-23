@@ -691,3 +691,17 @@ CREATE TABLE IF NOT EXISTS brand_qa (
   checked_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (day, brand, country)
 );
+
+-- Search completions (2026-10-22, lib/search-terms.mjs): the 1–3 word phrases
+-- product names are made of, per market, with how many names hold each.
+-- Rewritten daily by scripts/search-terms.mjs on the main box
+-- (modadrop-search-terms.timer), one market per transaction; read by
+-- /api/suggest as a prefix range on the primary key. `folded` is "C" so a
+-- prefix is a plain btree range. Nothing typed is ever stored here.
+CREATE TABLE IF NOT EXISTS search_terms (
+  country TEXT NOT NULL,
+  folded  TEXT COLLATE "C" NOT NULL,
+  term    TEXT NOT NULL,
+  n       INTEGER NOT NULL,
+  PRIMARY KEY (country, folded)
+);

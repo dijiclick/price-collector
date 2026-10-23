@@ -1,87 +1,115 @@
 /**
  * Boscov's (boscovs.com, US only) — family-owned department store, clearance only.
  *
- * Boscov's runs on Kibo Commerce (Mozu). Category pages render no products;
- * the browser loads them from the storefront search API on the same host:
+ * Since 2026-10-22 the shop is a Next.js App Router front end on Kibo (tenant
+ * 30471): the old `/api/commerce/catalog/storefront/productsearch/search`
+ * proxy is gone (404) and no `sb-sf-at-prod` session cookie is set any more.
+ * Each category page's server render carries its 30 products as JSON in the
+ * React flight payload (`self.__next_f.push`): `{"items":[{"code",…}],
+ * "currentPage","totalPages"}`, paged with `?page=N` (0-based; N=1 is page 2).
+ * ~175 KB gzip a page, no cookie, no key.
  *
- *   GET https://www.boscovs.com/api/commerce/catalog/storefront/productsearch/search/
- *       ?filter=categoryId req <id>&pageSize=200&startIndex=N
- *
- * with the `x-vol-*` headers the page itself publishes (`data-mz-preload-
- * apicontext`: tenant 30471, site 51049) and the anonymous session cookies
- * (`sb-sf-at-prod`, …) that any page load sets — without them the proxy answers
- * 401 "Application access token required". So the run opens one category page
- * first, keeps its cookies, then pages the API.
- *
- * Each product has `price.price` (list) and `price.salePrice` (the clearance
- * price the site shows against the struck-through list price); configurable
- * products with a `priceRange` across sizes are dropped. Clearance listings
- * hide sold-out products (`outOfStockBehavior: HideProduct`), so rows are in
- * stock. There is no brand field; the brand leads the product name.
+ * Each product has `price.salePrice` and `price.listPrice` (the struck "Ticketed"
+ * price the site shows); products with a `priceRange` across sizes are
+ * dropped. Clearance listings hide sold-out products, and `isAvailable` is
+ * carried through.
  */
 import { cleanGallery, type ProductRecord } from "../types";
 import { toMinor } from "../normalize";
+import { getText } from "../http";
 import type { CountryCode } from "../../../../lib/countries";
 
 export const brand = "boscovs";
 
 const SITE = "https://www.boscovs.com";
-const API = `${SITE}/api/commerce/catalog/storefront/productsearch/search/`;
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-const PAGE = 200;
 const CAP = 1500;
-const PAUSE_MS = 800;
+const PAUSE_MS = Number(process.env.BOSCOVS_PAUSE_MS ?? 800);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const VOL_HEADERS = {
-  "x-vol-site": "51049",
-  "x-vol-tenant": "30471",
-  "x-vol-catalog": "1",
-  "x-vol-master-catalog": "1",
-  "x-vol-currency": "USD",
-  "x-vol-locale": "en-US",
-  "x-vol-user-claims": "__mzrpt__",
-  "x-vol-app-claims": "__mzrpt__",
-};
-
-/** Clearance categories (ids from each page's `data-mz-preload-pagecontext`), with gender and page budget. */
-export const BOSCOVS_SLICES: [id: number, gender: ProductRecord["gender"], category: string | null, pages: number][] = [
-  [999002886, "kadin", null, 3], // Women's clothing clearance
-  [999002887, "kadin", "Shoes", 1], // Women's shoes clearance
-  [25000006, "kadin", null, 1], // Handbags & accessories clearance
-  [999002888, "erkek", null, 2], // Men's clothing clearance
-  [999002893, "erkek", "Shoes", 1], // Men's shoes clearance
-  [999002530, null, null, 1], // Beauty clearance
+/** Clearance categories (slug, gender, category, page budget at 30 a page). */
+export const BOSCOVS_SLICES: [slug: string, gender: ProductRecord["gender"], category: string | null, pages: number][] = [
+  ["all-womens-clothing-clearance", "kadin", null, 18],
+  ["all-womens-shoes-clearance", "kadin", "Shoes", 6],
+  ["handbags-accessories-clearance", "kadin", null, 6],
+  ["mens-clothing-clearance", "erkek", null, 12],
+  ["all-mens-shoes-clearance", "erkek", "Shoes", 3],
+  ["all-beauty-clearance", null, null, 2],
 ];
 
-export const searchUrl = (categoryId: number, start: number) =>
-  `${API}?filter=${encodeURIComponent(`categoryId req ${categoryId}`)}&pageSize=${PAGE}&startIndex=${start}`;
+export const categoryUrl = (slug: string, page: number) => `${SITE}/category/${slug}${page > 0 ? `?page=${page}` : ""}`;
 
-/** Map one Kibo search item. Pure; null unless a single sale price below list. */
+/** The decoded React flight payload of an App Router page. */
+function flight(html: string): string {
+  let out = "";
+  for (const m of html.matchAll(/self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)/g)) {
+    try {
+      out += JSON.parse(`"${m[1]}"`);
+    } catch {
+      /* a chunk that is not a plain string — skip */
+    }
+  }
+  return out;
+}
+
+/** The product grid of a category page: items, page index and page count; null when absent. Pure. */
+export function parseCategoryPage(html: string): { items: any[]; currentPage: number; totalPages: number } | null {
+  const s = flight(html);
+  const at = s.indexOf('"items":[{"code"');
+  if (at < 0) return null;
+  const from = at + '"items":'.length;
+  let depth = 0, inStr = false, esc = false, end = -1;
+  for (let i = from; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "[" || ch === "{") depth++;
+    else if ((ch === "]" || ch === "}") && --depth === 0) {
+      end = i;
+      break;
+    }
+  }
+  if (end < 0) return null;
+  let items: any[];
+  try {
+    items = JSON.parse(s.slice(from, end + 1));
+  } catch {
+    return null;
+  }
+  const pg = s.slice(end).match(/^\],"currentPage":(\d+),"totalPages":(\d+)/);
+  return { items, currentPage: pg ? Number(pg[1]) : 0, totalPages: pg ? Number(pg[2]) : 1 };
+}
+
+/** Map one category-grid item. Pure; null unless a single sale price below list. */
 export function mapBoscovs(x: any, gender: ProductRecord["gender"], category: string | null): ProductRecord | null {
-  const code = x?.productCode;
-  const name = String(x?.content?.productName ?? "").trim();
-  const slug = x?.content?.seoFriendlyUrl;
-  if (!code || !name || !slug || x?.priceRange) return null;
-  const list = Number(x?.price?.price);
+  const code = x?.code;
+  const name = String(x?.name ?? "").trim();
+  const path = typeof x?.productUrl === "string" && x.productUrl.startsWith("/product/") ? x.productUrl : null;
+  if (!code || !name || !path) return null;
+  if (x?.priceRange && x.priceRange !== "$undefined") return null;
+  const list = Number(x?.price?.listPrice);
   const sale = Number(x?.price?.salePrice);
   if (!(sale > 0) || !(list > sale)) return null;
-  const photos = (x?.content?.productImages ?? [])
-    .map((im: any) => (typeof im?.imageUrl === "string" && im.imageUrl ? `https:${im.imageUrl.replace(/^https?:/, "")}?max=800` : null))
-    .filter(Boolean) as string[];
+  const photos = [x?.primaryImage?.imageUrl, x?.hoverImageUrl]
+    .filter((u): u is string => typeof u === "string" && /^(https?:)?\/\//.test(u))
+    .map((u) => `https:${u.replace(/^https?:/, "")}?max=800`);
   const kids = /\b(girls?|boys?|toddler|infant|baby|kids?)\b/i.test(name);
   return {
     brand,
     country: "US",
     externalId: String(code),
     name,
-    url: `${SITE}/product/${slug}/${code}`,
+    url: `${SITE}${path}`,
     imageUrl: photos[0] ?? null,
     images: cleanGallery(photos, photos[0] ?? null),
     price: toMinor(sale),
     listPrice: toMinor(list),
     currency: "USD",
-    inStock: true,
+    inStock: x?.isAvailable !== false,
     category,
     gender: kids ? "cocuk" : gender,
     variants: null,
@@ -90,40 +118,24 @@ export function mapBoscovs(x: any, gender: ProductRecord["gender"], category: st
   };
 }
 
-/** Anonymous session cookies from one page load (name=value pairs only). */
-async function sessionCookies(): Promise<string> {
-  const res = await fetch(`${SITE}/category/all-womens-clearance`, {
-    headers: { "User-Agent": UA, Accept: "text/html" },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) throw new Error(`boscovs: session page HTTP ${res.status}`);
-  await res.text();
-  const raw: string[] = typeof (res.headers as any).getSetCookie === "function" ? (res.headers as any).getSetCookie() : [];
-  const jar = raw.map((c) => c.split(";")[0]).filter((c) => c.includes("="));
-  if (!jar.some((c) => c.startsWith("sb-sf-at-prod="))) throw new Error("boscovs: no storefront session cookie");
-  return jar.join("; ");
-}
-
-export async function listBoscovs(country: CountryCode): Promise<ProductRecord[]> {
+export async function listBoscovs(country: CountryCode, fetchHtml: (u: string) => Promise<string> = (u) => getText(u, { country, timeoutMs: 45_000 })): Promise<ProductRecord[]> {
   if (country !== "US") return [];
-  const cookie = await sessionCookies();
   const perSlice: ProductRecord[][] = [];
-  for (const [id, gender, category, pages] of BOSCOVS_SLICES) {
+  let calls = 0;
+  for (const [slug, gender, category, pages] of BOSCOVS_SLICES) {
     const rows: ProductRecord[] = [];
     for (let p = 0; p < pages; p++) {
-      await sleep(PAUSE_MS);
-      const res = await fetch(searchUrl(id, p * PAGE), {
-        headers: { "User-Agent": UA, Accept: "application/json", cookie, ...VOL_HEADERS },
-        signal: AbortSignal.timeout(45_000),
-      });
-      if (!res.ok) throw new Error(`boscovs: category ${id} start ${p * PAGE}: HTTP ${res.status}`);
-      const d: any = await res.json();
-      const items: any[] = Array.isArray(d?.items) ? d.items : [];
-      for (const x of items) {
+      if (calls++) await sleep(PAUSE_MS);
+      const grid = parseCategoryPage(await fetchHtml(categoryUrl(slug, p)));
+      if (!grid) {
+        if (p === 0 && slug === BOSCOVS_SLICES[0][0]) throw new Error(`boscovs: no product grid on ${categoryUrl(slug, p)} (markup changed?)`);
+        break;
+      }
+      for (const x of grid.items) {
         const r = mapBoscovs(x, gender, category);
         if (r) rows.push(r);
       }
-      if (items.length < PAGE || (p + 1) * PAGE >= Number(d?.totalCount ?? 0)) break;
+      if (!grid.items.length || p + 1 >= grid.totalPages) break;
     }
     perSlice.push(rows);
   }

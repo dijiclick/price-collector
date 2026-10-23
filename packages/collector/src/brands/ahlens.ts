@@ -10,6 +10,7 @@
  * full-price colours of a reduced style, which the mapper drops. Every reduced
  * row measured was tagged `custom.sale_price_type = clearance` with
  * `historical_price` equal to the struck list price — the shop's own markdown.
+ * A section with no sale left (beauty, 2026-10-23) is skipped, not fatal.
  * One page (100 groups) carries each colour's sizes with per-size stock and
  * price, so no detail calls.
  */
@@ -134,7 +135,10 @@ export async function listAhlens(country: CountryCode, cap = CAP): Promise<Produ
       });
       const list = d?.primaryList;
       const groups: any[] = list?.productGroups ?? [];
-      if (!list || (skip === 0 && !groups.length)) throw new Error(`ahlens/${country}: ${sec.ref} returned no products`);
+      if (!list) throw new Error(`ahlens/${country}: ${sec.ref} returned no product list`);
+      // A section whose sale has ended answers totalHits 0 (/rea/skonhet, 2026-10-23):
+      // skip it, and fail only when every section is empty.
+      if (skip === 0 && !groups.length) break;
       let reduced = 0;
       for (const g of groups) {
         const prods: any[] = g?.products ?? [];
@@ -151,6 +155,7 @@ export async function listAhlens(country: CountryCode, cap = CAP): Promise<Produ
       if (!groups.length || reduced === 0 || skip + PAGE >= Number(list.totalHits ?? 0)) break;
     }
   }
+  if (!byId.size) throw new Error(`ahlens/${country}: every rea section returned no products`);
   const all = [...byId.values()];
   return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, cap);
 }

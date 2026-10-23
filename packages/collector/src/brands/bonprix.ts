@@ -17,13 +17,20 @@
  * <span>-NN%</span>`: bonprix's own former price (EU Omnibus). Cards without
  * a struck price, or with an "ab" (from) price, are skipped. No sizes: the
  * card carries none.
+ *
+ * bonprix.at moved to the same Next.js shop on 2026-10-23 (its old
+ * `window.modelContainer` render is gone), so AT runs through this path too.
  */
 import type { ProductRecord } from "../types";
 import { getText } from "../http";
 import type { CountryCode } from "../../../../lib/countries";
 import { listBonprixIntl } from "./bonprix-intl";
 
-const SITE = "https://www.bonprix.de";
+/** Markets on the Next.js shop; the rest are in bonprix-intl.ts. */
+export const BONPRIX_NEXT: Partial<Record<CountryCode, { site: string; lang: string }>> = {
+  DE: { site: "https://www.bonprix.de", lang: "de-DE,de;q=0.9" },
+  AT: { site: "https://www.bonprix.at", lang: "de-AT,de;q=0.9" },
+};
 export const BONPRIX_TREES: { path: string; gender: "kadin" | "erkek"; pages: number }[] = [
   { path: "/kategorie/damen-sale/", gender: "kadin", pages: 14 },
   { path: "/kategorie/herren-sale/", gender: "erkek", pages: 3 },
@@ -72,7 +79,7 @@ export interface BonprixCard {
 }
 
 /** Every card on a listing page with a struck price. Pure. */
-export function parseCards(html: string): BonprixCard[] {
+export function parseCards(html: string, site = BONPRIX_NEXT.DE!.site): BonprixCard[] {
   const starts = [...html.matchAll(/data-testid="article-card-\d+"/g)].map((m) => m.index!);
   const out: BonprixCard[] = [];
   for (let i = 0; i < starts.length; i++) {
@@ -89,16 +96,16 @@ export function parseCards(html: string): BonprixCard[] {
     const was = old ? euroCents(old.text) : null;
     if (price == null || was == null || !(was > price) || price <= 0) continue;
     // The CDN serves the same asset as JPEG; WebP fails on older Android image loaders.
-    const img = card.match(/<img[^>]*?\ssrc="(https:\/\/image01\.bonprix\.de\/[^"]+)"/)?.[1]?.replace(/\.webp$/, ".jpg") ?? null;
-    out.push({ itemNumber: href[2], url: `${SITE}${href[1]}`, title: decode(title), image: img, price, was });
+    const img = card.match(/<img[^>]*?\ssrc="(https:\/\/image01\.bonprix\.[a-z]+\/[^"]+)"/)?.[1]?.replace(/\.webp$/, ".jpg") ?? null;
+    out.push({ itemNumber: href[2], url: `${site}${href[1]}`, title: decode(title), image: img, price, was });
   }
   return out;
 }
 
-export function toRecord(c: BonprixCard, gender: ProductRecord["gender"], inStock: boolean): ProductRecord {
+export function toRecord(c: BonprixCard, gender: ProductRecord["gender"], inStock: boolean, country: CountryCode = "DE"): ProductRecord {
   return {
     brand: "bonprix",
-    country: "DE",
+    country,
     externalId: c.itemNumber,
     name: c.title,
     url: c.url,
@@ -113,8 +120,11 @@ export function toRecord(c: BonprixCard, gender: ProductRecord["gender"], inStoc
   };
 }
 
-export async function listBonprix(country: CountryCode, fetchHtml: (u: string) => Promise<string> = (u) => getText(u, { country, timeoutMs: 60_000, headers: { "Accept-Language": "de-DE,de;q=0.9" } })): Promise<ProductRecord[]> {
-  if (country !== "DE") return listBonprixIntl(country);
+export async function listBonprix(country: CountryCode, fetchHtml?: (u: string) => Promise<string>): Promise<ProductRecord[]> {
+  const mk = BONPRIX_NEXT[country];
+  if (!mk) return listBonprixIntl(country);
+  const SITE = mk.site;
+  const get = fetchHtml ?? ((u: string) => getText(u, { country, timeoutMs: 60_000, headers: { "Accept-Language": mk.lang } }));
   const byId = new Map<string, ProductRecord>();
   let calls = 0;
   for (const tree of BONPRIX_TREES) {
@@ -123,21 +133,21 @@ export async function listBonprix(country: CountryCode, fetchHtml: (u: string) =
       if (calls++) await sleep(PAUSE_MS);
       let html: string;
       try {
-        html = await fetchHtml(`${SITE}${tree.path}${page > 1 ? `?page=${page}` : ""}`);
+        html = await get(`${SITE}${tree.path}${page > 1 ? `?page=${page}` : ""}`);
       } catch (err) {
         if (byId.size === 0 && page === 1) throw err;
         break;
       }
-      const cards = parseCards(html);
+      const cards = parseCards(html, SITE);
       // Past the last page bonprix serves page 1 again: stop when the first card repeats.
       if (page > 1 && cards[0]?.itemNumber === firstOfTree) break;
       if (page === 1) firstOfTree = cards[0]?.itemNumber ?? null;
-      if (page === 1 && cards.length === 0 && tree === BONPRIX_TREES[0]) throw new Error("bonprix: no product cards on the sale page (markup changed?)");
+      if (page === 1 && cards.length === 0 && tree === BONPRIX_TREES[0]) throw new Error(`bonprix/${country}: no product cards on the sale page (markup changed?)`);
       const stock = availabilityByUrl(html);
       let fresh = 0;
       for (const c of cards) {
         if (byId.has(c.itemNumber)) continue;
-        byId.set(c.itemNumber, toRecord(c, tree.gender, stock.get(c.url) ?? true));
+        byId.set(c.itemNumber, toRecord(c, tree.gender, stock.get(c.url) ?? true, country));
         fresh++;
       }
       const total = Number(html.match(/\\"totalResults\\":(\d+)/)?.[1] ?? 0);

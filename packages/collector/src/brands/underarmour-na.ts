@@ -30,9 +30,15 @@ import type { CountryCode } from "../../../../lib/countries";
 
 export const brand = "underarmour";
 
-export const UA_MARKETS: Partial<Record<CountryCode, { key: string; locale: string; currency: string }>> = {
+/**
+ * `outletFilter`: walk `browse/group_id/root` filtered to `group_id=outlet`
+ * instead of browsing the outlet group. The en-ca index has answered the
+ * outlet group's own browse with 0 results since ~2026-10-22 while the group
+ * still lists 2,413 products and the filtered root returns all of them.
+ */
+export const UA_MARKETS: Partial<Record<CountryCode, { key: string; locale: string; currency: string; outletFilter?: boolean }>> = {
   US: { key: "key_Gz4VzKsXbR7b7fSh", locale: "en-us", currency: "USD" },
-  CA: { key: "key_MbFu7hkkn75UIUIA", locale: "en-ca", currency: "CAD" },
+  CA: { key: "key_MbFu7hkkn75UIUIA", locale: "en-ca", currency: "CAD", outletFilter: true },
 };
 
 export const UA_HOST = "https://ezeubuswo-zone.cnstrc.com";
@@ -85,7 +91,8 @@ export function uaBrowseUrl(country: CountryCode, gender: string, page: number):
     "filters[gender]": gender,
     variations_map: JSON.stringify(UA_VARIATIONS_MAP),
   });
-  return `${UA_HOST}/browse/group_id/outlet?${q}`;
+  if (m.outletFilter) q.set("filters[group_id]", "outlet");
+  return `${UA_HOST}/browse/group_id/${m.outletFilter ? "root" : "outlet"}?${q}`;
 }
 
 const num = (v: unknown): number | null => {
