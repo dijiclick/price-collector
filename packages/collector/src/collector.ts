@@ -14,6 +14,7 @@ import {
   pruneSnapshots,
   dbNow,
   countInStock,
+  recentRuns,
   markMissingOutOfStock,
   getWatchedSizes,
   getVariantsByIds,
@@ -276,8 +277,12 @@ async function collectBrand(
 
       // Anything we didn't see this run is gone from the brand's listing — sold
       // out or delisted. Only sweep when the run looks complete, so a partial
-      // collection (timeout, blocked category) can't wipe the whole brand.
-      if (prevInStock === 0 || products.length >= prevInStock * 0.5) {
+      // collection (timeout, blocked category) can't wipe the whole brand —
+      // unless the smaller count has held for several runs (sweepLooksComplete).
+      const recent = products.length < prevInStock * 0.5
+        ? await recentRuns(db, adapter.brand, country, STABLE_RUNS)
+        : [];
+      if (sweepLooksComplete(products.length, prevInStock, recent)) {
         // Tracked products of a resolvable brand are the reprice pass's to
         // own — the sweep never sees them, so "missing" is not evidence.
         res.gone = await markMissingOutOfStock(
@@ -413,6 +418,38 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
 }
 
 export const sweepOnly = (env: NodeJS.ProcessEnv = process.env): boolean => env.SWEEP_ONLY === "1";
+
+/** Error-free runs in a row, at about this run's size, that prove a shrink is real. */
+export const STABLE_RUNS = 3;
+
+/**
+ * Whether this run may delist what it did not see.
+ *
+ * Normally: it collected at least half of what is in stock in the database, so
+ * a partial walk (timeout, blocked category) cannot wipe the brand.
+ *
+ * But that guard alone ratchets. The in-stock count it compares against is
+ * exactly what the sweep would have cleared, so once a brand's real sale more
+ * than halves, the stale rows keep the count high, the guard skips the sweep,
+ * and they stay "in stock" for good. Åhléns SE, 2026-10-23: the beauty sale
+ * ended, runs settled at 201 rows while the feed held 392, and 211 deals —
+ * every one a 404 on the shop — sat in the feed, last seen 2026-10-22.
+ *
+ * So the sweep also runs when the previous STABLE_RUNS runs all succeeded at
+ * about this size (within 20%): one short run is a hiccup; the same short
+ * count four times running is the catalogue. Pure.
+ */
+export function sweepLooksComplete(
+  count: number,
+  prevInStock: number,
+  recent: { products: number; error: string | null }[],
+): boolean {
+  if (prevInStock === 0 || count >= prevInStock * 0.5) return true;
+  if (count === 0 || recent.length < STABLE_RUNS) return false;
+  return recent
+    .slice(0, STABLE_RUNS)
+    .every((r) => !r.error && r.products > 0 && Math.abs(r.products - count) <= 0.2 * Math.max(r.products, count));
+}
 
 function failOnBlocked(results: BrandResult[], label: (r: BrandResult) => string): void {
   // Fail the run so CI actually tells us a brand died. Only for brands that

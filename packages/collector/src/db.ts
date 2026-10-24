@@ -504,6 +504,23 @@ export async function countInStock(db: Db, brand: string, country: string): Prom
 }
 
 /**
+ * The most recent runs of one brand in one market, newest first: how many
+ * products each collected and whether it errored. Feeds the delist guard's
+ * "the catalogue really shrank" escape (`sweepLooksComplete`).
+ */
+export async function recentRuns(
+  db: Db,
+  brand: string,
+  country: string,
+  n: number,
+): Promise<{ products: number; error: string | null }[]> {
+  return db.query<{ products: number; error: string | null }>(
+    "SELECT products, error FROM collector_runs WHERE brand=$1 AND country=$2 ORDER BY run_at DESC LIMIT $3",
+    [brand, country, n],
+  );
+}
+
+/**
  * Mark a brand's products that this run didn't see as out of stock. Brands drop
  * sold-out items from their listings, so "no longer listed" is our only signal
  * that something is gone — without this they'd sit in the feed forever at their

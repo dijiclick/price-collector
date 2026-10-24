@@ -80,7 +80,17 @@ export const ZALANDO_MARKETS: Partial<Record<CountryCode, { host: string; appDom
 };
 
 const PAGE = 50; // the server rejects larger pages ("first is greater than the max allowed value")
-const MAX_PAGES = Number(process.env.ZALANDO_MAX_PAGES ?? 40);
+/**
+ * Page budget PER ORDER (2026-10-24). `SALE` ranks a card by its DEEPEST size,
+ * so the top of it is now mostly size-range cards ("ab 19,99 €", "bis zu -80%"),
+ * which are dropped: 1,738 of the first 2,000 cards in DE, 1,702 in ES. A
+ * 40-page SALE-only walk kept ~260-300 deals (ES baseline 668) and every clean
+ * deal below that window went unseen. So half the budget goes to SALE (deepest
+ * single-price cuts) and the rest to the same sale in POPULARITY order (~80%
+ * clean cards), stopping at the cap either way: ≤ 60 requests a market.
+ */
+const MAX_PAGES = Number(process.env.ZALANDO_MAX_PAGES ?? 30);
+export const ZALANDO_ORDERS = ["SALE", "POPULARITY"] as const;
 const PAUSE_MS = Number(process.env.ZALANDO_PAUSE_MS ?? 800);
 const CAP = 1500;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -111,12 +121,12 @@ export function appHeaders(country: CountryCode, ts = Date.now()): Record<string
 }
 
 /** Variables for the persisted AppCatalog query; everything optional switched off. */
-export function catalogVariables(country: CountryCode, after: string | null): Record<string, unknown> {
+export function catalogVariables(country: CountryCode, after: string | null, order: string = "SALE"): Record<string, unknown> {
   const m = ZALANDO_MARKETS[country]!;
   return {
     id: `ern:collection:cat:categ:${m.women}`,
     first: PAGE,
-    order: "SALE",
+    order,
     afterCursor: after,
     filters: { toggleFilters: [{ key: "sales" }] },
     productCardImageWidth: 1000,
@@ -226,32 +236,35 @@ export async function listZalando(country: CountryCode): Promise<ProductRecord[]
   const m = ZALANDO_MARKETS[country];
   if (!m) return [];
   const byId = new Map<string, ProductRecord>();
-  let after: string | null = null;
-  for (let page = 0; page < MAX_PAGES && byId.size < CAP; page++) {
-    if (page > 0) await sleep(PAUSE_MS);
-    const body: string = JSON.stringify([{ id: APP_CATALOG, variables: catalogVariables(country, after) }]);
-    const data: any = await getJson<any>(`https://${m.host}${PATH}`, {
-      method: "POST",
-      body,
-      headers: appHeaders(country),
-      country,
-      retries: 1,
-    }).catch((e) => {
-      if (page === 0) throw new Error(`zalando/${country}: catalog refused (${e?.message ?? e})`);
-      return null;
-    });
-    const ents: any = (Array.isArray(data) ? data[0] : data)?.data?.collection?.entities;
-    const edges: any[] = ents?.edges ?? [];
-    if (!edges.length) {
-      if (page === 0) throw new Error(`zalando/${country}: empty catalog answer`);
-      break;
+  let requests = 0;
+  for (const order of ZALANDO_ORDERS) {
+    let after: string | null = null;
+    for (let page = 0; page < MAX_PAGES && byId.size < CAP; page++) {
+      if (requests++ > 0) await sleep(PAUSE_MS);
+      const body: string = JSON.stringify([{ id: APP_CATALOG, variables: catalogVariables(country, after, order) }]);
+      const data: any = await getJson<any>(`https://${m.host}${PATH}`, {
+        method: "POST",
+        body,
+        headers: appHeaders(country),
+        country,
+        retries: 1,
+      }).catch((e) => {
+        if (requests === 1) throw new Error(`zalando/${country}: catalog refused (${e?.message ?? e})`);
+        return null;
+      });
+      const ents: any = (Array.isArray(data) ? data[0] : data)?.data?.collection?.entities;
+      const edges: any[] = ents?.edges ?? [];
+      if (!edges.length) {
+        if (requests === 1) throw new Error(`zalando/${country}: empty catalog answer`);
+        break;
+      }
+      for (const e of edges) {
+        const r = mapNode(country, e?.node);
+        if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
+      }
+      after = ents?.pageInfo?.endCursor ?? null;
+      if (!after) break;
     }
-    for (const e of edges) {
-      const r = mapNode(country, e?.node);
-      if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
-    }
-    after = ents?.pageInfo?.endCursor ?? null;
-    if (!after) break;
   }
   return [...byId.values()].slice(0, CAP);
 }

@@ -56,6 +56,30 @@
  * each call has its own timeout, and the optional colour-range calls stop at a
  * time budget; the sale grid and the (one- or two-page) men's pass always
  * finish, so a slow run never returns a partial grid.
+ *
+ * 2026-10-24: GB/CH/FR/AU fail roughly one run in two with 403/429, at start=0
+ * or mid-walk (start=200..800). It is not a rate limit this adapter can pace
+ * its way out of: the grid walk is only 5-6 requests before it fails, and once
+ * a runner is refused it stays refused for minutes (AU and IT logged 15 refused
+ * Product-Variation calls in a row over 2.5 min, every host). The "mirrors" do
+ * not escape it either: .eu, .global, .co.uk, .fr, .de and .it all CNAME to
+ * one Akamai property (prod.michaelkors.eu.edgekey.net); the `cf-ray` a probe
+ * sees on a 200 comes from the origin behind Akamai, not a second edge. So a
+ * refusal is Akamai's verdict on that runner's IP, and the matrix gives each
+ * market its own runner — the next run usually passes. What this adapter can
+ * do is never turn a refusal into bad data:
+ * - A mid-walk refusal still fails the market. Returning the pages read so far
+ *   would pass the collector's 50% guard (FR failed at start=800, i.e. 80%), so
+ *   the sweep would mark the unread fifth sold out and the next run would fire
+ *   back_in_stock pushes for all of it.
+ * - A page after a full one that comes back 200 with no tiles is fetched once
+ *   more, and fails the market unless it is a grid fragment (`isGridFragment`).
+ *   IT returned 379 products on 2026-10-23 21:55 (899 the run before, and
+ *   5 colour-range styles instead of ~45): two full pages, then a 200 with no
+ *   tiles ended the walk as if the grid were done. The 50% guard caught that
+ *   one; a stop at page four would have passed it.
+ * - Colour-range calls stop after VARIATION_REFUSALS refusals in a row instead
+ *   of spending the rest of the budget (and ~60 more refused requests) on them.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getText } from "../http";
@@ -131,6 +155,10 @@ const PAGE_SIZE = 200;
 const MAX_PAGES = 10;
 /** Product-Variation calls per market, for colour-range styles. */
 const VARIATION_BUDGET = 40;
+/** Consecutive failed Product-Variation calls after which the runner is taken as refused. */
+const VARIATION_REFUSALS = 3;
+/** Wait before re-reading a grid page that came back with no tiles. */
+const EMPTY_RETRY_MS = 1500;
 const CAP = 1500;
 const PAUSE_MS = 500;
 /** Past this, colour-range calls stop (the brand limit is 300 s). */
@@ -414,13 +442,37 @@ export function mapVariation(tile: Tile, json: any, country: CountryCode, men: S
   };
 }
 
+/**
+ * Is this response the Search-UpdateGrid fragment (possibly with no tiles), as
+ * opposed to a whole HTML document (an edge or error page served as 200) or an
+ * empty body? The grid action renders `search/productGrid` with no page
+ * decorator, so a real answer never carries `<html>`/`<!DOCTYPE>`. Pure.
+ */
+export function isGridFragment(html: string): boolean {
+  if (html.includes('data-tile-product-id="')) return true;
+  const head = html.slice(0, 4000);
+  return head.trim().length > 0 && !/<!doctype|<html[\s>]|<body[\s>]/i.test(head);
+}
+
 /** Walk the sale grid; `male` collects only the ids. */
-async function crawlGrid(country: CountryCode, male: boolean): Promise<Tile[]> {
+export async function crawlGrid(country: CountryCode, male: boolean, emptyRetryMs = EMPTY_RETRY_MS): Promise<Tile[]> {
   const tiles: Tile[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
     if (page > 0) await sleep(PAUSE_MS);
-    const html = await fetchText(gridUrl(country, page * PAGE_SIZE, male), country);
-    const got = parseGrid(html);
+    const url = gridUrl(country, page * PAGE_SIZE, male);
+    let html = await fetchText(url, country);
+    let got = parseGrid(html);
+    if (page > 0 && !got.length) {
+      // After a full page: the exact end (the total is a multiple of PAGE_SIZE),
+      // or a 200 that is not the grid. Ending here on the latter is a partial
+      // walk that looks complete, so read it again and insist on a fragment.
+      await sleep(emptyRetryMs);
+      html = await fetchText(url, country);
+      got = parseGrid(html);
+      if (!got.length && !isGridFragment(html)) {
+        throw new Error(`michaelkors/${country}: start=${page * PAGE_SIZE} answered 200 without a grid (${html.length} B) — not ending the walk there`);
+      }
+    }
     tiles.push(...got);
     if (got.length < PAGE_SIZE) break;
   }
@@ -455,15 +507,22 @@ export async function listMichaelKors(country: CountryCode): Promise<ProductReco
   const m = MK_MARKETS[country]!;
   const toResolve = ranges.filter((t) => t.colour && !(m.outletMixed && /outlet/i.test(t.brandLine ?? "")) && !byId.has(t.pid));
   let calls = 0;
+  let refusals = 0;
   for (const tile of toResolve) {
     if (calls >= VARIATION_BUDGET || byId.size >= CAP || elapsed() > BUDGET_MS) break;
+    if (refusals >= VARIATION_REFUSALS) {
+      console.warn(`michaelkors/${country}: ${refusals} variation calls refused in a row, skipping the rest`);
+      break;
+    }
     calls++;
     await sleep(PAUSE_MS);
     try {
       const json = JSON.parse(await fetchText(variationUrl(country, tile.pid, tile.colour!), country, true));
+      refusals = 0;
       const r = mapVariation(tile, json, country, men);
       if (r) byId.set(r.externalId, r);
     } catch (err) {
+      refusals++;
       console.warn(`michaelkors/${country}: variation ${tile.pid} failed — ${String(err)}`);
     }
   }

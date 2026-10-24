@@ -109,7 +109,7 @@ export function trustedFromHere(country: string, from: string, to: string | null
 }
 
 /** The link's state from the one page fetch. Pure, for tests. */
-export function linkState(s: Pick<Sample, "url" | "country">, page: Page, title: string | null): { state: LinkState; note?: string; r: LinkResult } {
+export function linkState(s: Pick<Sample, "url" | "country"> & { name?: string }, page: Page, title: string | null): { state: LinkState; note?: string; r: LinkResult } {
   const r = verdictFor(s.url, page.status, page.finalUrl);
   if (page.status === null) return { state: "unknown", note: page.err ?? "no answer", r };
   if (isWallPage(page.status, page.html, title)) return { state: "blocked", note: `wall (http ${page.status})`, r };
@@ -119,7 +119,7 @@ export function linkState(s: Pick<Sample, "url" | "country">, page: Page, title:
       ? { state: "bad", note: `redirects to a listing: ${page.finalUrl}`, r }
       : { state: "unknown", note: `redirect, untrusted from here: ${page.finalUrl}`, r };
   }
-  if (r.verdict === "ok" && isSoft404(title)) {
+  if (r.verdict === "ok" && isSoft404(title, s.name)) {
     return page.finalUrl === s.url || trustedFromHere(s.country, s.url, page.finalUrl)
       ? { state: "bad", note: `not-found page: "${title}"`, r }
       : { state: "unknown", note: `not-found page after a redirect: ${page.finalUrl}`, r };

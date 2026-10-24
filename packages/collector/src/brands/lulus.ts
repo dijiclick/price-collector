@@ -17,6 +17,15 @@
  * seventh 403), so pages are as large as the API serves (`pp` is capped at
  * 400: ~2,080 sale products in 6 calls instead of 9 at 250), and a refused page
  * is asked again after a longer pause.
+ *
+ * By 2026-10-24 the budget had shrunk to five: four runs in a row got pages 1-5
+ * and a 403 on page 6 (the last one) that the 10 s / 30 s retries did not clear.
+ * So the walk stops as soon as it holds CAP in-stock deals (the capped result
+ * keeps the same rows a full walk would: later pages only add rows behind the
+ * cut), and a page refused after the first no longer throws away the pages
+ * already read when they make a full feed (CAP deals, or 90% of the category).
+ * The cap already leaves ~500 sale products out of every run, so the missing
+ * tail is swept the same way. Anything thinner still fails the run.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -97,19 +106,33 @@ export async function listLulus(country: CountryCode): Promise<ProductRecord[]> 
   const byId = new Map<string, ProductRecord>();
   let total = Infinity;
   let seen = 0;
-  for (let page = 1; page <= MAX_PAGES && seen < total; page++) {
+  let inStock = 0;
+  for (let page = 1; page <= MAX_PAGES && seen < total && inStock < CAP; page++) {
     if (page > 1) await sleep(PAUSE_MS);
-    const data = await getPage(`${ORIGIN}/api/search/products/${SALE_CATEGORY}?pp=${PER_PAGE}&p=${page}`, country);
+    let data: any;
+    try {
+      data = await getPage(`${ORIGIN}/api/search/products/${SALE_CATEGORY}?pp=${PER_PAGE}&p=${page}`, country);
+    } catch (err) {
+      // PerimeterX's per-IP budget ran out mid-walk. Keep what was read only
+      // when it is a full feed; otherwise fail as before.
+      if (page > 1 && (byId.size >= CAP || seen >= total * 0.9)) {
+        console.log(`lulus/${country}: page ${page} refused (${(err as Error).message}); keeping ${byId.size} deals from ${seen}/${total} products`);
+        break;
+      }
+      throw err;
+    }
     const products: any[] = data?.content?.products;
     if (!data?.success || !Array.isArray(products)) throw new Error(`lulus/${country}: page ${page} returned no product list`);
     total = Number(data.content.total) || 0;
     seen += products.length;
     for (const p of products) {
       const r = mapLulus(p, country);
-      if (r) byId.set(r.externalId, r);
+      if (!r) continue;
+      inStock += Number(r.inStock) - Number(byId.get(r.externalId)?.inStock ?? false);
+      byId.set(r.externalId, r);
     }
     if (products.length < PER_PAGE) break;
-    if (page === MAX_PAGES && seen < total) throw new Error(`lulus/${country}: ${total} sale products exceed ${MAX_PAGES} pages`);
+    if (page === MAX_PAGES && seen < total && inStock < CAP) throw new Error(`lulus/${country}: ${total} sale products exceed ${MAX_PAGES} pages`);
   }
   const all = [...byId.values()];
   return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);

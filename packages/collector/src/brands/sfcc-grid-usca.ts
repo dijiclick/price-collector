@@ -411,7 +411,10 @@ export const GRID_USCA: Record<GridUscaBrand, GridSite> = {
     timeoutMs: 90_000,
     quota: true,
     cap: 1500,
-    tileStart: /<div class="product-tile "/,
+    // Most tiles open `class="product-tile "`, a few `class="product-tile"` (6 of
+    // 500 on 2026-10-24): missing those made page 1 look short (494 < 500), so the
+    // walk stopped there and kept 376 rows instead of ~1,250.
+    tileStart: /<div class="product-tile ?"/,
     parse: parseTalbotsTile,
   },
   sallybeauty: {

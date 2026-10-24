@@ -143,10 +143,13 @@ export function isWallPage(status: number, html: string, title: string | null = 
 /**
  * A "soft 404": the shop answers 200 with its not-found page. Judged on the
  * <title> only — a whole-body search finds "404" and "not found" in scripts
- * and translations of perfectly good pages.
+ * and translations of perfectly good pages. The product's own name is cut out
+ * of the title first: Les Benjamins sells a "LONG DRESS 404".
  */
-export function isSoft404(title: string | null): boolean {
+export function isSoft404(title: string | null, productName?: string | null): boolean {
   if (!title) return false;
+  const name = productName?.trim();
+  if (name) title = title.replace(new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), " ");
   return /\b404\b|not found|page (?:not|cannot be) found|no longer available|sayfa bulunamad|bulunamadı|nicht gefunden|introuvable|no encontrad|non trovat|niet gevonden|hittades inte|ikke fundet|ei löydy/i.test(title);
 }
 

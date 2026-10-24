@@ -45,6 +45,7 @@
  */
 import { cleanGallery, type Availability, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
+import { checkImage, politeMap, type LinkResult } from "../link-check";
 import { toMinor } from "../normalize";
 import type { CountryCode } from "../../../../lib/countries";
 
@@ -255,6 +256,50 @@ export function toRecord(c: Card, info: ModelInfo | undefined, country: CountryC
   };
 }
 
+/**
+ * Decathlon's own feed keeps photos its CDN has deleted (2026-10-24: 18 of 217
+ * GB rows led with a contents.mediadecathlon.com photo answering 410 — every
+ * `?f=` size and none alike — and the variants call lists that same url
+ * first, often with live photos after it, e.g. NL 8751605: 1 dead then 9
+ * live). The web shop is behind Cloudflare, so the app API is all there is.
+ *
+ * For a row with other photos to fall back on, ask the CDN about its lead
+ * photo; when that is gone (404/410 only — a refusal or timeout changes
+ * nothing), lead with the first gallery photo that loads and drop the dead
+ * ones met on the way. A row whose whole gallery is dead (about 60% of the
+ * dead ones) is left as is; the link checker hides it (img_broken).
+ * Mutates `rows`; returns how many were swapped.
+ */
+export async function liveLeadPhotos(
+  rows: ProductRecord[],
+  check: (url: string) => Promise<LinkResult> = (u) => checkImage(u, { timeoutMs: 8_000 }),
+  maxTries = 3,
+): Promise<number> {
+  const todo = rows.filter((r) => r.imageUrl && (r.images?.length ?? 0) > 1);
+  let swapped = 0;
+  await politeMap(todo, () => "img", async (r) => {
+    if ((await check(r.imageUrl!)).verdict !== "gone") return;
+    const dead = new Set([r.imageUrl!.split("?")[0]]);
+    let tries = 0;
+    for (const u of r.images ?? []) {
+      const k = u.split("?")[0];
+      if (dead.has(k)) continue;
+      if (tries++ >= maxTries) return;
+      const v = (await check(u)).verdict;
+      if (v === "gone") {
+        dead.add(k);
+        continue;
+      }
+      if (v !== "ok") return;
+      r.imageUrl = u;
+      r.images = cleanGallery((r.images ?? []).filter((x) => !dead.has(x.split("?")[0])), u);
+      swapped++;
+      return;
+    }
+  }, { perKey: 6, total: 6, gapMs: 50 });
+  return swapped;
+}
+
 /** Next page of a listing path with the discount sort. */
 export function pageUrl(path: string, sortQuery: string, page: number): string {
   const base = path.split("?")[0];
@@ -394,7 +439,9 @@ export async function listDecathlon(country: CountryCode): Promise<ProductRecord
     if (r) rows.push(r);
   }
   const rank = (r: ProductRecord) => (r.gender === "kadin" ? 0 : 1);
-  return rows.sort((a, b) => Number(b.inStock) - Number(a.inStock) || rank(a) - rank(b)).slice(0, CAP);
+  const kept = rows.sort((a, b) => Number(b.inStock) - Number(a.inStock) || rank(a) - rank(b)).slice(0, CAP);
+  await liveLeadPhotos(kept);
+  return kept;
 }
 
 export const listProducts = listDecathlon;
