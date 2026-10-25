@@ -12,7 +12,8 @@ import { listStorefront, type StorefrontStore } from "./_storefront";
  * `localization` query answers CA/CAD) and `toProductsJson` drops any row the
  * API still prices in another currency. All answered TOKENLESS. The US side of
  * each brand stays on `/products.json` (lib/live-brands/shopify-dtca.ts, or
- * SHOPIFY_STORES for Alo and Princess Polly).
+ * SHOPIFY_STORES for Alo and Princess Polly) — except Sperry, whose US row is
+ * here too (see its entry).
  *
  * `sites.CA` is the public product-page origin a Canadian shopper lands on:
  * the `/en-ca` Markets subfolder where the shop has one (hreflang en-CA),
@@ -34,7 +35,9 @@ export const STOREFRONT_DTCA: StorefrontStore[] = [
   { brand: "aloyoga", host: "www.aloyoga.com", sites: { CA: "https://www.aloyoga.com/en-ca" } },
   { brand: "calpak", host: "www.calpaktravel.com", collection: "sale", sites: { CA: "https://www.calpaktravel.com" } },
   { brand: "petalandpup", host: "petalandpup.com", collection: "sale", sites: { CA: "https://petalandpup.com" }, defaultGender: "kadin" },
-  { brand: "sperry", host: "www.sperry.com", collection: "sale", sites: { CA: "https://www.sperry.com/en-ca" } },
+  // US too (2026-10-25): its /products.json still lists rows the US market has dropped, and those
+  // pages 404 or redirect home (13 of a 25-row sale sample); the API in US context returns none of them.
+  { brand: "sperry", host: "www.sperry.com", collection: "sale", sites: { US: "https://www.sperry.com", CA: "https://www.sperry.com/en-ca" } },
 ];
 
 /** One registry entry per store, like storefrontAdapters; the country comes from the registry's market loop. */

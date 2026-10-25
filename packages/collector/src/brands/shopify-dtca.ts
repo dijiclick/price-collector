@@ -51,7 +51,8 @@ export const dtcaAdapters = allBrands.map((brand) => {
     listProducts: async (country: CountryCode): Promise<ProductRecord[]> => {
       // Oh Polly Ireland is its euro Market on eu.ohpolly.com (Storefront API, 2026-10-21).
       if (brand === "ohpolly" && country === "IE") return (await listOhPollyIe(country)).filter((r) => !isBundle(r));
-      const rows = shop?.sites[country] ? await listShopify(shop, country) : sf?.sites[country] ? await listStorefront(sf, country) : [];
+      // A Storefront row for the market wins: it sees the market's own catalogue (Sperry US).
+      const rows = sf?.sites[country] ? await listStorefront(sf, country) : shop?.sites[country] ? await listShopify(shop, country) : [];
       return rows.filter((r) => !isBundle(r));
     },
   };

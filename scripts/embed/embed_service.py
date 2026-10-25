@@ -19,6 +19,14 @@ One process, two jobs sharing one model in memory:
      nothing is left it sleeps EMBED_IDLE seconds and looks again — that loop is
      the "timer".
 
+  3. Look photos (2026-10-24): every look's model photo (look_items.photo_url)
+     embedded WHOLE and scored zero-shot against the prompt ensembles in
+     model/prompts.json (export_text.py: FashionSigLIP's text tower) — does a
+     person wear the product (a margin, see score_photo), and how likely each
+     occasion is → look_photos.
+     Looks the feed can show first, Turkey first. A changed prompt file only
+     re-scores the stored vectors.
+
 Requests always win over the backfill: the backfill embeds in small slices and
 waits while a request is pending, so a /embed call waits at most one slice.
 
@@ -29,8 +37,10 @@ shot small on a tall white canvas fills the frame like a tight crop of the
 same bag on a person does.
 
 Env: DATABASE_URL, EMBED_MODEL_DIR (/opt/modadrop-embed/model), EMBED_THREADS (4),
-EMBED_PORT (8091), EMBED_BACKFILL (1), EMBED_ORDER (TR,US,GB,…), EMBED_IDLE (600).
+EMBED_PORT (8091), EMBED_BACKFILL (1), EMBED_ORDER (TR,US,GB,…), EMBED_IDLE (600),
+EMBED_LOOKS (1: score look photos).
 """
+import gzip
 import io
 import json
 import os
@@ -56,6 +66,7 @@ PORT = int(os.environ.get("EMBED_PORT", "8091"))
 BACKFILL = os.environ.get("EMBED_BACKFILL", "1") == "1"
 ORDER = [c for c in os.environ.get("EMBED_ORDER", "TR,US,GB,CA,AU,DE,FR,ES,IT,NL").split(",") if c]
 IDLE = int(os.environ.get("EMBED_IDLE", "600"))
+LOOKS = os.environ.get("EMBED_LOOKS", "1") == "1"
 FETCHERS = int(os.environ.get("EMBED_FETCHERS", "8"))
 CHUNK = int(os.environ.get("EMBED_CHUNK", "1500"))  # candidates per DB query
 SLICE = 8                                           # images per backfill turn on the model
@@ -161,7 +172,7 @@ def fetch(url, width):
     if not re.match(r"^https?://", url or ""):
         raise ValueError("not an http(s) url")
     src = photo_at(url, width)
-    req = urllib.request.Request(src, headers={"User-Agent": UA, "Accept": "image/avif,image/webp,image/*,*/*;q=0.8"})
+    req = urllib.request.Request(src, headers={"User-Agent": UA, "Accept": "image/webp,image/jpeg,image/png,image/*;q=0.8,*/*;q=0.5"})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             data = r.read(25_000_000)
@@ -170,6 +181,10 @@ def fetch(url, width):
             raise
         with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=20) as r:
             data = r.read(25_000_000)
+    # mncdn (Loft, Yargıcı…) gzips image bodies whatever Accept-Encoding says,
+    # and urllib does not undo Content-Encoding (2026-10-24: 520 looks unreadable).
+    if data[:2] == b"\x1f\x8b":
+        data = gzip.decompress(data)
     img = Image.open(io.BytesIO(data))
     # Shops without a resizing CDN serve 3-8k originals. Decode JPEGs at a
     # reduced DCT scale and shrink the rest at once: eight fetchers holding
@@ -242,7 +257,8 @@ def prepare(url, box=None):
 # ---------------------------------------------------------------- HTTP
 
 STATS = {"started": time.time(), "requests": 0, "request_errors": 0, "backfill_done": 0,
-         "backfill_failed": 0, "backfill_rate_per_min": 0.0, "backfill_state": "starting", "remaining": None}
+         "backfill_failed": 0, "backfill_rate_per_min": 0.0, "backfill_state": "starting", "remaining": None,
+         "looks_scored": 0, "looks_failed": 0, "looks_state": "starting"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -422,12 +438,146 @@ def backfill_loop():
             time.sleep(60)
 
 
+# ---------------------------------------------------------------- look photos
+
+def load_prompts():
+    """model/prompts.json -> per gender a class-prototype matrix, plus the person pair. None when missing."""
+    try:
+        with open(os.path.join(MODEL_DIR, "prompts.json")) as f:
+            P = json.load(f)
+    except FileNotFoundError:
+        return None
+
+    def proto(vs):
+        m = np.mean(np.asarray(vs, dtype=np.float32), axis=0)
+        return m / max(float(np.linalg.norm(m)), 1e-12)
+
+    occ = P["vecs"]["occasions"]
+    classes = list(occ)
+    by_gender = {}
+    for g in ("kadin", "erkek", None):
+        gs = [g] if g else ["kadin", "erkek"]
+        by_gender[g] = np.stack([proto(sum((occ[c][x] for x in gs if x in occ[c]), [])) for c in classes])
+    return {"hash": P["hash"], "scale": float(P["scale"]), "classes": classes, "by_gender": by_gender,
+            "yes": np.asarray(P["vecs"]["person"]["yes"], dtype=np.float32), "no": np.asarray(P["vecs"]["person"]["no"], dtype=np.float32)}
+
+
+def softmax(x, scale):
+    z = np.exp(scale * (x - x.max()))
+    return z / z.sum()
+
+
+def score_photo(e, gender, PR):
+    """A look photo's vector -> (person margin, {occasion: probability}).
+
+    Occasions: softmax over the class prototypes at the model's own logit scale,
+    the anchor's gender's prompts (both when unknown).
+    Person: the best "someone wears it" prompt minus the best "no one does" prompt
+    (mannequin, hanger, flat lay, a close-up of the fabric). A softmax of the two
+    averages called every waist-up t-shirt shot a product photo (2026-10-24, the
+    50 lowest of 12.4k looks were all people); the max-minus-max margin put the
+    two dress-form photos of the 12.4k first and real people below 0.03."""
+    p = softmax(PR["by_gender"].get(gender if gender in ("kadin", "erkek") else None) @ e, PR["scale"])
+    person = float((PR["yes"] @ e).max() - (PR["no"] @ e).max())
+    return round(person, 4), {c: round(float(v), 4) for c, v in zip(PR["classes"], p)}
+
+
+# Looks without a score for their current photo, model and prompts; failed photos retried after 3 days.
+LOOK_TODO = """
+SELECT l.product_id, l.photo_url, p.gender,
+       (lp.photo_url = l.photo_url AND lp.model = %(model)s AND lp.emb IS NOT NULL) AS have_vec
+  FROM look_items l
+  LEFT JOIN products p ON p.id = l.product_id
+  LEFT JOIN look_photos lp ON lp.product_id = l.product_id
+  LEFT JOIN look_matches m ON m.product_id = l.product_id
+ WHERE l.photo_url IS NOT NULL AND jsonb_array_length(l.items) > 0
+   AND (lp.product_id IS NULL OR lp.photo_url <> l.photo_url OR lp.model <> %(model)s
+        OR (lp.error IS NULL AND lp.prompts IS DISTINCT FROM %(prompts)s)
+        OR (lp.error IS NOT NULL AND lp.scored_at < now() - interval '3 days'))
+ ORDER BY (m.n >= 2) IS TRUE DESC, (p.country = 'TR') IS TRUE DESC, l.checked_at DESC
+ LIMIT %(limit)s
+"""
+LOOK_UPSERT = """
+INSERT INTO look_photos (product_id, photo_url, emb, person, occ, prompts, model, error, scored_at)
+VALUES (%s, %s, %s::vector, %s, %s::jsonb, %s, %s, %s, now())
+ON CONFLICT (product_id) DO UPDATE
+   SET photo_url = EXCLUDED.photo_url, emb = COALESCE(EXCLUDED.emb, CASE WHEN look_photos.photo_url = EXCLUDED.photo_url THEN look_photos.emb END),
+       person = EXCLUDED.person, occ = EXCLUDED.occ, prompts = EXCLUDED.prompts, model = EXCLUDED.model,
+       error = EXCLUDED.error, scored_at = now()
+"""
+
+
+def look_loop():
+    """Score every look photo (see the module docstring, job 3). Shares the model with the backfill:
+    both wait for requests, and take turns on the inference lock."""
+    PR = load_prompts()
+    if PR is None:
+        STATS["looks_state"] = "no prompts.json"
+        log("look photos: no prompts.json in", MODEL_DIR, "- run export_text.py")
+        return
+    pool = ThreadPoolExecutor(4)
+    conn = None
+    while True:
+        try:
+            if conn is None or conn.closed:
+                conn = connect()
+            rows = conn.execute(LOOK_TODO, {"model": MODEL_NAME, "prompts": PR["hash"], "limit": 400}).fetchall()
+            if not rows:
+                STATS["looks_state"] = "idle"
+                time.sleep(120)
+                continue
+            STATS["looks_state"] = "running"
+            t0, ok, bad = time.time(), 0, 0
+            # Vectors already stored for this photo (only the prompts changed): re-score, no download.
+            have = [r for r in rows if r[3]]
+            if have:
+                vecs = dict(conn.execute("SELECT product_id, emb::text FROM look_photos WHERE product_id = ANY(%s)",
+                                         ([r[0] for r in have],)).fetchall())
+                with conn.cursor() as cur:
+                    for pid, url, gender, _ in have:
+                        e = np.asarray(json.loads(vecs[pid]), dtype=np.float32)
+                        person, occ = score_photo(e, gender, PR)
+                        cur.execute(LOOK_UPSERT, (pid, url, None, person, json.dumps(occ), PR["hash"], MODEL_NAME, None))
+                ok += len(have)
+            todo = [r for r in rows if not r[3]]
+            for k in range(0, len(todo), SLICE):
+                part = todo[k:k + SLICE]
+                prepped = list(pool.map(lambda r: safe_prepare((r[0], r[1])), part))
+                good = [(r, p) for r, p in zip(part, prepped) if p[2] is not None]
+                embs = infer(np.stack([p[2] for _, p in good]), priority=False) if good else []
+                with conn.cursor() as cur:
+                    for (r, _), e in zip(good, embs):
+                        person, occ = score_photo(e, r[2], PR)
+                        cur.execute(LOOK_UPSERT, (r[0], r[1], vec(e), person, json.dumps(occ), PR["hash"], MODEL_NAME, None))
+                    for r, p in zip(part, prepped):
+                        if p[2] is None:
+                            cur.execute(LOOK_UPSERT, (r[0], r[1], None, None, None, PR["hash"], MODEL_NAME, p[3]))
+                ok += len(good)
+                bad += len(part) - len(good)
+            STATS["looks_scored"] += ok
+            STATS["looks_failed"] += bad
+            log(f"look photos: {ok} scored, {bad} unreadable in {time.time() - t0:.0f}s")
+        except Exception:
+            log("look photos error:", traceback.format_exc().strip().splitlines()[-1])
+            try:
+                if conn is not None:
+                    conn.close()
+            except Exception:
+                pass
+            conn = None
+            time.sleep(60)
+
+
 def main():
     log(f"model {MODEL_NAME} dim {DIM} threads {THREADS}; http 127.0.0.1:{PORT}; backfill {'on' if BACKFILL else 'off'}")
     if BACKFILL:
         threading.Thread(target=backfill_loop, daemon=True, name="backfill").start()
     else:
         STATS["backfill_state"] = "off"
+    if LOOKS:
+        threading.Thread(target=look_loop, daemon=True, name="looks").start()
+    else:
+        STATS["looks_state"] = "off"
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     srv.daemon_threads = True
     srv.serve_forever()

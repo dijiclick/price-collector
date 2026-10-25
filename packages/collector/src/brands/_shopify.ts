@@ -48,6 +48,11 @@ export function mapShopify(store: ShopifyStore, country: CountryCode, site: stri
   if (!p?.id || !p?.title || !vs.length) return null;
   if (/gift ?card|hediye ?kart/i.test(`${p.title} ${p.product_type ?? ""}`)) return null;
   if (store.skipTitle?.test(`${p.title} | ${p.product_type ?? ""}`)) return null;
+  // Wholesale items ride in products.json but have no storefront page: every
+  // Reebok US product tagged `f45-b2b` (F45 gym kit) answered 404, 15 of 15,
+  // while the same feed's retail rows opened (2026-10-25).
+  const tags: string[] = Array.isArray(p.tags) ? p.tags.map(String) : typeof p.tags === "string" ? p.tags.split(",") : [];
+  if (tags.some((t) => /(^|[-_\s])b2b($|[-_\s])/i.test(t.trim()))) return null;
   const priced = vs
     .map((v) => ({ v, price: parseFloat(v.price), cmp: parseFloat(v.compare_at_price) }))
     .filter((x) => Number.isFinite(x.price) && x.price > 0 && x.price < MAX_PRICE);
