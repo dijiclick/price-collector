@@ -1,6 +1,6 @@
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getText } from "../http";
-import { toMinor } from "../normalize";
+import { categoryPath, toMinor } from "../normalize";
 
 // Beymen — premium multi-brand store (Vue SPA). The server-rendered category
 // page embeds the full first-page product JSON in `window.BEYMEN.productListMain`;
@@ -112,7 +112,12 @@ export function mapProduct(p: any, gender: ProductRecord["gender"]): ProductReco
     listPrice: reduced ? toMinor(orig) : null,
     currency: "TRY",
     inStock: p?.isOutOfStock !== true,
-    category: p?.brandName ?? null,
+    // The shop's own department > group > leaf ("AKSESUAR > GİYİM DIŞI AKSESUAR >
+    // GÜNEŞ GÖZLÜĞÜ"), which classifies what no name says — a perfume called
+    // "Ivoire Refill 150 ml", a "Panduf" — and marks the furniture, pet, toy and
+    // food trees (2026-10-26). Until then this held the designer, now `maker`.
+    category: categoryPath([p?.producMainCategory, p?.productSubCategory, p?.productCategory]),
+    maker: typeof p?.brandName === "string" && p.brandName.trim() ? p.brandName.trim() : null,
     gender,
     variants: sizes.length > 0 ? { colors: [], sizes } : null,
     // `variant` is this product's colour name; Beymen exposes no sibling colour

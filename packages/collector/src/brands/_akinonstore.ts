@@ -11,11 +11,15 @@
  * 1,593, 35 pages → 16); FashFed's 287-brand facet would not fit in a URL, so
  * its rows are filtered client-side.
  *
- * Following the Boyner/Beymen convention, a store row's `category` is the
- * product's own brand (the store slug is in `brand`).
+ * A store row's `maker` is the product's own brand (the store slug is in
+ * `brand`) and its `category` the store's group breadcrumb (`pathAttrs`), as
+ * for Boyner and Beymen. Until 2026-10-26 the brand went in `category`, and
+ * the classifier read "Sweaty Betty" leggings as knitwear and Balmain hair
+ * clips as hair care.
  */
 import type { ProductRecord, ProductVariants } from "../types";
 import { getJson } from "../http";
+import { categoryPath } from "../normalize";
 import { sizedIds, sizesFirst } from "../sizes";
 import {
   RESULT_WINDOW,
@@ -34,6 +38,8 @@ export interface AkinonStore {
   shop: AkinonShop;
   /** Attribute key holding the brand (`integration_marka`). */
   brandAttr: string;
+  /** The store's category attributes, broadest first, written as the breadcrumb in `category`. */
+  pathAttrs: string[];
   /** Brand labels to leave out (compared folded: case, Turkish letters and punctuation ignored). */
   exclude: string[];
   /** Narrow the listing server-side to the non-excluded brands of the facet, when the URL stays short. */
@@ -100,7 +106,8 @@ export function mapStoreProduct(store: AkinonStore, p: any, excluded = new Set(s
   }
   const r = mapAkinonProduct(store.shop, p);
   if (!r) return null;
-  r.category = label ?? r.category ?? null;
+  r.maker = label;
+  r.category = categoryPath(store.pathAttrs.map((a) => storeBrandOf(p, a))) ?? r.category ?? null;
   if (!r.variants && store.altSizeKeys?.length) {
     const sizes = storeSizes(store, p.extra_data?.variants);
     if (sizes.length) {

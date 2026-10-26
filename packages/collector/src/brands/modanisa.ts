@@ -1,6 +1,6 @@
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson, getText } from "../http";
-import { toMinor } from "../normalize";
+import { categoryPath, toMinor } from "../normalize";
 
 /**
  * Modanisa (modanisa.com) — a modest-fashion marketplace; the label of each
@@ -108,8 +108,10 @@ export function mapItem(it: any): ProductRecord | null {
     listPrice: money.list != null ? toMinor(money.list) : null,
     currency: "TRY",
     inStock: true,
-    // Marketplace: the label goes in category, as for Boyner and Beymen.
-    category: it.brand ? String(it.brand) : null,
+    // The shop's categories ("Elbiseler", "Tesettür Giyim", "Takım"), an unordered
+    // set the classifier reads segment by segment; the marketplace label is `maker`.
+    category: categoryPath(cats),
+    maker: it.brand ? String(it.brand).trim() || null : null,
     gender: genderOf(cats),
     variants: sizes.length || colour ? { colors: colour ? [colour] : [], sizes } : null,
     colorName: colour,

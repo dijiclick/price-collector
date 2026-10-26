@@ -18,7 +18,9 @@ export function makerOf(r: { brand: string; country?: string | null; category?: 
   const own = r.maker?.trim();
   if (own) return own;
   const rule = CATEGORY_IS_MAKER[r.brand];
-  if (!rule || !r.category?.trim()) return null;
+  // Since 2026-10-26 these adapters set `maker` and put the store's own
+  // breadcrumb ("KOZMETİK > PARFÜM") in category: never a maker.
+  if (!rule || !r.category?.trim() || r.category.includes(">")) return null;
   if (rule !== "all" && !rule.includes(r.country ?? "TR")) return null;
   return r.category.trim();
 }

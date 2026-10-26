@@ -590,7 +590,7 @@ async function boynerUrl(url: string): Promise<LiveProduct | null> {
     inStock,
     // Same as the collector: the label goes in category for multi-brand shops.
     category: r.Brand?.Name ?? null,
-    type: classifyType(r.CategoryName ?? null, String(r.DisplayName), "boyner"),
+    type: classifyType(r.CategoryName ?? null, String(r.DisplayName), "boyner", r.Brand?.Name ?? null),
     gender,
     colorName: selected?.Title ?? null,
   };
@@ -1185,7 +1185,8 @@ export async function lookupLive(brand: string | undefined, url: string): Promis
     const p = await fn(url);
     // Resolvers in lib/live-brands/ cannot import the classifier without
     // widening their imports, so the type is filled in here, once, for all.
-    return p && !p.type ? { ...p, type: classifyType(p.category, p.name) } : p;
+    // With the brand: a multi-brand store's `category` is the designer label here.
+    return p && !p.type ? { ...p, type: classifyType(p.category, p.name, p.brand) } : p;
   } catch {
     return null;
   }

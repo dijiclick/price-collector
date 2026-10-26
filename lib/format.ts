@@ -503,6 +503,15 @@ export const BRAND_LABELS: Record<string, string> = {
 export const brandLabel = (b: string) => BRAND_LABELS[b] ?? b;
 
 /**
+ * The brand line on a card: the real brand when a multi-brand store sells it
+ * (owner 2026-10-26: "write Gucci, not Beymen or Boyner"), else the store. The
+ * store still names itself on the product page's "open on …" button.
+ */
+export function dealBrandLabel(d: { brand: string; maker?: string | null }): string {
+  return d.maker?.trim() || brandLabel(d.brand);
+}
+
+/**
  * Short label for the tight brand rail (56px), where long names like
  * "Massimo Dutti" get mid-word ellipsis-cut and read badly. Falls back to
  * the full label everywhere it isn't overridden.

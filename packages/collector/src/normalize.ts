@@ -115,3 +115,18 @@ export function revertBlanketPromotion(
   }
   return n;
 }
+
+/**
+ * A multi-brand store's own category breadcrumb, broadest first, as the
+ * classifier reads it (lib/productTypes.ts storeType): "HAZIR GİYİM > TRİKO >
+ * POLO YAKA". Blank and repeated segments are dropped ("Ayakkabı > Ayakkabı >
+ * Sneakers" says Ayakkabı once); null when the store gives none.
+ */
+export function categoryPath(parts: unknown[]): string | null {
+  const segs: string[] = [];
+  for (const p of parts) {
+    const s = typeof p === "string" ? p.replace(/\s+/g, " ").replace(/>/g, " ").trim() : "";
+    if (s && !segs.some((x) => x.toLocaleLowerCase("tr") === s.toLocaleLowerCase("tr"))) segs.push(s);
+  }
+  return segs.length ? segs.join(" > ") : null;
+}

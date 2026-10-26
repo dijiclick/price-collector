@@ -256,8 +256,8 @@ export function contentHash(r: ProductRecord): string {
   const h = createHash("sha1");
   const parts: unknown[] = [
     r.name, r.url, r.imageUrl ?? null, r.category ?? null,
-    classifyType(r.category, r.name, r.brand),
-    subtypeForName(classifyType(r.category, r.name, r.brand), r.name, r.brand),
+    classifyType(r.category, r.name, r.brand, makerOf(r)),
+    subtypeForName(classifyType(r.category, r.name, r.brand, makerOf(r)), r.name, r.brand, r.category, makerOf(r)),
     r.groupKey ?? null, r.colorName ?? null,
     r.price, r.listPrice ?? null, r.inStock,
     r.variants ?? undefined,
@@ -410,7 +410,7 @@ async function upsertChanged(
       // Pass the object as-is: postgres.js serialises it to JSONB. Stringifying
       // here would double-encode it (stored as a JSON *string*, not an object).
       params.push(r.brand, countryOf(r), r.externalId, r.name, r.url, r.imageUrl, r.category ?? null,
-        classifyType(r.category, r.name, r.brand), subtypeForName(classifyType(r.category, r.name, r.brand), r.name, r.brand),
+        classifyType(r.category, r.name, r.brand, makerOf(r)), subtypeForName(classifyType(r.category, r.name, r.brand, makerOf(r)), r.name, r.brand, r.category, makerOf(r)),
         r.variants ?? null, r.groupKey ?? null, r.colorName ?? null,
         // The name's own "Erkek"/"Kadın"/"Kız Çocuk" beats the section the
         // adapter crawled (lib/gender.ts); a silent name keeps the adapter's.
@@ -419,7 +419,7 @@ async function upsertChanged(
         // null when nothing names a colour, so the COALESCE below keeps what an
         // earlier run with variants found (Zara refetches sizes in rotation).
         (() => {
-          const f = colorFamilies(r.colorName, r.variants?.colors, r.name, classifyType(r.category, r.name, r.brand));
+          const f = colorFamilies(r.colorName, r.variants?.colors, r.name, classifyType(r.category, r.name, r.brand, makerOf(r)));
           return f.length ? f : null;
         })(), makerOf(r));
     }

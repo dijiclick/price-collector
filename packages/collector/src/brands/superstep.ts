@@ -1,5 +1,5 @@
 import { cleanGallery, type ProductRecord, type ProductVariants, type SizeVariant } from "../types";
-import { toMinor } from "../normalize";
+import { categoryPath, toMinor } from "../normalize";
 import { akinonRecords, walkAkinonListing } from "./_akinon";
 
 /**
@@ -116,8 +116,10 @@ export function mapProduct(p: any): ProductRecord | null {
     listPrice: Number.isFinite(retail) && retail > price ? toMinor(retail) : null,
     currency: "TRY",
     inStock: sizes.length > 0 ? sizes.some((s) => s.availability !== "out_of_stock") : p.in_stock !== false,
-    // Multi-brand shop: the label goes in category, as for Boyner and Beymen.
-    category: kw(p, "integration_marka") ?? kw(p, "integration_alt_marka"),
+    // The shop's group > subgroup > definition ("Aksesuar > Şapka > SAPKA"); the
+    // label is `maker` (lib/maker.ts), as for Boyner and Beymen.
+    category: categoryPath([kw(p, "integration_urun_ana_grup"), kw(p, "integration_alt_grup"), kw(p, "integration_tanim")]),
+    maker: kw(p, "integration_marka") ?? kw(p, "integration_alt_marka"),
     gender: genderOf(p),
     // The variant group's colour labels are codes ("4NV"); the detail name reads better.
     variants: variants ? { colors: colour ? [colour] : variants.colors, sizes } : null,

@@ -38,6 +38,8 @@ export interface ProductType {
   /** Turkish label shown on the filter chip. */
   label: string;
   re: RegExp;
+  /** Read in a product name only, never from a category on its own (see "abiye"). */
+  nameOnly?: boolean;
 }
 
 /** Lowercase and strip Turkish diacritics so patterns can be plain ASCII. */
@@ -108,7 +110,7 @@ export const PRODUCT_TYPES: ProductType[] = [
   // shoe word came first in this table. Turkish softens çorap to çorab- before a
   // vowel, so both stems. "Çoraplı tayt bot" — a sock-boot — is a BOOT: the -lı
   // adjective is excluded. Owner report 2026-10-02; 138 rows on the live feed.
-  { key: "ic-giyim",   label: "İç Giyim",      re: /\bcora[pb](?!li)|\bsocks?\b/i },
+  { key: "ic-giyim",   label: "İç Giyim",      re: /\bcora[pb](?!li)|\bsocks?\b|\bpati[kg](?:i|ler|leri)?\b(?!\s*ayakkabi)/i },
   // `\bboot` must not take "bootcut": Bershka's bootcut JEANS were all shoes.
   // `bot` takes its Turkish suffixes: "Süet Botlar", "Bilek Botu", "Yağmur Botu"
   // matched nothing before 2026-10-11 and 80+ real boots carried no type.
@@ -116,38 +118,38 @@ export const PRODUCT_TYPES: ProductType[] = [
   // (H&M's boot-leg TROUSERS), "Çizmeci" (a wafer brand at Rossmann), "Sandal
   // Ağacı" (sandalwood incense and perfume) and a "Flat Tip Tweezer" all sat
   // on the Shoes shelf — the first two as boots.
-  { key: "ayakkabi",   label: "Ayakkabı",      re: /ayakkabi|\bshoe|sneaker|\bbot(?:u|lar|lari)?\b|\bboot(?![- ]?cut)|topuklu|\bheel|sandalet|sandal(?!\s*agac)|terli[kg]|slipper|espadril|babet|\bflat\b(?! tip)|\bcizme(?!ci|\s*paca)|loafer|makosen/i },
+  { key: "ayakkabi",   label: "Ayakkabı",      re: /ayakkabi|\bshoe|sneaker|\bbot(?:u|lar|lari)?\b|\bboot(?![- ]?cut)|topuklu|\bheel|sandalet|sandal(?!\s*agac)|terli[kg]|slipper|espadril|babet|\bflat\b(?! tip)|\bcizme(?!ci|\s*paca)|loafer|makosen|panduf|\bsabo\b|\bclogs?\b/i },
   // `\bbag\b` used to be here on its own, and it quietly claimed garments:
   // folding turns the Turkish "bağ" (tie, strap) into "bag", so every "Bağ
   // detaylı gömlek" — a tie-detail SHIRT — was filed as a handbag. Mango names
   // a lot of things that way. Requiring an English compound keeps "shoulder
   // bag" working while "bağ detaylı" no longer matches anything here.
-  { key: "canta",      label: "Çanta",         re: /canta|\b(?:hand|shoulder|tote|bucket|cross ?body|gym|beach|duffle|shopper|top ?handle)[ -]?bag\b|cuzdan|wallet|sirt cant|backpack|clutch|postaci|crossbody|\btote\b/i },
+  { key: "canta",      label: "Çanta",         re: /canta|\b(?:hand|shoulder|tote|bucket|cross ?body|gym|beach|duffle|shopper|top ?handle)[ -]?bag\b|cuzdan|wallet|sirt cant|backpack|clutch|postaci|crossbody|\btote\b|kartlik|card ?holder|portfoy|pasaportluk|valiz|bavul|suitcase|luggage/i },
   { key: "mayo",       label: "Mayo & Plaj",   re: /\bmayo\b|bikini|plaj|beach|swim/i },
   // `\bklt\b` is Penti's own abbreviation for külot ("PRETTY LOLIPOP KLT., 1,
   // MERCAN"); without it a chunk of their catalogue carried no type at all.
-  { key: "ic-giyim",   label: "İç Giyim",      re: /ic giyim|ic camasir|underwear|lingerie|sutyen|\bbra\b|bralet|bralette|kulot|\bklt\b|panty|panties|brief|thong|slip\b|cora[pb]|\bsock|hosiery|tights|pijama|pajama|pyjama|gecelik|nightgown|homewear|loungewear|sabahlik|jartiyer|garter|legging|soket|\bskt\b|\bsne\b|\bsn\b|\blace\b|\bmesh\b|\b\dl[iu]?\b|\bsut\b|push ?up|highwaist|high waist|\b\d{2}[a-f]\b|\b\d\d-\d\d\b/i },
+  { key: "ic-giyim",   label: "İç Giyim",      re: /ic giyim|ic camasir|underwear|lingerie|sutyen|\bbra\b|bralet|bralette|kulot|\bklt\b|panty|panties|brief|thong|slip\b|cora[pb]|\bsock|hosiery|tights|pijama|pajama|pyjama|gecelik|night ?gown|homewear|loungewear|sabahlik|jartiyer|garter|legging|soket|\biclik|\bskt\b|\bsne\b|\bsn\b|\blace\b|\bmesh\b|\b\dl[iu]?\b|\bsut\b|push ?up|highwaist|high waist|\b\d{2}[a-f]\b|\b\d\d-\d\d\b/i },
   // "Takım elbise" is a men's SUIT, not a dress: 221 suits sat on the Dresses
   // shelf (Network, Beymen, Massimo Dutti's "TAKIM ELBİSELERİ" category). They
   // go to Dış Giyim/Blazer, the nearest shelf a shopper would look on.
-  { key: "elbise",     label: "Elbise",        re: /(?<!takim\s)elbise|dress|tulum|jumpsuit|salopet|romper/i },
+  { key: "elbise",     label: "Elbise",        re: /(?<!takim\s)elbise|dress|tulum|jumpsuit|salopet|romper|\bgown/i },
   // `manto` and `pardosu` are Boyner's words for a coat — both were missing, so
   // "Kruvaze Manto" and "Oversize Pardösü" fell through to no type.
-  { key: "dis-giyim",  label: "Dış Giyim",     re: /ceket|jacket|kaban|\bcoat|\bmont\b|manto|pardosu|trenckot|trench|palto|blazer|yelek|\bvest\b|parka|anorak|bomber|pelerin|\bcape\b|takim elbise/i },
-  { key: "triko",      label: "Triko & Sweat", re: /kaza[kg]|sweater|pullover|jumper|hirka|cardigan|triko|\bknit|sweat|hood/i },
+  { key: "dis-giyim",  label: "Dış Giyim",     re: /ceket|jacket|kaban|\bcoat|\bmont(?:u|lar|lari)?\b|manto|pardosu|pardesu|ferace|abaya|yagmurluk|ruzgarlik|trenckot|trench|palto|blazer|yelek|\bvest\b|parka|anorak|bomber|pelerin|\bcape\b|takim elbise/i },
+  { key: "triko",      label: "Triko & Sweat", re: /kaza[kg]|sweater|pullover|jumper|hirka|cardigan|kardigan|suveter|sueter|triko|\bknit|sweat|hood|\bpolar\b/i },
   // Üst before Alt: a garment word must beat a MATERIAL word. "Denim gömlek"
   // is a shirt, but `denim` sits in Alt and was winning. Measured over 480
   // products: one row moves, and it is the denim shirt. (The same trick does
   // NOT work for triko — tried, it moved 71 and broke 55, because "Moschino
   // Jeans" is a brand name that hits the Alt regex.)
-  { key: "ust",        label: "Üst Giyim",     re: /tisort|t-?shirt|tshirt|\btee\b|gomlek|\bshirt|bluz|blouse|\btop\b|\bust\b|atlet|\btank|\bbody\b|bodysuit|\bcrop|halter|bustier|bustiyer|korse|corset/i },
-  { key: "alt",        label: "Alt Giyim",     re: /pantolon|trouser|\bpants\b|\bpant\b|\bjean|denim|\bkot\b|etek|\bskirt|\bsort|\bshort(?!\s*-?\s*sleeve)|bermuda|\btayt\b|jogger|palazzo|chino|esofman|kapri|capri|biker|\bpnt\b/i },
+  { key: "ust",        label: "Üst Giyim",     re: /tisort|t-?shirt|tshirt|\btee\b|gomlek|\bshirt|bluz|blouse|\btop\b|\bust\b|atlet|\btank|(?<!(?:face|eye|hand|and|&|vucut) )\bbody\b(?! (?:scrub|oil|spray|mist|lotion|wash|butter|cream|milk|sparkles?|powder|pigment|massager|brush|serum|polish|gel|glow|shimmer|care))|bodysuit|\bcrop|halter|bustier|bustiyer|korse|corset|\btuni[kc](?!a)/i },
+  { key: "alt",        label: "Alt Giyim",     re: /pantolon|trouser|\bpants\b|\bpant\b|\bjean|denim|\bkot\b|etek|\bskirt|\bsort|\bshort(?!\s*-?\s*sleeve)|bermuda|\btayt(?:i|lar|lari)?\b|jogger|palazzo|chino|esofman|kapri|capri|biker|\bpnt\b/i },
   // `forma` is a sports jersey in Turkish (2026-10-18: 1.148 live rows had no
   // type, "Pilot Forması" among them). After the bottoms, so "Home Shorts …
   // Forma" (a kit's shorts) stays a short. English "jersey" stays out — it is
   // also a fabric ("Jersey Maxi Dress").
   { key: "ust",        label: "Üst Giyim",     re: /\bforma(si|lari|lar)?\b/i },
-  { key: "aksesuar",   label: "Aksesuar",      re: /atki|scarf|sapka|\bhat\b|\bcap\b|\bbere\b|beanie|kemer|\bbelt|taki|jewel|kolye|necklace|kupe|earring|yuzuk|\bring\b|bileklik|bilezi[kg]|bracelet|charm|gozluk|sunglass|glasses|eldiven|glove|(?<!\d )(?<!\d)(?<!kum )\bsaat(?:i|leri|ler)?\b|watch|sac band|headband|\btoka\b|fular|\bsal\b|shawl|bros|brooch|piercing|anahtarlik|keychain/i },
+  { key: "aksesuar",   label: "Aksesuar",      re: /atki|scarf|sapka|\bhat\b|\bcap\b|\bbere\b|beanie|kemer|\bbelt|\btaki(?!m)|jewel|kolye|necklace|kupe|earring|yuzuk|\bring\b|bileklik|bilezi[kg]|bracelet|charm|gozlu[kg]|sunglass|glasses|eldiven|glove|(?<!\d )(?<!\d)(?<!kum )\bsaat(?:i|leri|ler)?\b|watch|sac band|headband|\btoka\b|fular|\bsal\b|shawl|bros|brooch|piercing|anahtarlik|keychain|kol dugme|cufflink|basortu|turban|\bbone(?:si)?\b(?! china)|kolluk|boyunluk|halhal|\bkusak\b/i },
   // Shelf words no rule above knew (2026-10-18 audit of every brand's untyped
   // rows): Lacoste/GANT file polos under "Polo", Vakko scarves and ties under
   // "Eşarp"/"Kravat"/"Kaşkol", Dagi under "Boxer", Gratis eyeliners under "Göz
@@ -179,17 +181,26 @@ export const PRODUCT_TYPES: ProductType[] = [
   { key: "aksesuar",   label: "Aksesuar",      re: /smykke|øredob|ørering|ohrring|halskette|schmuck|\bmütze|skjerf|solbrille|sonnenbrille|\bbelte\b|gürtel/i },
   { key: "makyaj",     label: "Makyaj",        re: /leppestift|lippenstift|läppstift|\bpuder\b|øyenskygge|lidschatten|nagellack|neglelakk|gellack|skin tint|cheek tint|\bkajal/i },
   { key: "kisisel-bakim", label: "Kişisel Bakım", re: /duschgel|duschschaum|dusjsåpe|toothbrush|zahnbürste|tannbørste/i },
+  // "Abiye" is evening wear, not one garment: Modanisa names its gowns by it
+  // alone ("Mint Taş Detaylı Saten Abiye", 1,185 untyped rows 2026-10-26), but
+  // "Abiye Şal", "Abiye Etek", "Abiye Saat" and Derimod's "Abiye" shoe shelf
+  // name their own shelf first. So: late, and never from a category alone.
+  { key: "elbise",     label: "Elbise",        re: /\babiye/i, nameOnly: true },
   // Weak makeup words, LAST on purpose — see the strong makyaj rule above.
   { key: "makyaj",     label: "Makyaj",        re: /blush|pudra|powder|highlight|primer|contour|sponge|\bnails?\b/i },
 ];
 
-/** Classify a product into a canonical type key, or null if nothing matches. */
 /**
- * Brands whose `category` is a DESIGNER LABEL, not a product category: Beymen and
- * Boyner put "Karl Lagerfeld Jeans", "Tommy Jeans", "Billieblush" there. Trusting
- * it would file T-shirts under Alt (jeans) and kids' tees under Makyaj (blush).
+ * Multi-brand stores. Until 2026-10-26 their adapters put the DESIGNER LABEL in
+ * `category` ("Karl Lagerfeld Jeans", "Taschen", "Love My Body") — the maker,
+ * lib/maker.ts — and it leaked into the name text: 231 Boyner "Love My Body"
+ * trousers were tops ("body"), 66 Beymen Taschen art books bags (German
+ * "Taschen"), Sweaty Betty leggings knitwear ("sweat"), Highlight chandeliers
+ * makeup. Their adapters now write the store's own breadcrumb ("HAZIR GİYİM >
+ * TRİKO > POLO YAKA", "Kadın > Giyim > Etek") and set `maker` separately, so a
+ * category here is read only when it is that breadcrumb (see storeCategory).
  */
-const LABEL_NOT_CATEGORY = new Set(["beymen", "boyner"]);
+const MULTI_BRAND = new Set(["beymen", "boyner", "fashfed", "modanisa", "sportive", "superstep"]);
 
 /**
  * Brand dialects: words a brand uses differently from everyone else.
@@ -204,8 +215,8 @@ function dialect(brand: string | null | undefined, name: string): string {
   return name;
 }
 
-function firstRule(text: string): string | null {
-  for (const t of PRODUCT_TYPES) if (t.re.test(text)) return t.key;
+function firstRule(text: string, category = false): string | null {
+  for (const t of PRODUCT_TYPES) if (!(category && t.nameOnly) && t.re.test(text)) return t.key;
   return null;
 }
 
@@ -218,23 +229,27 @@ function firstRule(text: string): string | null {
  * all cosmetics: 401 rows on the skincare shelf alone, 290 of them Beymen.
  */
 const FASHION_NOUN =
-  /gomle[kg]|kaza[kg]|canta|elbise|pantolon|ceket|\bete[kg]|bluz|tisort|t-shirt|hirka|ayakkabi|\bbot\b|sneaker|kaban|\bmont\b|\bsal\b|atki|sapka|kemer|cuzdan|terli[kg]|sandalet|yele[kg]|sweat|cora[pb]|tayt|\bjean|\bsort\b|tulum|abiye|bikini|parka|trenc|blazer|sutyen|pijama|loafer|babet|cizme|\bvest\b|jacket|\bcoat\b|dress|\bshirt|trouser|skirt|\bbag\b|\bbere\b|eldiven|hoodie/;
+  /gomle[kg]|kaza[kg]|canta|elbise|pantolon|ceket|\bete[kg]|bluz|tisort|t-shirt|hirka|ayakkabi|\bbot\b|sneaker|kaban|\bmont\b|\bsal\b|atki|sapka|kemer|cuzdan|terli[kg]|sandalet|yele[kg]|sweat|cora[pb]|tayt|\bjean|\bsort\b|tulum|abiye|bikini|parka|trenc|blazer|sutyen|pijama|loafer|babet|cizme|\bvest\b|jacket|\bcoat\b|dress|\bshirt|trouser|skirt|\bbag\b|\bbere\b|eldiven|hoodie|triko|suveter|esofman|tunik|ferace|takim|polar\b/;
 /**
  * Cosmetics words that have an everyday fashion reading. Only THESE are set
  * aside — "Mont Blanc … Parfüm" and "Hoodie Lash … Takma Kirpik" keep their
  * strong word and stay cosmetics.
  */
-const SOFT_COSMETIC = /\b(?:krem|cream|gunes|firca|mendil|pamuk|banyo|maske)\w*/g;
+const SOFT_COSMETIC = /\b(?:krem|cream|gunes|firca|mendil|pamuk|banyo|maske|pudra)\w*/g;
 const COSMETIC_KEYS = new Set(["makyaj", "cilt-bakim", "kisisel-bakim", "parfum", "sac"]);
 
-function firstType(text: string): string | null {
-  const t = firstRule(text);
+function firstType(text: string, category = false): string | null {
+  const t = firstRule(text, category);
   if (t && COSMETIC_KEYS.has(t) && FASHION_NOUN.test(text)) {
     // Read the name again without the soft words; if it is then a garment, they
     // described the garment. Real cosmetics ("Nemlendirici Krem", "GETAWAY SET
     // … cilt bakım … çanta") still say cosmetics without them.
-    const again = firstRule(text.replace(SOFT_COSMETIC, " "));
+    const stripped = text.replace(SOFT_COSMETIC, " ");
+    const again = firstRule(stripped, category);
     if (again && !COSMETIC_KEYS.has(again)) return again;
+    // Nothing cosmetic is left and a garment word is: a "Taytlı Takım Pudra" is
+    // a powder-pink outfit with no shelf of its own, not face powder.
+    if (!again && stripped !== text) return null;
   }
   return t;
 }
@@ -261,7 +276,7 @@ function sharedSection(cat: string): Set<string> | null {
   // "Aksesuar" names a shelf only here: as a type word it would take every bag
   // a store files under a plain "Aksesuar" category.
   const types = new Set(
-    parts.map((p) => (p.trim() ? firstType(p) ?? (/\baksesuar|\baccessor/.test(p) ? "aksesuar" : null) : null)).filter((t): t is string => !!t),
+    parts.map((p) => (p.trim() ? firstType(p, true) ?? (/\baksesuar|\baccessor/.test(p) ? "aksesuar" : null) : null)).filter((t): t is string => !!t),
   );
   if (types.size < 2 || [...types].some((t) => COSMETIC_KEYS.has(t))) return null;
   return types;
@@ -342,7 +357,14 @@ export function classifyType(
   category: string | null | undefined,
   name: string,
   brand?: string | null,
+  /** The real brand (lib/maker.ts), for a multi-brand store: tells its label apart from its own category. */
+  maker?: string | null,
 ): string | null {
+  if (brand && MULTI_BRAND.has(brand)) return storeType(storeCategory(category, maker), name, brand);
+  return classifyOwn(category, name, brand);
+}
+
+function classifyOwn(category: string | null | undefined, name: string, brand?: string | null): string | null {
   // The noun-only name first; when it names nothing ("Kot Görünümlü Jegging",
   // "Wide Leg Jeans Baskılı"), the modifier was carrying the meaning — keep it.
   const trimmed = nounOnly(name ?? "");
@@ -368,7 +390,7 @@ function classifyRaw(
   name: string,
   brand?: string | null,
 ): string | null {
-  const cat = brand && LABEL_NOT_CATEGORY.has(brand) ? "" : fold(category ?? "");
+  const cat = fold(category ?? "");
   const n = fold(dialect(brand, name));
   let type: string | null;
   const shared = cat.trim() ? sharedSection(cat) : null;
@@ -379,16 +401,88 @@ function classifyRaw(
     const byName = firstType(n);
     // Perfume is never a colour or fabric word, so it may name the row even on
     // a shared shelf: Pull&Bear files its scents under "Footwear | Accessories".
-    type = byName && (!COSMETIC_KEYS.has(byName) || byName === "parfum") ? byName : firstType(cat);
+    type = byName && (!COSMETIC_KEYS.has(byName) || byName === "parfum") ? byName : firstType(cat, true);
   } else {
-    type = (cat.trim() ? firstType(cat) : null) ?? firstType(fold(`${category ?? ""} ${dialect(brand, name ?? "")}`));
+    type = (cat.trim() ? firstType(cat, true) : null) ?? firstType(fold(`${category ?? ""} ${dialect(brand, name ?? "")}`));
   }
   type = garmentOverride(n, type);
   if (type === "triko") return knitOverride(n) ?? type;
   return type;
 }
 
-const SLEEPWEAR = /pijama|pajama|pyjama|gecelik|sabahlik|nightgown|nightdress|nightie/;
+/**
+ * A multi-brand store's own category, or null when the field holds the maker's
+ * label: rows collected before 2026-10-26 (category = maker), and callers that
+ * pass a bare label with no maker. A " > " breadcrumb is always the store's.
+ */
+function storeCategory(category: string | null | undefined, maker: string | null | undefined): string | null {
+  const c = category?.trim();
+  if (!c) return null;
+  if (c.includes(">")) return c;
+  return maker != null && maker.trim() !== c ? c : null;
+}
+
+/**
+ * Store sections that hold no fashion or beauty at all — Beymen's furniture,
+ * tableware, pet, toy and food trees, Modanisa's religious goods, Sportive's
+ * balls and bottles. Their names still say "Pudra" (a cushion's colour),
+ * "Mesh" (a vase), "Vest" (a dog harness), and were filed under makeup,
+ * underwear and coats. A row in one of these sections has no shelf.
+ */
+const NON_FASHION_SECTION =
+  /^(?:ev urunleri|giyim disi|ev & yasam|ev yasam|ev tekstili|dini urunler|dini kitaplar|seccade|hac umre malzemeleri|evcil hayvan urunleri|oyuncak|gida|kitap|elektronik|basketbol topu|futbol topu|suluk|termos|matara|yoga mati|spor ekipmanlari|kamp malzemeleri)$/;
+
+const CLOTHING = new Set(["elbise", "ust", "alt", "dis-giyim", "triko", "ic-giyim", "mayo"]);
+const shelfGroup = (t: string) => (CLOTHING.has(t) ? "giyim" : COSMETIC_KEYS.has(t) ? "kozmetik" : t);
+
+/**
+ * The types a store breadcrumb names, most specific segment first. A segment
+ * naming two shelves ("Ayakkabı / Çanta", "İç Giyim & Pijama"…) cannot decide
+ * and is skipped, as is "Takım" (a set: Beymen and Boyner file trousers,
+ * blouses and tracksuits under it).
+ */
+function pathTypes(path: string): string[] {
+  const out: string[] = [];
+  for (const seg of path.split(">").map((s) => fold(s).trim()).reverse()) {
+    if (!seg || /^takim(lar)?$/.test(seg)) continue;
+    const parts = seg.split(/\s*[|,/&]\s*|\s+-\s+|\s+ve\s+/).filter(Boolean);
+    const types = new Set(parts.map((p) => firstType(p, true)).filter((t): t is string => !!t));
+    if (types.size === 1) out.push([...types][0]);
+  }
+  return out;
+}
+
+/**
+ * A multi-brand store's product. The store's breadcrumb knows the DEPARTMENT
+ * better than any name — "Filorga Global-Repair Advanced Elixir" is skincare,
+ * "El Portföyü" a bag, "Hoppuff Polar Panduf" a slipper, and none of their
+ * names says so — while the name knows the GARMENT better than the store's
+ * leaf, which third-party sellers fill loosely ("TRİKO > POLO YAKA" holding
+ * knit polos and tees alike, "Bluz" holding a gilet). Measured on 15.8k rows
+ * of the six stores' own listings, 2026-10-26:
+ *   - a non-fashion section → no shelf, whatever the name says;
+ *   - the name names nothing → the breadcrumb's shelf;
+ *   - both name clothing → the name's (it tells a polo from a jumper);
+ *   - both name cosmetics → the breadcrumb's, but a generic format word in the
+ *     leaf ("Saç Serumu", "Bb & Cc Krem" → skincare) yields to the department
+ *     above it (Saç Bakım, Makyaj);
+ *   - otherwise they disagree on the department → the breadcrumb's: a "2li
+ *     Toka" is not underwear and a "Güneş Charm Kolye" is not sun cream.
+ */
+function storeType(path: string | null, name: string, brand: string): string | null {
+  const byName = classifyOwn(null, name, brand);
+  if (!path) return byName;
+  if (path.split(">").some((s) => NON_FASHION_SECTION.test(fold(s).trim()))) return null;
+  const types = pathTypes(path);
+  if (!types.length) return byName;
+  let byPath = types[0];
+  if (byPath === "cilt-bakim") byPath = types.find((t) => COSMETIC_KEYS.has(t) && t !== "cilt-bakim") ?? byPath;
+  if (!byName || byName === byPath) return byPath;
+  if (shelfGroup(byName) !== shelfGroup(byPath)) return byPath;
+  return CLOTHING.has(byPath) ? byName : byPath;
+}
+
+const SLEEPWEAR = /pijama|pajama|pyjama|gecelik|sabahlik|night ?gown|nightdress|nightie/;
 const OUTER_GARMENT = new Set(["alt", "ust", "elbise", "dis-giyim", "triko"]);
 
 /**
@@ -403,6 +497,8 @@ function garmentOverride(n: string, type: string | null): string | null {
   if (OUTER_GARMENT.has(type) && SLEEPWEAR.test(n)) return "ic-giyim";
   if (type === "ust" && /sutyen|\bbra\b|bralet/.test(n)) return "ic-giyim";
   if (type === "alt" && /esofman ust/.test(n)) return "triko";
+  // "Polar" (fleece) is a top on its own, a lining on a hat: "Polar Astarlı Bere".
+  if (type === "triko" && /\bpolar\b/.test(n) && /sapka|\bbere\b|beanie|eldiven|glove|atki|boyunluk|\bbone/.test(n)) return "aksesuar";
   if (type === "ic-giyim" && !SLEEPWEAR.test(n) && /\bjeans?\b/.test(n) && !/\bsocks?\b|corap/.test(n)) return "alt";
   return type;
 }
@@ -670,19 +766,19 @@ export const PRODUCT_SUBTYPES: Record<string, ProductSubtype[]> = {
     { key: "plaj", label: "Plaj Giyim", re: /\bplaj|pareo|kaftan|beach/ },
   ],
   canta: [
-    { key: "cuzdan", label: "Cüzdan & Kartlık", re: /cuzdan|wallet|kartlik|card holder|\bpouch/ },
+    { key: "cuzdan", label: "Cüzdan & Kartlık", re: /cuzdan|wallet|kartlik|card ?holder|\bpouch|portfoy|pasaportluk/ },
     { key: "sirt", label: "Sırt Çantası", re: /sirt canta|backpack|rucksack/ },
     { key: "tote", label: "Tote & Alışveriş", re: /\btote|alisveris canta|shopper|shopping bag/ },
     { key: "capraz", label: "Çapraz & Omuz", re: /capraz|omuz canta|crossbody|cross body|shoulder bag|baget/ },
     { key: "el", label: "El Çantası", re: /el canta|clutch|abiye canta|bucket|\bmini canta/ },
-    { key: "valiz", label: "Valiz & Seyahat", re: /valiz|seyahat|luggage|suitcase|duffel|laptop canta/ },
+    { key: "valiz", label: "Valiz & Seyahat", re: /valiz|bavul|seyahat|luggage|suitcase|duffel|laptop canta/ },
     { key: "canta-aksesuar", label: "Çanta Aksesuarı", re: /canta aksesuar|canta askisi|canta askı|bag charm/ },
   ],
   aksesuar: [
     { key: "gozluk", label: "Gözlük", re: /gozlu[kg]|sunglass|eyewear/ },
     { key: "sapka", label: "Şapka & Bere", re: /sapka|\bbere\b|kasket|beanie|\bcap\b|fedora|bucket hat/ },
     { key: "kemer", label: "Kemer", re: /kemer|\bbelt/ },
-    { key: "sal", label: "Şal & Atkı", re: /\bsal\b|sali\b|fular|atki|esarp|bandana|scarf|eldiven/ },
+    { key: "sal", label: "Şal & Atkı", re: /\bsal\b|sali\b|fular|atki|esarp|bandana|scarf|eldiven|basortu|turban|\bbone(?:si)?\b(?! china)|kolluk|boyunluk/ },
     { key: "saat", label: "Saat", re: /(?<!\d )(?<!\d)(?<!kum )\bsaat|\bwatch\b/ },
     // Jewellery by piece (owner 2026-10-18: Saat&Saat's one "Aksesuar" strip
     // mixed watches, necklaces and bracelets). Watches first, so a bangle
@@ -691,7 +787,7 @@ export const PRODUCT_SUBTYPES: Record<string, ProductSubtype[]> = {
     { key: "kupe", label: "Küpe", re: /kupe|earring|\bhoops?\b/ },
     { key: "bileklik", label: "Bileklik & Bilezik", re: /bileklik|bilezi[kg]|bracelet|bangle|kelepce/ },
     { key: "yuzuk", label: "Yüzük", re: /yuzu[kg]|\brings?\b/ },
-    { key: "taki", label: "Takı", re: /kupe|kolye|bileklik|bilezi[kg]|yuzu[kg]|\bring\b|charm|zincir|earring|necklace|bracelet|anahtarlik|brosc?|piercing|halhal/ },
+    { key: "taki", label: "Takı", re: /kupe|kolye|bileklik|bilezi[kg]|yuzu[kg]|\bring\b|charm|zincir|earring|necklace|bracelet|anahtarlik|brosc?|piercing|halhal|kol dugme|cufflink/ },
     { key: "toka", label: "Toka & Saç Aksesuarı", re: /\btoka|sac bandi|bandana|hair (clip|tie|pin)|\bbone\b/ },
   ],
   makyaj: [
@@ -734,12 +830,26 @@ export const PRODUCT_SUBTYPES: Record<string, ProductSubtype[]> = {
  * Repair" shampoo — that product is cilt-bakim or sac, and never tested against
  * footwear words.
  */
-export function subtypeForName(type: string | null | undefined, name: string, brand?: string | null): string | null {
+export function subtypeForName(
+  type: string | null | undefined,
+  name: string,
+  brand?: string | null,
+  /** A multi-brand store's category and maker: its breadcrumb names the subtype when the name does not. */
+  category?: string | null,
+  maker?: string | null,
+): string | null {
   if (!type) return null;
   const subs = PRODUCT_SUBTYPES[type];
   if (!subs) return null;
   const n = fold(name);
   for (const s of subs) if (s.re.test(n)) return s.key;
+  // "Adventurer Berlin Classic Medium Unisex" filed under "ÇANTA > SIRT ÇANTASI".
+  const path = brand && MULTI_BRAND.has(brand) ? storeCategory(category, maker) : null;
+  if (path) {
+    for (const seg of path.split(">").map((x) => fold(x).trim()).reverse()) {
+      for (const s of subs) if (s.re.test(seg)) return s.key;
+    }
+  }
   // A shoe named only "Kovboy" is a boot (see cowboyBoot); a "kovboy loafer" or
   // "kovboy sandalet" names its own shelf above and keeps it.
   if (type === "ayakkabi" && /\bko[vw]boy\b/.test(n)) return "bot";

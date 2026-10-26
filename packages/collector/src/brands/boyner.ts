@@ -1,6 +1,6 @@
 import type { ProductRecord, SizeVariant } from "../types";
 import { getJson } from "../http";
-import { toMinor } from "../normalize";
+import { categoryPath, toMinor } from "../normalize";
 
 // Boyner — big Turkish multi-brand store. Its mobile listing API (same host the
 // app uses) is public — no auth, just an app-style UA. Every page of each
@@ -113,7 +113,10 @@ export function mapProduct(p: any, gender: ProductRecord["gender"]): ProductReco
     listPrice: Number.isFinite(oldPrice) && oldPrice > price ? toMinor(oldPrice) : null,
     currency: "TRY",
     inStock: p?.HasStock !== false,
-    category: p?.BrandName ?? null,
+    // The shop's breadcrumb ("Kadın > Giyim > Pantolon > Denim Pantolon"); the
+    // label ("Love My Body", which filed 231 trousers as tops) is `maker` (2026-10-26).
+    category: categoryPath(Array.isArray(p?.BreadCrumbs) ? p.BreadCrumbs.map((b: any) => b?.DisplayName) : [p?.CategoryName]),
+    maker: typeof p?.BrandName === "string" && p.BrandName.trim() ? p.BrandName.trim() : null,
     gender,
     variants: sizes.length > 0 ? { colors: [], sizes } : null,
     groupKey,

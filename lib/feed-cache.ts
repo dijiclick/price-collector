@@ -55,8 +55,11 @@ export const FEED_MAX_AGE_HOURS = 8;
  * because Postgres lower() turns "İ" into "i̇" and the patterns would miss it.
  */
 const foldSql = (col: string) => `lower(translate(coalesce(${col}, ''), 'İIıÇçĞğÖöŞşÜü', 'iiiccggoossuu'))`;
+// The last four are multi-brand stores' department breadcrumbs (2026-10-26):
+// Beymen's "EV ÜRÜNLERİ > …" and "GİYİM DIŞI > …" (pets, toys, food, sport
+// kit), Modanisa's religious goods — rows that now carry no type at all.
 export const HOME_SECTION_RE =
-  "(ev dekor|dekorasyon|mobilya|mutfak|sofra|atistirmalik|gida|takviye|kitap|dergi|havlu set|nevresim|yatak ortusu|battaniye|throw|mum &|oda kokusu|oda & araba|aydinlatma|banyo aksesuar|catal|bardak|kirtasiye|oyuncak|ev tekstil|^hali$)";
+  "(ev dekor|dekorasyon|mobilya|mutfak|sofra|atistirmalik|gida|takviye|kitap|dergi|havlu set|nevresim|yatak ortusu|battaniye|throw|mum &|oda kokusu|oda & araba|aydinlatma|banyo aksesuar|catal|bardak|kirtasiye|oyuncak|ev tekstil|^hali$|^ev urunleri >|^giyim disi >|^dini urunler|evcil hayvan)";
 export const HOME_NAME_RE =
   "(\\mtabak\\M|\\mkase\\M|carsaf|nevresim|yastik kilifi|vazo|mumluk|\\mtava\\M|tencere|\\mkupa\\M|bardak|paspas|protein bar|sakiz|biblo|sehpa|sandalye|abajur|\\mtablo\\M|cerceve|bed linen|duvet cover|pillowcase|cushion cover|place mat|serving board|candle holder|storage basket|table lamp|sengesett|putetrekk|lysestake|oppbevaring|bordlampe|bettwäsche|kissenbezug|vorhang|kerzenhalter|tischlampe|\\mball\\M|bälle)";
 // Furniture, bedding and kitchenware nouns no garment, shoe, bag or cosmetic

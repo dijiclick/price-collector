@@ -25,6 +25,7 @@ export const STORE: AkinonStore = {
     genderAttrs: ["integration_cinsiyet", "integration_erp_cinsiyet"],
   },
   brandAttr: "integration_marka",
+  pathAttrs: ["integration_urun_ana_grup", "integration_alt_grup", "integration_tanim"],
   exclude: [...DIRECT_BRANDS, ...NON_FASHION],
 };
 

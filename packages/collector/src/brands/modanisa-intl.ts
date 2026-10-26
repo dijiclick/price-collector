@@ -15,7 +15,7 @@
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
-import { toMinor } from "../normalize";
+import { categoryPath, toMinor } from "../normalize";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
 const SITE = "https://www.modanisa.com/en";
@@ -78,7 +78,8 @@ export function mapIntlItem(it: any, country: CountryCode): ProductRecord | null
     listPrice: money.list != null ? toMinor(money.list) : null,
     currency: COUNTRIES[country].currency,
     inStock: true,
-    category: it.brand ? String(it.brand) : null, // marketplace: the label, as in modanisa.ts
+    category: categoryPath((it.categories ?? []).map(String)), // the shop's categories; the label is `maker`, as in modanisa.ts
+    maker: it.brand ? String(it.brand).trim() || null : null,
     gender: genderOf((it.categories ?? []).map(String)),
     variants: sizes.length || colour ? { colors: colour ? [colour] : [], sizes } : null,
     colorName: colour,
