@@ -44,6 +44,9 @@ const MAX_REQUESTS = 90;
 const MAX_PAGES = 12;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Thrown when a run has spent MAX_REQUESTS; the walk keeps what it read. */
+class RequestCap extends Error {}
+
 /** Apotea's top-level categories that are beauty / personal care. */
 export const APOTEA_BEAUTY = new Set([
   "ansikte", "harvard", "smink", "kroppsvard", "solskydd",
@@ -115,7 +118,7 @@ export async function listApotea(country: CountryCode, cap = 1500): Promise<Prod
   if (country !== "SE") return [];
   let requests = 0;
   const get = async <T = any>(url: string, body?: unknown): Promise<T> => {
-    if (requests >= MAX_REQUESTS) throw new Error(`apotea/${country}: request cap ${MAX_REQUESTS} reached`);
+    if (requests >= MAX_REQUESTS) throw new RequestCap(`apotea/${country}: request cap ${MAX_REQUESTS} reached`);
     if (requests > 0) await sleep(PAUSE_MS);
     requests++;
     return getJson<T>(url, body === undefined
@@ -146,29 +149,39 @@ export async function listApotea(country: CountryCode, cap = 1500): Promise<Prod
   if (!paths.length) throw new Error(`apotea/${country}: no campaigns in the banner list`);
   const brands = new Set<string>(((await get<any>(`${API}/brands`))?.items ?? []).map((b: any) => String(b?.path ?? "")));
 
+  // The banner lists the week's campaigns in Apotea's own order (68 on
+  // 2026-10-26, against ~20 when this was written), so reading page 1 of each
+  // alone can spend the cap. Spending it ends the walk with the campaigns
+  // already read rather than throwing them away; the same campaigns come
+  // first every run, so the feed stays stable.
   let read = 0;
-  for (const path of paths) {
-    if (byId.size >= cap) break;
-    const isBrand = brands.has(path);
-    const q = isBrand ? { brandPath: path } : { promotionPath: path };
-    const d = await search(q, 1);
-    const arts: any[] = d?.articles ?? [];
-    // No campaign price on the first page = a multi-buy / gift / info banner.
-    if (!arts.some((a) => num(a?.campaignPrice) > 0)) continue;
-    const plan = apoteaPlan(apoteaCats(d), isBrand);
-    if (plan === "all") {
-      read++;
-      take(d);
-      await rest(q, d, path);
-    } else if (plan === "split") {
-      read++;
-      for (const cat of apoteaCats(d).filter((c) => APOTEA_BEAUTY.has(c))) {
-        const cq = { categoryPath: cat, filter: [{ key: "brand", value: path }] };
-        const c1 = await search(cq, 1);
-        take(c1);
-        await rest(cq, c1, `${path}/${cat}`);
+  try {
+    for (const path of paths) {
+      if (byId.size >= cap) break;
+      const isBrand = brands.has(path);
+      const q = isBrand ? { brandPath: path } : { promotionPath: path };
+      const d = await search(q, 1);
+      const arts: any[] = d?.articles ?? [];
+      // No campaign price on the first page = a multi-buy / gift / info banner.
+      if (!arts.some((a) => num(a?.campaignPrice) > 0)) continue;
+      const plan = apoteaPlan(apoteaCats(d), isBrand);
+      if (plan === "all") {
+        read++;
+        take(d);
+        await rest(q, d, path);
+      } else if (plan === "split") {
+        read++;
+        for (const cat of apoteaCats(d).filter((c) => APOTEA_BEAUTY.has(c))) {
+          const cq = { categoryPath: cat, filter: [{ key: "brand", value: path }] };
+          const c1 = await search(cq, 1);
+          take(c1);
+          await rest(cq, c1, `${path}/${cat}`);
+        }
       }
     }
+  } catch (err) {
+    if (!(err instanceof RequestCap) || !byId.size) throw err;
+    console.log(`${(err as Error).message}; keeping ${byId.size} deals from ${read} campaigns`);
   }
   if (!read) throw new Error(`apotea/${country}: none of ${paths.length} campaigns is a beauty markdown`);
   const all = [...byId.values()];
