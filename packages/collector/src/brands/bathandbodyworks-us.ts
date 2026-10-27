@@ -19,6 +19,12 @@
  *
  * `inventory.ats` is the online stock count. Most sale items sell out within
  * days, so in-stock rows are ranked first.
+ *
+ * Between sale events (2026-10-27: 0 of 1,607 products with a sale price, only
+ * multi-buys) the run is topped up to the cap with in-stock full-price rows
+ * (`listPrice: null`) from the same pages, as Gullfunn and COS do — collecting
+ * nothing left last sale's rows live at 75 % off and tripped the zero-rows
+ * alarm. A full-price row later reduced is a real drop.
  */
 import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
@@ -63,14 +69,18 @@ export function bbwPhoto(u: unknown): string | null {
   return `${HOST}/dw/image/v2/BBDL_PRD${path}?sw=900&sh=900&sm=fit`;
 }
 
-/** One Constructor result → record (sale-event markdowns only). Pure. */
-export function mapBbwResult(res: any, country: CountryCode = "US", now = Date.now()): ProductRecord | null {
+/**
+ * One Constructor result → record. Pure. Sale-event markdowns only, unless
+ * `fullPrice`: then an unreduced product maps at its shelf price, `listPrice: null`.
+ */
+export function mapBbwResult(res: any, country: CountryCode = "US", now = Date.now(), { fullPrice = false } = {}): ProductRecord | null {
   const d = res?.data;
   if (!d?.id || !d?.url) return null;
   const list = num(d.c_listPrice ?? d.price);
   const shelf = num(d.price);
   const sale = num(d.c_salePrice);
-  if (!(sale > 0) || !(list > sale) || !(shelf > sale) || !hasLivePromo(d.promotions, now)) return null;
+  const deal = sale > 0 && list > sale && shelf > sale && hasLivePromo(d.promotions, now);
+  if (!deal && !(fullPrice && shelf > 0)) return null;
   const name = decodeEntities(String(res.value ?? `${d.c_productName ?? ""} ${d.c_form ?? ""}`)).replace(/\s+/g, " ").trim();
   if (!name) return null;
   const photos = (d.imageGroups ?? [])
@@ -86,8 +96,8 @@ export function mapBbwResult(res: any, country: CountryCode = "US", now = Date.n
     url: String(d.url).startsWith("http") ? String(d.url) : `${HOST}${d.url}`,
     imageUrl: main,
     images: cleanGallery(photos, main),
-    price: toMinor(sale),
-    listPrice: toMinor(list),
+    price: toMinor(deal ? sale : shelf),
+    listPrice: deal ? toMinor(list) : null,
     currency: COUNTRIES[country].currency,
     inStock: ats > 0 && d.c_forceSoldOut !== true,
     category: (typeof d.c_productType === "string" && d.c_productType.trim()) || (typeof d.c_form === "string" && d.c_form.trim()) || null,
@@ -101,6 +111,7 @@ export function mapBbwResult(res: any, country: CountryCode = "US", now = Date.n
 export async function listBathAndBodyWorksUs(country: CountryCode): Promise<ProductRecord[]> {
   if (country !== "US") return [];
   const rows: ProductRecord[] = [];
+  const full: ProductRecord[] = [];
   const seen = new Set<string>();
   let total = Infinity;
   for (let page = 1; page <= MAX_PAGES && (page - 1) * PER_PAGE < total; page++) {
@@ -110,14 +121,15 @@ export async function listBathAndBodyWorksUs(country: CountryCode): Promise<Prod
     const results: any[] = body?.response?.results ?? [];
     if (!results.length) break;
     for (const r of results) {
-      const rec = mapBbwResult(r, country);
+      const rec = mapBbwResult(r, country, Date.now(), { fullPrice: true });
       if (rec && !seen.has(rec.externalId)) {
         seen.add(rec.externalId);
-        rows.push(rec);
+        if (rec.listPrice != null) rows.push(rec);
+        else if (rec.inStock) full.push(rec);
       }
     }
   }
   if (!Number.isFinite(total) || total === 0) throw new Error(`bathandbodyworks/${country}: Constructor returned no catalogue`);
-  // An empty list is legitimate between sale events (no throw): the catalogue answered.
-  return rows.sort((a, b) => Number(b.inStock) - Number(a.inStock)).slice(0, CAP);
+  // Sale rows first (in stock first), then the full-price top-up (see the header).
+  return [...rows.sort((a, b) => Number(b.inStock) - Number(a.inStock)), ...full].slice(0, CAP);
 }

@@ -102,7 +102,9 @@ export function shelfPrice(tiers: any): { sale: number; list: number } | null {
   if (!/^\s*(sale|now|your choice|clearance)\s*\[PRICE\]\s*$/i.test(String(red?.label ?? ""))) return null; // codes, "Only", member
   const rv = reg?.values ?? [];
   const dv = red?.values ?? [];
-  if (rv.length !== 1 || dv.length !== 1 || rv[0]?.type !== "regular" || dv[0]?.type !== "discount") return null;
+  // Since 2026-10-21 the feed types most shelf sale values "regular" too (with a
+  // `percentOff`), so the reduced tier's label and lower value decide, not its type.
+  if (rv.length !== 1 || dv.length !== 1 || rv[0]?.type !== "regular" || !["discount", "regular"].includes(dv[0]?.type)) return null;
   const list = Number(rv[0].value);
   const sale = Number(dv[0].value);
   if (!(sale > 0) || !(list > sale)) return null;

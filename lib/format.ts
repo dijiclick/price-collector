@@ -508,7 +508,21 @@ export const brandLabel = (b: string) => BRAND_LABELS[b] ?? b;
  * store still names itself on the product page's "open on …" button.
  */
 export function dealBrandLabel(d: { brand: string; maker?: string | null }): string {
-  return d.maker?.trim() || brandLabel(d.brand);
+  const maker = d.maker?.trim();
+  return maker ? makerLabel(maker) : brandLabel(d.brand);
+}
+
+const STORE_BY_FOLD = new Map(Object.values(BRAND_LABELS).map((l) => [l.toLocaleLowerCase("tr-TR"), l]));
+
+/**
+ * A store's own line, named the way the owner asked (2026-10-26): "Sagaza For
+ * Boyner" reads "Sagaza (Boyner)". Only when the words after "for" are one of
+ * our stores — "Muse For All" and "In The Mood For Love" are brand names.
+ */
+export function makerLabel(maker: string): string {
+  const m = /^(.*\S)\s+for\s+(.+)$/i.exec(maker.trim());
+  const store = m && STORE_BY_FOLD.get(m[2].trim().toLocaleLowerCase("tr-TR"));
+  return m && store ? `${m[1]} (${store})` : maker.trim();
 }
 
 /**

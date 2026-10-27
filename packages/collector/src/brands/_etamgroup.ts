@@ -13,9 +13,16 @@
  *   no reference), so Etam returns nothing outside the sales.
  * - The tile's quick-add panel lists every size with `data-available`, which is
  *   real per-size stock (restock alerts).
- * - Undiz's markdowns live in "ventes archives" (`1-ventes-archives`, ~430
- *   colours); its men's slice (`2-promotion-homme`) is read first so those rows
+ * - Undiz's markdowns live in "archives" (`1-archives`, ~430 colours during
+ *   the sale); its men's slice (`2-archives-homme`) is read first so those rows
  *   are tagged `erkek`. Everything else is women's lingerie/swim/nightwear.
+ *   The categories were renamed on 2026-10-26 (`1-ventes-archives` and
+ *   `2-promotion-homme` now answer an empty grid).
+ * - Between sales (2026-10-27: 194 archive tiles, not one crossed price) the
+ *   run is topped up to the cap with in-stock full-price rows from the
+ *   site's `full` categories (`listPrice: null`), as Gullfunn and COS do —
+ *   collecting nothing would leave last sale's rows live at their old prices
+ *   and trip the zero-rows alarm. A full-price row later reduced is a real drop.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getText } from "../http";
@@ -26,13 +33,14 @@ import { decodeEntities } from "./_sfcchtml";
 export type EtamBrand = "undiz" | "etam";
 
 interface Cat { cgid: string; gender: ProductRecord["gender"] }
-interface Site { host: string; site: string; locale: string; path: string; cats: Cat[] }
+interface Site { host: string; site: string; locale: string; path: string; cats: Cat[]; full?: Cat[] }
 
 export const ETAM_SITES: Record<EtamBrand, Partial<Record<CountryCode, Site>>> = {
   undiz: {
     FR: {
       host: "https://www.undiz.com", site: "UNDIZ_FR", locale: "fr_FR", path: "/fr",
-      cats: [{ cgid: "2-promotion-homme", gender: "erkek" }, { cgid: "1-ventes-archives", gender: "kadin" }],
+      cats: [{ cgid: "2-archives-homme", gender: "erkek" }, { cgid: "1-archives", gender: "kadin" }],
+      full: [{ cgid: "1-homme", gender: "erkek" }, { cgid: "1-bain", gender: "kadin" }, { cgid: "1-lingerie", gender: "kadin" }],
     },
   },
   etam: {
@@ -59,8 +67,14 @@ const euros = (s: string): number => {
   return Number.isFinite(n) ? n : NaN;
 };
 
-/** Parse one grid page. Pure. Only tiles with a struck reference price are kept. */
-export function parseEtamGrid(brand: EtamBrand, country: CountryCode, html: string, gender: ProductRecord["gender"]): ProductRecord[] {
+/**
+ * Parse one grid page. Pure. Only tiles with a struck reference price are kept,
+ * unless `fullPrice` (the between-sales top-up): then an unreduced tile is kept
+ * too, with `listPrice: null`.
+ */
+export function parseEtamGrid(
+  brand: EtamBrand, country: CountryCode, html: string, gender: ProductRecord["gender"], { fullPrice = false } = {},
+): ProductRecord[] {
   const s = ETAM_SITES[brand][country];
   if (!s) return [];
   const out: ProductRecord[] = [];
@@ -70,7 +84,8 @@ export function parseEtamGrid(brand: EtamBrand, country: CountryCode, html: stri
     if (!pid) continue;
     const was = euros(block.match(/tuileProductPrice -crossed[^"]*">([^<]+)</)?.[1] ?? "");
     const paid = euros(block.match(/tuileProductPrice u-promo-color">([^<]+)</)?.[1] ?? block.match(/tuileProductPrice">([^<]+)</)?.[1] ?? "");
-    if (!(paid > 0) || !(was > paid)) continue;
+    const reduced = was > paid;
+    if (!(paid > 0) || !(reduced || fullPrice)) continue;
     const link = block.match(/<a href="([^"]+)" class="js-productLink productCard__nameTitleLink[^"]*"[^>]*>([^<]+)<\/a>/);
     if (!link) continue;
     const href = link[1];
@@ -94,7 +109,7 @@ export function parseEtamGrid(brand: EtamBrand, country: CountryCode, html: stri
       imageUrl: imgs[0] ?? null,
       images: cleanGallery(imgs, imgs[0] ?? null),
       price: toMinor(paid),
-      listPrice: toMinor(was),
+      listPrice: reduced ? toMinor(was) : null,
       currency: "EUR",
       inStock: sizes.length ? sizes.some((x) => x.availability === "in_stock") : true,
       category: null,
@@ -107,22 +122,43 @@ export function parseEtamGrid(brand: EtamBrand, country: CountryCode, html: stri
   return out;
 }
 
+async function grid(brand: EtamBrand, country: CountryCode, s: Site, cgid: string, page: number): Promise<{ html: string; tiles: number }> {
+  const html = await getText(etamGridUrl(brand, country, cgid, page * PAGE)!, {
+    country,
+    headers: { "X-Requested-With": "XMLHttpRequest", "Accept-Language": "fr-FR,fr;q=0.9", Referer: `${s.host}${s.path}/` },
+  });
+  return { html, tiles: html.split("js-productCard\"").length - 1 };
+}
+
+const pause = () => new Promise((r) => setTimeout(r, 600));
+
 export async function listEtamGroup(brand: EtamBrand, country: CountryCode): Promise<ProductRecord[]> {
   const s = ETAM_SITES[brand][country];
   if (!s) return [];
   const byId = new Map<string, ProductRecord>();
   for (const cat of s.cats) {
     for (let page = 0; page < MAX_PAGES; page++) {
-      if (byId.size || page) await new Promise((r) => setTimeout(r, 600));
-      const html = await getText(etamGridUrl(brand, country, cat.cgid, page * PAGE)!, {
-        country,
-        headers: { "X-Requested-With": "XMLHttpRequest", "Accept-Language": "fr-FR,fr;q=0.9", Referer: `${s.host}${s.path}/` },
-      });
-      const tiles = html.split("js-productCard\"").length - 1;
+      if (byId.size || page) await pause();
+      const { html, tiles } = await grid(brand, country, s, cat.cgid, page);
       for (const r of parseEtamGrid(brand, country, html, cat.gender)) if (!byId.has(r.externalId)) byId.set(r.externalId, r);
       if (tiles < PAGE) break;
     }
   }
   const all = [...byId.values()];
-  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
+  const sale = [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
+  if (sale.length >= CAP || !s.full) return sale;
+
+  // Top up with in-stock full-price rows (see the header).
+  const full = new Map<string, ProductRecord>();
+  for (const cat of s.full) {
+    for (let page = 0; page < MAX_PAGES && sale.length + full.size < CAP; page++) {
+      await pause();
+      const { html, tiles } = await grid(brand, country, s, cat.cgid, page);
+      for (const r of parseEtamGrid(brand, country, html, cat.gender, { fullPrice: true })) {
+        if (r.inStock && !byId.has(r.externalId) && !full.has(r.externalId)) full.set(r.externalId, r);
+      }
+      if (tiles < PAGE) break;
+    }
+  }
+  return [...sale, ...full.values()].slice(0, CAP);
 }
