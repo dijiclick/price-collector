@@ -1,183 +1,192 @@
 /**
- * Lutvelizade (lutvelizade.com.tr; lutvelizade.com redirects there) — women's
- * shoes, bags and accessories on the brand's own ASP.NET storefront
- * (2026-10-23). No JSON route: the category grids are server-rendered HTML,
- * 16 cards a page by default, but `?pn=1&ps=1000` returns a whole category in
- * one response (shoes: 442 cards, 2.3 MB, ~10 s). No proxy: plain requests
- * from a Turkish line answer, no bot wall in front (IIS, no CDN).
+ * Lutvelizade (lutvelizade.com.tr) — women's shoes, bags, accessories and
+ * clothing. The shop moved from its own ASP.NET storefront to **ikas** on
+ * ~2026-10-26 (the old `/kadin-…-modelleri` grids and `/…-p` product urls are
+ * gone; the sitemap is now ikas's products/collections/pages index), and the
+ * old adapter failed every run with "sitemap named only 1 grids".
  *
- * WHICH PAGES. The sitemap names every category (`/kadin-…-modelleri`) and its
- * 527 product urls; the union of those category grids plus the
- * `sale-etiketli-urunler` tag held 526 of them (2026-10-23). The sitemap is
- * read each run, so a new category is picked up without a code change.
+ * ikas's storefront client posts plain JSON to
+ * `api.myikas.com/api/sf/graphql/searchProducts` with the shop's public
+ * storefront key (`apiKey` in `window.__IKAS_DATA__`, read from the home page
+ * each run, the constants below as fallback). One call returns up to 100 full
+ * products with every variant's price and stock: 168 products in 2 calls
+ * (2026-10-28). No proxy, no wall.
  *
- * EACH CARD is one colour: `data-ga4-id` (SKU-colour, the id), `data-ga4-name`,
- * `data-ga4-category`, `data-ga4-variant` (colour), the link (`/…-p`), three
- * photos (`src`, `data-alt1`, `data-alt2`), and either one price or
- * `<span class="discounted">` (charged) + `<span class="invalid">` (struck).
+ * EACH ROW is one colour of a product (`groupVariantsByVariantTypeId` names the
+ * colour type), as before. The id is the variant SKU minus its size suffix
+ * (`26IW011020003-3321-36` → `26IW011020003-3321`) — the same SKU-colour the
+ * old grid's `data-ga4-id` carried, so tracked products keep their rows.
  *
- * STOCK. `data-available="0"` cards are sold out ("ÜRÜN TÜKENDİ" ribbon) and
- * their link 301s to the home page (349 of 526 on 2026-10-23). They are still
- * returned, as `inStock: false` and last: a tracked product is spared the
- * sweep's "missing means sold out" rule because a resolver exists, and the
- * resolver cannot price a page that redirects home, so the sweep is the only
- * place a sell-out is seen. Per-size stock is on the product page (`class="disable" title="Stokta Yok"`
- * on a sold-out size), read for a bounded, rotating subset per run.
- *
- * FULL CATALOGUE: every card, reduced or not (full price =
- * `listPrice: null`), like the other Turkish shops since 2026-10-19. A grid
- * that fails fails the run: a partial walk would let the delist sweep mark
- * its cards sold out.
+ * PRICES. `discountPrice` (charged) below `sellPrice` (struck) is the shop's
+ * own reduction; otherwise the row is full price (`listPrice: null`). Every
+ * in-stock colour is returned, reduced or not, plus sold-out reduced colours.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
-import { getText } from "../http";
+import { getJson, getText } from "../http";
 import { toMinor } from "../normalize";
-import { decodeEntities } from "./_sfcchtml";
 import type { CountryCode } from "../../../../lib/countries";
 
 export const brand = "lutvelizade";
-export const SITE = "https://www.lutvelizade.com.tr";
-const PAGE_SIZE = 1000;
-/** Product-page size reads per run (deals first). */
-const DETAIL_LIMIT = Number(process.env.LUTVELIZADE_DETAIL_LIMIT ?? 30);
-const FULL_DETAIL_LIMIT = Number(process.env.LUTVELIZADE_FULL_DETAIL_LIMIT ?? 15);
+export const SITE = "https://lutvelizade.com.tr";
+const API = "https://api.myikas.com/api/sf/graphql/searchProducts";
+const IMG = "https://cdn.myikas.com/images";
+const PER_PAGE = 100;
+const MAX_PAGES = 10;
 const PAUSE_MS = Number(process.env.LUTVELIZADE_PAUSE_MS ?? 300);
 const TIMEOUT_MS = 60_000;
 
+/** Public storefront constants (home page, 2026-10-28). */
+export const IKAS_FALLBACK = {
+  apiKey:
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJtIjoiNzU3Zjg5ZmItNzZkYS00NmQ3LWIxNzctNzA5Yzg5NTVkODVjIiwic2YiOiIzNmFhODFkOC02ZDM4LTQ0OTUtODk2Zi00ZjczZTQyNjJlOWYiLCJzZnQiOjEsInNsIjoiYWY0OTRlZjUtYTMzZS00ZTc0LWEyYjUtZjBmNDI5ZDM2MTQ3In0.MDjS3cK_3BcVB67AXy8vTCtiUopMuCskEblEnTX-dn8",
+  merchantId: "757f89fb-76da-46d7-b177-709c8955d85c",
+  storefrontId: "36aa81d8-6d38-4495-896f-4f73e4262e9f",
+  storefrontRoutingId: "22fd30d6-0563-42eb-b37d-780d660d3ae4",
+  salesChannelId: "af494ef5-a33e-4e74-a2b5-f0f429d36147",
+};
+export type IkasConfig = typeof IKAS_FALLBACK;
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Grid paths to walk: every `/kadin-…-modelleri` category in the sitemap, plus the sale tag. */
-export function gridPaths(sitemap: string): string[] {
-  const cats = [...sitemap.matchAll(/<loc>\s*https?:\/\/[^/<]+(\/kadin-[a-z0-9-]+-modelleri)\s*<\/loc>/g)].map((m) => m[1]);
-  return [...new Set(["/sale-etiketli-urunler", ...cats])];
-}
-
-export const gridUrl = (path: string, page = 1) => `${SITE}${path}?pn=${page}&ps=${PAGE_SIZE}`;
-
-/** "1.299,90 TL" / "389,97 TL" → 129990 / 38997. */
-export function parseTl(s: string | undefined | null): number | null {
-  if (!s) return null;
-  const n = Number(s.replace(/[^\d,.]/g, "").replace(/\./g, "").replace(",", "."));
-  return Number.isFinite(n) && n > 0 ? toMinor(n) : null;
-}
-
-const attr = (html: string, name: string): string | null => {
-  const m = html.match(new RegExp(`\\s${name}="([^"]*)"`));
-  return m ? decodeEntities(m[1]).trim() : null;
-};
-
-/** Split a grid page into its cards (each starts at the column div carrying `data-ga4-id`). */
-export function splitCards(html: string): string[] {
-  // Cut at each card's start (not split(): it skips a zero-width match at index 0).
-  const starts = [...html.matchAll(/<div[^>]*\sdata-ga4-id="/g)].map((m) => m.index!);
-  return starts.map((s, i) => html.slice(s, starts[i + 1] ?? html.length));
-}
-
-/** Map one grid card. Pure. Null for a card without an id, link or price. */
-export function mapCard(card: string): (ProductRecord & { available: boolean }) | null {
-  const id = attr(card, "data-ga4-id");
-  const href = card.match(/<a [^>]*href="(\/[^"]+-p)"/)?.[1];
-  const name = attr(card, "data-ga4-name") ?? attr(card, "title");
-  const priceBox = card.match(/<div class="price">([\s\S]*?)<\/div>/)?.[1] ?? "";
-  const now = parseTl(priceBox.match(/class="discounted">([^<]+)</)?.[1] ?? priceBox.match(/<span>([^<]+)</)?.[1]);
-  const was = parseTl(priceBox.match(/class="invalid">([^<]+)</)?.[1]);
-  if (!id || !href || !name || now == null) return null;
-  const img = card.match(/<img [^>]*class="product-img[^"]*"[^>]*>/)?.[0] ?? "";
-  // The shop's sneaker category is plain "Spor", which alone names no product type.
-  const cat = attr(card, "data-ga4-category");
-  const first = attr(img, "data-original") ?? attr(img, "src");
-  const gallery = [first, attr(img, "data-alt1"), attr(img, "data-alt2")];
+/** The storefront constants from a page's `__IKAS_DATA__`, fallback for any missing. Pure. */
+export function ikasConfig(html: string): IkasConfig {
+  const pick = (k: keyof IkasConfig) => html.match(new RegExp(`"${k}":"([^"]+)"`))?.[1] ?? IKAS_FALLBACK[k];
   return {
-    brand,
-    country: "TR",
-    externalId: id,
-    name: name.replace(/\s+/g, " "),
-    url: `${SITE}${href}`,
-    imageUrl: first,
-    images: cleanGallery(gallery, first),
-    price: now,
-    listPrice: was != null && was > now ? was : null,
-    currency: "TRY",
-    inStock: attr(card, "data-available") === "1",
-    available: attr(card, "data-available") === "1",
-    category: cat === "Spor" ? "Spor Ayakkabı" : cat,
-    gender: "kadin", // a women's shop; every name says "Kadın"
-    variants: null,
-    colorName: attr(card, "data-ga4-variant"),
+    apiKey: pick("apiKey"),
+    merchantId: pick("merchantId"),
+    storefrontId: pick("storefrontId"),
+    storefrontRoutingId: pick("storefrontRoutingId"),
+    salesChannelId: pick("salesChannelId"),
   };
 }
 
-/** Sizes from a product page's size list; a sold-out size is `class="disable"`. Pure. */
-export function pageSizes(html: string): SizeVariant[] {
-  const box = html.match(/class="variation size"[\s\S]*?<ul>([\s\S]*?)<\/ul>/)?.[1] ?? "";
-  const out: SizeVariant[] = [];
-  for (const m of box.matchAll(/<a ([^>]*)>([^<]*)<\/a>/g)) {
-    const label = decodeEntities(m[2]).trim();
-    if (!label || out.some((s) => s.label === label)) continue;
-    out.push({ label, availability: /class="[^"]*\bdisable\b/.test(m[1]) ? "out_of_stock" : "in_stock" });
+const imageUrl = (merchantId: string, id: string) => `${IMG}/${merchantId}/${id}/image_1080.webp`;
+
+/** `26IW011020003-3321-36` → `26IW011020003-3321` (SKU-colour). */
+export const colourSku = (sku: string): string => sku.replace(/-[^-]+$/, "");
+
+/** Map one ikas product to one row per colour. Pure. */
+export function mapIkasProduct(p: any, merchantId = IKAS_FALLBACK.merchantId): ProductRecord[] {
+  if (!p?.id || p.deleted) return [];
+  const slug: string | undefined = p?.metaData?.slug;
+  const vs: any[] = (p.variants ?? []).filter((v: any) => v && !v.deleted && v.isActive !== false);
+  if (!slug || !vs.length) return [];
+  const colourType: string | null = p.groupVariantsByVariantTypeId ?? null;
+  const valueName = new Map<string, string>();
+  for (const t of p.productVariantTypes ?? []) for (const v of t?.variantType?.values ?? []) valueName.set(v.id, String(v.name ?? "").trim());
+  const valueOf = (v: any, ofColour: boolean) =>
+    (v.variantValues ?? []).find((x: any) => (x.variantTypeId === colourType) === ofColour)?.variantValueId as string | undefined;
+
+  const byColour = new Map<string, any[]>();
+  for (const v of vs) {
+    const key = (colourType && valueOf(v, true)) || "_";
+    const list = byColour.get(key);
+    if (list) list.push(v);
+    else byColour.set(key, [v]);
+  }
+  const colourNames = [...byColour.keys()].map((k) => valueName.get(k)).filter((n): n is string => !!n);
+  // The product name carries ONE colour ("… Sandalet - Siyah") whatever the variant.
+  let base = String(p.name ?? "").replace(/\s+/g, " ").trim();
+  for (const c of colourNames) if (base.endsWith(` - ${c}`)) base = base.slice(0, -(c.length + 3));
+  const category = p.categories?.[0]?.name ?? null;
+  const out: ProductRecord[] = [];
+  for (const [key, list] of byColour) {
+    const colour = valueName.get(key) ?? null;
+    const priced = list
+      .map((v) => {
+        const pr = v.prices?.[0] ?? {};
+        const sell = Number(pr.sellPrice);
+        const disc = Number(pr.discountPrice);
+        const now = Number.isFinite(disc) && disc > 0 ? disc : sell;
+        const stock = (v.stocks ?? []).reduce((a: number, s: any) => a + (Number(s?.stockCount) || 0), 0);
+        return { v, now, sell, inStock: stock > 0 || v.sellIfOutOfStock === true };
+      })
+      .filter((x) => Number.isFinite(x.now) && x.now > 0);
+    if (!priced.length) continue;
+    const pick = [...priced].sort((a, b) => Number(b.inStock) - Number(a.inStock) || a.now - b.now)[0];
+    const sizes: SizeVariant[] = [];
+    for (const x of priced) {
+      const label = valueName.get(valueOf(x.v, false) ?? "") ?? "";
+      if (!label || sizes.some((s) => s.label === label)) continue;
+      sizes.push({ label, availability: x.inStock ? "in_stock" : "out_of_stock" });
+    }
+    const withImages = list.find((v) => (v.images ?? []).length) ?? list[0];
+    const imgs: string[] = [...(withImages.images ?? [])]
+      .sort((a: any, b: any) => Number(b.isMain) - Number(a.isMain) || (a.order ?? 0) - (b.order ?? 0))
+      .filter((im: any) => im?.id && !im.isVideo)
+      .map((im: any) => imageUrl(merchantId, im.id));
+    const sku = String(list.find((v) => v.sku)?.sku ?? "");
+    out.push({
+      brand,
+      country: "TR",
+      externalId: sku ? colourSku(sku) : `${p.id}:${key}`,
+      name: colour ? `${base} - ${colour}` : base,
+      url: `${SITE}/${slug}?variantId=${pick.v.id}`,
+      imageUrl: imgs[0] ?? null,
+      images: cleanGallery(imgs, imgs[0] ?? null),
+      price: toMinor(pick.now),
+      listPrice: Number.isFinite(pick.sell) && pick.sell > pick.now ? toMinor(pick.sell) : null,
+      currency: "TRY",
+      inStock: priced.some((x) => x.inStock),
+      category: category === "Spor" ? "Spor Ayakkabı" : category,
+      gender: "kadin", // a women's shop; every name says "Kadın"
+      variants: sizes.length ? { colors: colour ? [colour] : [], sizes } : null,
+      colorName: colour,
+      groupKey: byColour.size > 1 ? `lutvelizade:${p.id}` : null,
+    });
   }
   return out;
 }
 
-const shuffle = <T>(xs: T[]): T[] => {
-  const a = [...xs];
-  for (let j = a.length - 1; j > 0; j--) {
-    const k = Math.floor(Math.random() * (j + 1));
-    [a[j], a[k]] = [a[k], a[j]];
-  }
-  return a;
-};
-
-async function grid(path: string): Promise<string[]> {
-  const cards: string[] = [];
-  for (let page = 1; page <= 5; page++) {
-    if (page > 1) await sleep(PAUSE_MS);
-    const html = await getText(gridUrl(path, page), { timeoutMs: TIMEOUT_MS }).catch(async () => {
-      await sleep(1000);
-      return getText(gridUrl(path, page), { timeoutMs: TIMEOUT_MS });
-    }).catch((e) => {
-      throw new Error(`lutvelizade: grid ${path} page ${page} failed (${e?.message ?? e})`);
-    });
-    const got = splitCards(html);
-    cards.push(...got);
-    if (got.length < PAGE_SIZE) break;
-  }
-  return cards;
-}
-
 export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
   if (country !== "TR") return [];
-  const sitemap = await getText(`${SITE}/sitemap.xml`, { timeoutMs: TIMEOUT_MS });
-  const paths = gridPaths(sitemap);
-  if (paths.length < 3) throw new Error(`lutvelizade: sitemap named only ${paths.length} grids`);
-
+  const home = await getText(`${SITE}/`, { timeoutMs: TIMEOUT_MS }).catch(() => "");
+  const cfg = ikasConfig(home);
   const byId = new Map<string, ProductRecord>();
-  let cards = 0;
-  for (const path of paths) {
-    await sleep(PAUSE_MS);
-    for (const html of await grid(path)) {
-      cards++;
-      const r = mapCard(html);
-      if (!r || byId.has(r.externalId)) continue;
-      const { available: _, ...row } = r;
-      byId.set(row.externalId, row);
-    }
+  let count = 0;
+  let seen = 0;
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    if (page > 1) await sleep(PAUSE_MS);
+    const d = await getJson<any>(API, {
+      method: "POST",
+      timeoutMs: TIMEOUT_MS,
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": cfg.apiKey,
+        "x-sfid": cfg.storefrontId,
+        "x-sfrid": cfg.storefrontRoutingId,
+        Origin: SITE,
+        Referer: `${SITE}/`,
+      },
+      body: JSON.stringify({
+        input: {
+          locale: "tr",
+          page,
+          perPage: PER_PAGE,
+          priceListId: null,
+          salesChannelId: cfg.salesChannelId,
+          query: "",
+          order: [],
+          showStockOption: "SHOW_ALL",
+        },
+      }),
+    });
+    const res = d?.data?.searchProducts;
+    const results: any[] = res?.results ?? [];
+    if (!res || !Array.isArray(res.results)) throw new Error(`lutvelizade: searchProducts page ${page} returned no results`);
+    count = Number(res.count ?? 0);
+    seen += results.length;
+    for (const p of results) for (const r of mapIkasProduct(p, cfg.merchantId)) if (!byId.has(r.externalId)) byId.set(r.externalId, r);
+    if (!results.length || seen >= count) break;
   }
+  // A short walk would let the sweep mark live products sold out.
+  if (seen < count) throw new Error(`lutvelizade: walked ${seen} of ${count} products`);
   const rows = [...byId.values()];
   const live = rows.filter((r) => r.inStock);
-  if (!live.length) throw new Error(`lutvelizade: ${cards} cards, none available`);
+  if (!live.length) throw new Error(`lutvelizade: ${seen} products, none in stock`);
   const deals = live.filter((r) => r.listPrice != null);
   const full = live.filter((r) => r.listPrice == null);
-  const soldOut = rows.filter((r) => !r.inStock);
-  const want = [...shuffle(deals).slice(0, DETAIL_LIMIT), ...shuffle(full).slice(0, FULL_DETAIL_LIMIT)];
-  for (const r of want) {
-    await sleep(PAUSE_MS);
-    const html = await getText(r.url, { timeoutMs: 20_000 }).catch(() => null);
-    const sizes = html ? pageSizes(html) : [];
-    if (!sizes.length) continue;
-    r.variants = { colors: r.colorName ? [r.colorName] : [], sizes };
-    r.inStock = sizes.some((s) => s.availability !== "out_of_stock");
-  }
-  if (process.env.LUTVELIZADE_DEBUG) console.error(`lutvelizade: ${paths.length} grids, ${cards} cards, ${rows.length} rows, ${deals.length} in-stock deals, ${soldOut.length} sold out`);
-  return [...deals, ...full, ...soldOut];
+  const soldOutDeals = rows.filter((r) => !r.inStock && r.listPrice != null);
+  if (process.env.LUTVELIZADE_DEBUG) console.error(`lutvelizade: ${seen} products, ${rows.length} colours, ${deals.length} in-stock deals`);
+  return [...deals, ...full, ...soldOutDeals];
 }

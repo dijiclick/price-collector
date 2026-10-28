@@ -58,6 +58,8 @@ interface Brand {
   markets: Partial<Record<CountryCode, Market>>;
   /** Sale pages (Elevate pageReference) with the section's gender. Unused by COS. */
   pages: [ref: string, gender: Gender][];
+  /** Whole-catalogue pages, walked at full price when every sale page is empty. */
+  full?: [ref: string, gender: Gender][];
   pageSize: number;
 }
 
@@ -123,6 +125,9 @@ export const HMGROUP: Record<HmGroupSlug, Brand> = {
       IE: EU("eu"), BE: EU("eu"), PT: EU("eu"), FI: EU("eu"),
     },
     pages: [["/women/sale", "kadin"], ["/men/sale", "erkek"]],
+    // France's sale ended on 2026-10-26 (French law fixes the sale periods):
+    // both sale pages answer 0 while FR women's view-all lists 2,630 rows.
+    full: [["/women/view-all", "kadin"], ["/men/view-all", "erkek"]],
     pageSize: 200,
   },
 };
@@ -255,7 +260,7 @@ export function mapStories(country: CountryCode, p: any, gender: Gender): Produc
   });
 }
 
-export function mapWeekday(country: CountryCode, p: any, gender: Gender): ProductRecord | null {
+export function mapWeekday(country: CountryCode, p: any, gender: Gender, keepFull = false): ProductRecord | null {
   // 2026-10-21: `media.images` became objects ({ url, … }); strings still accepted.
   const imgs: string[] = ((p?.media?.images ?? []) as unknown[])
     .map((x: any) => (typeof x === "string" ? x : x?.url ?? x?.src ?? x?.image ?? x?.href ?? null))
@@ -281,7 +286,7 @@ export function mapWeekday(country: CountryCode, p: any, gender: Gender): Produc
     variants: sizes.length ? { colors: p?.variantName ? [p.variantName] : [], sizes } : null,
     groupKey: p?.productSku ? `weekday:${p.productSku}` : null,
     colorName: p?.variantName ?? null,
-  });
+  }, keepFull);
 }
 
 // ---------- Arket (Elevate storefront API, direct) ----------
@@ -371,23 +376,30 @@ export async function listHmGroup(slug: HmGroupSlug, country: CountryCode): Prom
     }
   } else {
     let checked = false;
-    for (const [ref, gender] of b.pages) {
-      for (let skip = 0; requests < MAX_REQ && byId.size < CAP * 2; skip += b.pageSize) {
-        if (slug === "arket") {
-          const d = await fetchJson(arketUrl(m.mk, ref, skip, b.pageSize, m.locale), { method: "POST", body: "{}" });
-          const groups: any[] = d?.primaryList?.productGroups ?? [];
-          for (const g of groups) for (const p of g?.products ?? []) add(mapArket(country, p, gender));
-          if (!groups.length || skip + b.pageSize >= (d?.primaryList?.totalHits ?? 0)) break;
-        } else {
-          const d = await fetchJson(bffUrl(slug, m.mk, ref, skip, b.pageSize, m.locale));
-          const rows: any[] = d?.data?.products ?? [];
-          if (!checked && rows.length) {
-            const r0 = rows[0];
-            assertCurrency(slug, country, slug === "stories" ? r0?.price?.currency : r0?.pricing?.price);
-            checked = true;
+    // Out of season (every sale page empty), track the whole catalogue at full
+    // price, as COS does: the old markdowns reprice and the next sale shows up
+    // as price drops on rows we already hold.
+    for (const keepFull of [false, true]) {
+      if (keepFull && (byId.size || !b.full)) break;
+      if (keepFull) cap = CAP_FULL;
+      for (const [ref, gender] of keepFull ? b.full! : b.pages) {
+        for (let skip = 0; requests < MAX_REQ && byId.size < cap * 2; skip += b.pageSize) {
+          if (slug === "arket") {
+            const d = await fetchJson(arketUrl(m.mk, ref, skip, b.pageSize, m.locale), { method: "POST", body: "{}" });
+            const groups: any[] = d?.primaryList?.productGroups ?? [];
+            for (const g of groups) for (const p of g?.products ?? []) add(mapArket(country, p, gender));
+            if (!groups.length || skip + b.pageSize >= (d?.primaryList?.totalHits ?? 0)) break;
+          } else {
+            const d = await fetchJson(bffUrl(slug, m.mk, ref, skip, b.pageSize, m.locale));
+            const rows: any[] = d?.data?.products ?? [];
+            if (!checked && rows.length) {
+              const r0 = rows[0];
+              assertCurrency(slug, country, slug === "stories" ? r0?.price?.currency : r0?.pricing?.price);
+              checked = true;
+            }
+            for (const p of rows) add(slug === "stories" ? mapStories(country, p, gender) : mapWeekday(country, p, gender, keepFull));
+            if (!rows.length || skip + b.pageSize >= (d?.data?.pagination?.totalProducts ?? 0)) break;
           }
-          for (const p of rows) add(slug === "stories" ? mapStories(country, p, gender) : mapWeekday(country, p, gender));
-          if (!rows.length || skip + b.pageSize >= (d?.data?.pagination?.totalProducts ?? 0)) break;
         }
       }
     }

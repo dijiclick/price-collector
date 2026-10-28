@@ -13,6 +13,12 @@
  * A section with no sale left (beauty, 2026-10-23) is skipped, not fatal.
  * One page (100 groups) carries each colour's sizes with per-size stock and
  * price, so no detail calls.
+ *
+ * Between sales the rea pages thin out (/rea/dam 2 hits, 2026-10-28) and the
+ * count fell run after run, so the stale-row sweep never judged a run complete
+ * and last sale's delisted rows stayed live as 404s. Markdowns come first; the
+ * rest of the cap is topped up with in-stock full-price rows (listPrice null)
+ * from the department pages, as Gullfunn and COS do.
  */
 import { randomUUID } from "node:crypto";
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
@@ -24,7 +30,7 @@ const API = "https://w3439ecd3.api.esales.apptus.cloud/api/storefront/v3/queries
 const SITE = "https://www.ahlens.se";
 const PAGE = 100;
 const CAP = 1500;
-const MAX_REQUESTS = 25;
+const MAX_REQUESTS = 40;
 const PAUSE_MS = Number(process.env.AHLENS_PAUSE_MS ?? 700);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -35,7 +41,20 @@ export const AHLENS_SECTIONS: { ref: string; gender: ProductRecord["gender"] }[]
   { ref: "/rea/barn", gender: "cocuk" },
 ];
 
-export function ahlensUrl(ref: string, skip: number, keys: { customer: string; session: string }): string {
+/** Department pages for the full-price top-up (/dam 30k hits, /herr 6.9k, 2026-10-28). */
+export const AHLENS_FULL: { ref: string; gender: ProductRecord["gender"] }[] = [
+  { ref: "/dam", gender: "kadin" },
+  { ref: "/herr", gender: "erkek" },
+  { ref: "/skonhet", gender: null },
+  { ref: "/barn", gender: "cocuk" },
+];
+
+export function ahlensUrl(
+  ref: string,
+  skip: number,
+  keys: { customer: string; session: string },
+  sort: string | null = "DISCOUNT",
+): string {
   const q = new URLSearchParams({
     market: "SE",
     locale: "sv-SE",
@@ -43,7 +62,7 @@ export function ahlensUrl(ref: string, skip: number, keys: { customer: string; s
     sessionKey: keys.session,
     touchpoint: "desktop",
     pageReference: ref,
-    sort: "DISCOUNT",
+    ...(sort ? { sort } : {}),
     limit: String(PAGE),
     skip: String(skip),
   });
@@ -122,40 +141,62 @@ export async function listAhlens(country: CountryCode, cap = CAP): Promise<Produ
   const keys = { customer: randomUUID(), session: randomUUID() };
   const byId = new Map<string, ProductRecord>();
   let requests = 0;
+  const page = async (ref: string, skip: number, sort: string | null) => {
+    if (requests >= MAX_REQUESTS) throw new Error(`ahlens/${country}: request cap hit at ${byId.size} rows`);
+    if (requests > 0) await sleep(PAUSE_MS);
+    requests++;
+    const d = await getJson<any>(ahlensUrl(ref, skip, keys, sort), {
+      method: "POST",
+      body: "{}",
+      headers: { "Content-Type": "text/plain;charset=UTF-8", Origin: SITE, Referer: `${SITE}/` },
+      country,
+    });
+    const list = d?.primaryList;
+    if (!list) throw new Error(`ahlens/${country}: ${ref} returned no product list`);
+    return { groups: (list.productGroups ?? []) as any[], total: Number(list.totalHits ?? 0) };
+  };
+  const rowsOf = function* (groups: any[], gender: ProductRecord["gender"]) {
+    for (const g of groups) {
+      const prods: any[] = g?.products ?? [];
+      const gk = prods.length > 1 && g?.key ? `ahlens:${g.key}` : null;
+      for (const p of prods) {
+        const r = mapAhlens(p, gender, gk, country);
+        if (r) yield r;
+      }
+    }
+  };
   for (const sec of AHLENS_SECTIONS) {
     for (let skip = 0; byId.size < cap * 1.2; skip += PAGE) {
-      if (requests >= MAX_REQUESTS) throw new Error(`ahlens/${country}: request cap hit at ${byId.size} rows`);
-      if (requests > 0) await sleep(PAUSE_MS);
-      requests++;
-      const d = await getJson<any>(ahlensUrl(sec.ref, skip, keys), {
-        method: "POST",
-        body: "{}",
-        headers: { "Content-Type": "text/plain;charset=UTF-8", Origin: SITE, Referer: `${SITE}/` },
-        country,
-      });
-      const list = d?.primaryList;
-      const groups: any[] = list?.productGroups ?? [];
-      if (!list) throw new Error(`ahlens/${country}: ${sec.ref} returned no product list`);
+      const { groups, total } = await page(sec.ref, skip, "DISCOUNT");
       // A section whose sale has ended answers totalHits 0 (/rea/skonhet, 2026-10-23):
-      // skip it, and fail only when every section is empty.
+      // skip it; the full-price top-up below covers an all-empty sale.
       if (skip === 0 && !groups.length) break;
       let reduced = 0;
-      for (const g of groups) {
-        const prods: any[] = g?.products ?? [];
-        const gk = prods.length > 1 && g?.key ? `ahlens:${g.key}` : null;
-        for (const p of prods) {
-          const r = mapAhlens(p, sec.gender, gk, country);
-          if (r && r.listPrice != null) {
-            reduced++;
-            if (!byId.has(r.externalId)) byId.set(r.externalId, r);
-          }
-        }
+      for (const r of rowsOf(groups, sec.gender)) {
+        if (r.listPrice == null) continue;
+        reduced++;
+        if (!byId.has(r.externalId)) byId.set(r.externalId, r);
       }
       // Sorted by discount: a page with no reduction means this section's sale is exhausted.
-      if (!groups.length || reduced === 0 || skip + PAGE >= Number(list.totalHits ?? 0)) break;
+      if (!groups.length || reduced === 0 || skip + PAGE >= total) break;
     }
   }
-  if (!byId.size) throw new Error(`ahlens/${country}: every rea section returned no products`);
-  const all = [...byId.values()];
-  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, cap);
+  const deals = [...byId.values()];
+  const ordered = [...deals.filter((r) => r.inStock), ...deals.filter((r) => !r.inStock)].slice(0, cap);
+  // Top up with in-stock full-price rows, an even share per department.
+  const extra = new Map<string, ProductRecord>();
+  for (let i = 0; i < AHLENS_FULL.length && ordered.length + extra.size < cap; i++) {
+    const sec = AHLENS_FULL[i];
+    const goal = Math.min(cap, ordered.length + extra.size + Math.ceil((cap - ordered.length - extra.size) / (AHLENS_FULL.length - i)));
+    for (let skip = 0; ordered.length + extra.size < goal; skip += PAGE) {
+      const { groups, total } = await page(sec.ref, skip, null);
+      for (const r of rowsOf(groups, sec.gender)) {
+        if (ordered.length + extra.size >= goal) break;
+        if (r.inStock && !byId.has(r.externalId) && !extra.has(r.externalId)) extra.set(r.externalId, r);
+      }
+      if (!groups.length || skip + PAGE >= total) break;
+    }
+  }
+  if (!ordered.length && !extra.size) throw new Error(`ahlens/${country}: every rea and department page returned no products`);
+  return [...ordered, ...extra.values()];
 }
