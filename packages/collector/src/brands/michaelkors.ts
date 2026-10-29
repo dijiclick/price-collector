@@ -102,7 +102,33 @@ interface Market {
 
 /** In order of preference: .eu last, it 403s runners since 2026-10-14. */
 const EU_EDGES = ["https://www.michaelkors.global", "https://www.michaelkors.co.uk", "https://www.michaelkors.eu"];
-const others = (api: string) => EU_EDGES.filter((h) => h !== api);
+
+/**
+ * Two fronting groups, flipping per runner-minute (2026-10-29). Every MK host
+ * CNAMEs to one Akamai property, but the edge answers each Host domain from one
+ * of two origins: the DEDICATED COUNTRY domains (.de/.fr/.it/.es) front
+ * Cloudflare, the shared EDGES (.global/.co.uk/.eu) front Akamai — and the two
+ * flip together. In a single probe minute (runs 40865109195/…831933) all four
+ * country domains served the mk_uk AND mk_ch grids 200 via Cloudflare while
+ * .global/.co.uk/.eu all answered 403/429; a minute later .de had flipped to
+ * Akamai 403. An SFCC host serves ANY site (the site id is in the path), so a
+ * country domain can read mk_uk/mk_ch/mk_anz just as well as its own market.
+ * That is why DE/FR/IT/ES collect ~55-64 of 68 runs while GB/CH/AU — which only
+ * ever tried the three edges, and the edges fail together — sat at 19-25. So
+ * the international markets with no dedicated domain of their own walk the WHOLE
+ * pool, country domains and edges interleaved, and a call lands on whichever
+ * group is open this minute. The product link still points at each market's own
+ * storefront (`host`), independent of which host answered the feed.
+ */
+/**
+ * Country domains (.de/.fr/.it/.es, Cloudflare group) and the shared edges
+ * (.global/.co.uk/.eu, Akamai group) interleaved, so the first few attempts
+ * span both groups whichever one is open this minute.
+ */
+const INTL_POOL = [
+  "https://www.michaelkors.de", "https://www.michaelkors.co.uk", "https://www.michaelkors.fr", "https://www.michaelkors.eu",
+  "https://www.michaelkors.it", "https://www.michaelkors.global", "https://www.michaelkors.es",
+];
 
 /**
  * The euro stores (2026-10-21): one SFCC site per country (mk_de, mk_fr, mk_it,
@@ -140,9 +166,9 @@ function EU_MARKETS(): Partial<Record<CountryCode, Market>> {
 export const MK_MARKETS: Partial<Record<CountryCode, Market>> = {
   US: { host: "https://www.michaelkors.com", api: "https://www.michaelkors.com", site: "mk_us", locale: "en_US", outletMixed: true },
   CA: { host: "https://www.michaelkors.com", api: "https://www.michaelkors.com", site: "mk_ca", locale: "en_CA", outletMixed: true },
-  GB: { host: "https://www.michaelkors.co.uk", api: "https://www.michaelkors.global", site: "mk_uk", locale: "en_GB", mirrors: others("https://www.michaelkors.global"), outletMixed: false },
-  CH: { host: "https://www.michaelkors.eu", api: "https://www.michaelkors.global", site: "mk_ch", locale: "en_CH", mirrors: others("https://www.michaelkors.global"), outletMixed: false },
-  AU: { host: "https://www.michaelkors.global", api: "https://www.michaelkors.global", site: "mk_anz", locale: "en_AU", mirrors: others("https://www.michaelkors.global"), outletMixed: false },
+  GB: { host: "https://www.michaelkors.co.uk", api: INTL_POOL[0], site: "mk_uk", locale: "en_GB", mirrors: INTL_POOL.slice(1), outletMixed: false },
+  CH: { host: "https://www.michaelkors.eu", api: INTL_POOL[0], site: "mk_ch", locale: "en_CH", mirrors: INTL_POOL.slice(1), outletMixed: false },
+  AU: { host: "https://www.michaelkors.global", api: INTL_POOL[0], site: "mk_anz", locale: "en_AU", mirrors: INTL_POOL.slice(1), outletMixed: false },
   ...EU_MARKETS(),
 };
 
@@ -210,7 +236,9 @@ async function fetchText(url: string, country: CountryCode, xhr = false): Promis
   if (xhr) headers["X-Requested-With"] = "XMLHttpRequest";
   const hostCount = 1 + (MK_MARKETS[country]?.mirrors?.length ?? 0);
   const first = lastGood.get(country) ?? 0;
-  const urls = attemptUrls(url, country, hostCount > 1 ? 4 : 3, first);
+  // GB/CH/AU walk a 7-host pool (both fronting groups); try enough of it that a
+  // call spans Cloudflare and Akamai hosts. The .com and 4-host EU markets keep 3-4.
+  const urls = attemptUrls(url, country, hostCount > 1 ? Math.min(hostCount, 5) : 3, first);
   let lastErr: unknown;
   for (let attempt = 0; attempt < urls.length; attempt++) {
     try {

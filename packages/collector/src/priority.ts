@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   try {
     const { repriceTracked } = await import("./reprice");
     const r = await repriceTracked(db, undefined, { premiumOnly: true, staleMinutes: STALE_MINUTES, limit: LIMIT });
-    console.log(`priority: ${r.considered} premium products, ${r.repriced} re-checked, ${r.changed} changed, ${r.events} events, ${r.failed} failed`);
+    console.log(`priority: ${r.considered} premium products, ${r.repriced} re-checked, ${r.changed} changed, ${r.events} events, ${r.gone} gone, ${r.failed} failed`);
     if (r.events > 0) {
       const { pushNotify } = await import("./push");
       const sent = await pushNotify(db);

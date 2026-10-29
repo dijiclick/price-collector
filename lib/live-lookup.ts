@@ -55,7 +55,9 @@ export interface LiveProduct {
   currency?: string;
 }
 
-import { UA, countryFor, dispatcher, json, postJson, toMinor } from "./live-http";
+import {
+  DIRECT, ProductGone, UA, countryFor, directInTurkey, dispatcher, egress, json, postJson, toMinor,
+} from "./live-http";
 export { DEFAULT_COUNTRY, countryFor, proxyUrlFor, usingProxy } from "./live-http";
 import { EXTRA_RESOLVERS } from "./live-brands";
 import { guessUsUrl } from "./live-brands/guess-us";
@@ -765,6 +767,11 @@ async function hmUrl(url: string): Promise<LiveProduct | null> {
 
 /* ------------------------------------------------------------------- guess */
 
+/**
+ * Algolia app YML5RK21LG is Guess Europe's storefront search (guess.com/<locale>,
+ * formerly guess.eu): one index per storefront locale, `production__products__tr_TR`,
+ * `…__en_GB`, … — the indexes packages/collector/src/brands/guess.ts sweeps.
+ */
 const GUESS_ALGOLIA = "https://YML5RK21LG-dsn.algolia.net/1/indexes";
 // The storefront's public search-only key — the same one guess.ts uses.
 const GUESS_HEADERS = {
@@ -779,7 +786,13 @@ const GUESS_HEADERS = {
  * Worth more than it looks: the search key filters to in-stock items, so the
  * collector never stores a SOLD-OUT colour — exactly the product somebody wants
  * a restock alert for. get-object is not subject to those filters.
+ *
+ * A 404 "ObjectID does not exist" is a product Guess has taken out of the index
+ * (ProductGone); a missing INDEX is also a 404, but says "Index … does not
+ * exist" and stays a refusal. Always direct: Algolia answers any egress.
  */
+export const guessGone = (status: number, body: string) => status === 404 && /ObjectID does not exist/i.test(body);
+
 async function guessUrl(url: string): Promise<LiveProduct | null> {
   let path = "";
   try { path = new URL(url).pathname; } catch { return null; }
@@ -789,7 +802,7 @@ async function guessUrl(url: string): Promise<LiveProduct | null> {
   // Guess's own storefronts: tr_TR for Turkey, English everywhere else in Europe.
   if (!["TR", "GB", "IE", "DE", "FR", "NL", "BE", "AT", "ES", "IT", "PT", "FI", "CH", "SE", "DK", "NO"].includes(country)) return null;
   const locale = country === "TR" ? "tr_TR" : `en_${country}`;
-  const h = await json<any>(`${GUESS_ALGOLIA}/production__products__${locale}/${sku}`, GUESS_HEADERS, countryFor("guess", country));
+  const h = await json<any>(`${GUESS_ALGOLIA}/production__products__${locale}/${sku}`, GUESS_HEADERS, DIRECT, guessGone);
   if (!h?.objectID || !h.name) return null;
   const currency = currencyFor(country);
   // A hit priced in another currency would be stored under the wrong symbol.
@@ -802,7 +815,8 @@ async function guessUrl(url: string): Promise<LiveProduct | null> {
     brand: "guess",
     externalId: String(h.objectID),
     name: String(h.name),
-    url: h.url ? `https://www.guess.eu${h.url}` : url.split(/[?#]/)[0],
+    // guess.eu 301s to guess.com for every product (2026-10-21), as in guess.ts.
+    url: h.url ? `https://www.guess.com${h.url}` : url.split(/[?#]/)[0],
     // Same Cloudinary transform as the collector; the index carries no image.
     imageUrl: "https://img.guess.com/image/upload/f_auto,q_auto,fl_strip_profile," +
       `w_640,ar_2:3,c_fill/v1/EU/Style/ECOMM/${h.objectID}`,
@@ -860,7 +874,7 @@ async function itxMarket(site: ItxSite, country: CountryCode): Promise<ItxMarket
   const list = await json<any>(
     `https://${site.domain}/itxrest/2/catalog/store?languageId=-1&appId=1&brandId=${site.brandId}`,
     ITX_HEADERS(site.domain),
-    countryFor(undefined, country),
+    directInTurkey(countryFor(undefined, country)),
   );
   if (!list) return null; // not cached: a refusal is worth retrying next time
   const stores: any[] = (list.stores ?? []).filter((s: any) => s?.countryCode === country);
@@ -884,6 +898,14 @@ async function itxMarket(site: ItxSite, country: CountryCode): Promise<ItxMarket
   return m;
 }
 
+/**
+ * itxrest's answer for a reference the store no longer carries. Verified
+ * 2026-10-29 on the same call that answers a live reference 200, from this Mac
+ * and from a GitHub runner alike — the endpoint did not change. A wrong store id
+ * answers the same, which is why the store comes from the live store list.
+ */
+export const itxGone = (status: number, body: string) => status === 404 && /_ERR_PRODUCT_NOT_FOUND/.test(body);
+
 async function inditexUrl(brand: string, url: string): Promise<LiveProduct | null> {
   const site = ITX_SITES[brand];
   if (!site) return null;
@@ -895,7 +917,8 @@ async function inditexUrl(brand: string, url: string): Promise<LiveProduct | nul
   const p = await json<any>(
     `https://${site.domain}/itxrest/2/catalog/store/${m.storeId}/${m.catalogId}/product/${ref}?languageId=${m.languageId}&appId=1`,
     ITX_HEADERS(site.domain),
-    countryFor(brand, country),
+    directInTurkey(countryFor(brand, country)),
+    itxGone,
   );
   if (!p?.id) return null;
   const real = p.bundleProductSummaries?.[0] ?? p;
@@ -953,6 +976,15 @@ async function inditexUrl(brand: string, url: string): Promise<LiveProduct | nul
  * colour's `productId`, which is what `v1` carries; without `v1` the first
  * colour is taken, as the site itself does. Zara Home items resolve too — they
  * are sold on zara.com and tracked under zara.
+ *
+ * A url WITH `v1` must land on a page that has that colour. Zara 278-redirects
+ * some unavailable products to a different one and keeps `v1`: the tracked
+ * "düğmeli interlok yelek" (v1 576231993) landed on the balloon trousers
+ * (colour 545968877), and taking their first colour re-priced the vest with the
+ * trousers' price every run (snapshots flipping 1300→650 TL, 10-23..10-29).
+ *
+ * HTTP 410 is Zara's "this product is gone" — the body is a search page. It
+ * is not a block (those are 403s), so it throws ProductGone.
  */
 async function zaraUrl(url: string): Promise<LiveProduct | null> {
   let u: URL;
@@ -961,6 +993,7 @@ async function zaraUrl(url: string): Promise<LiveProduct | null> {
   // `zara.com/share/…` names no market and lands on an empty Spanish shell.
   if (!/^\/[a-z]{2}\/[a-z]{2}\//i.test(u.pathname)) u.pathname = `/tr/tr${u.pathname}`;
   const country = countryFromUrl(u.toString()) ?? DEFAULT_MARKET;
+  const exit = directInTurkey(countryFor("zara", country));
   let current = u.toString();
   for (let hop = 0; hop < 4; hop++) {
     const q = new URL(current);
@@ -973,7 +1006,7 @@ async function zaraUrl(url: string): Promise<LiveProduct | null> {
         signal: AbortSignal.timeout(8000),
         cache: "no-store",
         // @ts-expect-error undici's dispatcher is accepted by Node's fetch
-        dispatcher: dispatcher(countryFor("zara", country)),
+        dispatcher: dispatcher(exit),
       });
     } catch (err) {
       console.warn(`live-lookup: www.zara.com unreachable — ${err instanceof Error ? err.message : String(err)}`);
@@ -988,15 +1021,20 @@ async function zaraUrl(url: string): Promise<LiveProduct | null> {
       current = next.toString();
       continue;
     }
+    if (r.status === 410) throw new ProductGone("www.zara.com", 410);
     if (!r.ok) {
-      console.warn(`live-lookup: www.zara.com refused with HTTP ${r.status}`);
+      console.warn(`live-lookup: www.zara.com refused with HTTP ${r.status}${egress(exit)}`);
       return null;
     }
     const d = await r.json().catch(() => null);
     const p = d?.product;
     const colors: any[] = p?.detail?.colors ?? [];
     const v1 = new URL(current).searchParams.get("v1");
-    const c = colors.find((x) => String(x?.productId) === v1) ?? colors[0];
+    const c = v1 ? colors.find((x) => String(x?.productId) === v1) : colors[0];
+    if (v1 && !c && p?.name) {
+      console.warn(`live-lookup: zara v1=${v1} landed on "${p.name}", which has no such colour — not that product`);
+      return null;
+    }
     const price = Number(c?.price);
     if (!p?.name || !c?.productId || !Number.isFinite(price) || price <= 0) return null;
     // The page's own currency, checked against the market the url named.
@@ -1177,7 +1215,12 @@ export function liveBrands(): string[] {
   return Object.keys(RESOLVERS).filter((b) => !SWEEP_OWNS_STOCK.has(b));
 }
 
-export async function lookupLive(brand: string | undefined, url: string): Promise<LiveProduct | null> {
+/**
+ * `lookupLive`, telling "the shop says this product no longer exists" ("gone")
+ * apart from "the shop would not answer" (null). The reprice pass needs the
+ * difference: a gone product is sold out, an unreachable one is retried.
+ */
+export async function checkLive(brand: string | undefined, url: string): Promise<LiveProduct | "gone" | null> {
   if (!brand) return null;
   const fn = RESOLVERS[brand];
   if (!fn) return null;
@@ -1187,9 +1230,14 @@ export async function lookupLive(brand: string | undefined, url: string): Promis
     // widening their imports, so the type is filled in here, once, for all.
     // With the brand: a multi-brand store's `category` is the designer label here.
     return p && !p.type ? { ...p, type: classifyType(p.category, p.name, p.brand) } : p;
-  } catch {
-    return null;
+  } catch (err) {
+    return err instanceof ProductGone ? "gone" : null;
   }
+}
+
+export async function lookupLive(brand: string | undefined, url: string): Promise<LiveProduct | null> {
+  const p = await checkLive(brand, url);
+  return p === "gone" ? null : p;
 }
 
 export { barcodeFromScanUrl } from "./scan-url";

@@ -649,6 +649,19 @@ export async function applyReprice(
   );
 }
 
+/**
+ * A tracked product the shop says no longer exists (reprice.ts, "gone"): sold
+ * out at its stored price, and `last_seen` bumped as for any check — "we looked
+ * and it is gone" — so it leaves the head of the queue instead of being
+ * retried first on every run.
+ */
+export async function markRepriceGone(db: Db, id: number): Promise<void> {
+  await db.query(
+    `UPDATE products SET in_stock = FALSE, last_seen = now(), content_hash = NULL WHERE id = $1`,
+    [id],
+  );
+}
+
 /** Fetch the latest snapshot for each of `productIds` in one pass. */
 export async function latestSnapshots(db: Db, productIds: number[]): Promise<Map<number, Snap>> {
   const map = new Map<number, Snap>();

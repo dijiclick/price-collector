@@ -62,7 +62,30 @@ const PAGE = 100;
 const CAP = 800;
 const MAX_REQUESTS = 10;
 const PAUSE_MS = Number(process.env.BTGROUP_PAUSE_MS ?? 900);
+/** Retry waits for a refused page (scaled by BTGROUP_PAUSE_MS so tests run instant). */
+const RETRY_WAITS = [2_000, 5_000];
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Cloudflare fronts both stores without a challenge and serves GitHub runners
+ * (probe run 40863521475, both sale grids 200), but it refuses the odd request
+ * with a one-off 403/429 — brownthomas and arnotts each 403'd a single run on
+ * 2026-10-29 10:00 and recovered on the next. `getText` has no retry of its own,
+ * and a refusal on a section's first page throws away the whole brand, so ask a
+ * refused page again after a short back-off before giving up.
+ */
+async function btGetText(url: string, country: CountryCode, host: string, path: string): Promise<string> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= RETRY_WAITS.length; attempt++) {
+    if (attempt > 0) await sleep((RETRY_WAITS[attempt - 1] * PAUSE_MS) / 900);
+    try {
+      return await getText(url, { country, timeoutMs: 40_000, headers: { Accept: "text/html", Referer: `${host}${path}` } });
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
 
 const ALLOWED_TOP = new Set(["women", "men", "kids", "beauty"]);
 const DROP_SUB = /toy|game|nursery|lego|teddy|home|electrical|furniture|candle|book/i;
@@ -153,11 +176,7 @@ export async function listBtGroup(brand: BtGroupBrand, country: CountryCode): Pr
     for (let start = 0; start < pages * PAGE && taken < s.max && byId.size < CAP; start += PAGE) {
       if (requests >= MAX_REQUESTS) throw new Error(`${brand}/IE: request budget (${MAX_REQUESTS}) spent before the cap`);
       if (requests++ > 0) await sleep(PAUSE_MS);
-      const html = await getText(btPageUrl(brand, s.path, start), {
-        country,
-        timeoutMs: 40_000,
-        headers: { Accept: "text/html", Referer: `${site.host}${s.path}` },
-      });
+      const html = await btGetText(btPageUrl(brand, s.path, start), country, site.host, s.path);
       const tiles = tilesOf(html);
       if (!tiles.length) {
         if (start === 0) throw new Error(`${brand}/IE: no tiles on ${s.path}`);

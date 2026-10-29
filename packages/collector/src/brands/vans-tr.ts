@@ -27,6 +27,18 @@ import { INSIDER_CLIENT_ID, INSIDER_ENDPOINT, insiderGender } from "./_insider";
  * RE-PLATFORMED 2026-10-22: the listing no longer carries RND cards from any
  * IP and product urls end in the colourway SKU, so the feed is the route now;
  * its rows are keyed by that SKU (the old numeric-id rows are delisted once).
+ *
+ * RE-CHECKED 2026-10-29 — the walk cannot come back without a proxy, and
+ * Turkey gets none (owner rule). The 405 is AWS WAF's CAPTCHA action
+ * (`x-amzn-waf-action: captcha`, a "Human Verification" page) on every path
+ * for datacenter IPs: GitHub runner (probe run 40864254153), OVH, GCP. The new
+ * shop is GrandNode: from a Turkish line its listing answers as JSON with
+ * `Accept: application/json` + `X-Response-View: Json`, `?pagenumber=N`, 48 a
+ * page, `PagingFilteringContext.TotalItems` (1,034 on /tum-urunler), each with
+ * `Sku`, `ProductPrice.PriceValue/OldPriceValue`, `StockQuantity` — but
+ * /tum-urunler is not the whole range either (the feed lists 315 SKUs it lacks;
+ * the one checked had 15 units). What the feed loses: every colourway with ONE unit left — 124
+ * of the listing's 897 in stock that day, 97 of them reduced — and sizes.
  */
 export const SHOP: RndShop = {
   brand: "vans",

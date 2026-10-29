@@ -37,6 +37,15 @@ const KEY = "c01ef3612328420c9f5cd9277e815a0e";
 const COUNT = 100;
 const MAX_PAGES = 13;
 const CAP = 1500;
+/**
+ * The Azure APIM gateway in front of the search service hands out the odd
+ * transient 5xx: Mark's got a single HTTP 502 on page 1 on 2026-10-29 10:02 and
+ * served ~422 sale items again on the next run (probe run 40864831933, five
+ * pages 200). A page-1 failure ends the walk with nothing — `seen === 0` then
+ * throws the whole brand — so ask a refused page again after a back-off before
+ * giving up. Waits scale with CTC_RETRY_MS so tests run instant.
+ */
+const RETRY_WAITS = [2_000, 5_000].map((ms) => (ms * Number(process.env.CTC_RETRY_MS ?? 2000)) / 2000);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const CTC: Record<CtcBanner["brand"], CtcBanner> = {
@@ -126,10 +135,15 @@ export async function listCtc(b: CtcBanner, country: CountryCode): Promise<Produ
   const problems: string[] = [];
   for (let page = 1; page <= MAX_PAGES && byId.size < CAP; page++) {
     if (page > 1) await sleep(600);
-    const data = await getJson<any>(ctcSearchUrl(b, page), { country, headers: ctcHeaders(b), retries: 1, timeoutMs: 45_000 }).catch((e) => {
-      problems.push(`p${page}: ${String(e).slice(0, 120)}`);
-      return null;
-    });
+    let data: any = null;
+    for (let attempt = 0; attempt <= RETRY_WAITS.length; attempt++) {
+      if (attempt > 0) await sleep(RETRY_WAITS[attempt - 1]);
+      data = await getJson<any>(ctcSearchUrl(b, page), { country, headers: ctcHeaders(b), retries: 1, timeoutMs: 45_000 }).catch((e) => {
+        if (attempt === RETRY_WAITS.length) problems.push(`p${page}: ${String(e).slice(0, 120)}`);
+        return null;
+      });
+      if (data) break;
+    }
     const list: any[] = Array.isArray(data?.products) ? data.products : [];
     seen += list.length;
     for (const p of list) for (const r of mapCtc(b, p)) if (!byId.has(r.externalId)) byId.set(r.externalId, r);

@@ -360,7 +360,8 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
     if (r.considered > 0) {
       console.log(
         `↻ reprice: ${r.repriced}/${r.considered} re-checked, ${r.changed} moved, ` +
-          `${r.events} events` + (r.failed ? `, ${r.failed} unreachable` : ""),
+          `${r.events} events` + (r.gone ? `, ${r.gone} gone from the shop` : "") +
+          (r.failed ? `, ${r.failed} unreachable` : ""),
       );
     }
   } catch (err) {
