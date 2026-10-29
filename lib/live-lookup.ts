@@ -56,9 +56,9 @@ export interface LiveProduct {
 }
 
 import {
-  DIRECT, ProductGone, UA, countryFor, directInTurkey, dispatcher, egress, json, postJson, toMinor,
+  DIRECT, ProductGone, UA, countryFor, directInTurkey, dispatcher, zaraExit, egress, json, postJson, toMinor,
 } from "./live-http";
-export { DEFAULT_COUNTRY, countryFor, proxyUrlFor, usingProxy } from "./live-http";
+export { DEFAULT_COUNTRY, ZARA_TR_EXIT, countryFor, proxyUrlFor, usingProxy } from "./live-http";
 import { EXTRA_RESOLVERS } from "./live-brands";
 import { guessUsUrl } from "./live-brands/guess-us";
 
@@ -993,7 +993,7 @@ async function zaraUrl(url: string): Promise<LiveProduct | null> {
   // `zara.com/share/…` names no market and lands on an empty Spanish shell.
   if (!/^\/[a-z]{2}\/[a-z]{2}\//i.test(u.pathname)) u.pathname = `/tr/tr${u.pathname}`;
   const country = countryFromUrl(u.toString()) ?? DEFAULT_MARKET;
-  const exit = directInTurkey(countryFor("zara", country));
+  const exit = zaraExit(countryFor("zara", country));
   let current = u.toString();
   for (let hop = 0; hop < 4; hop++) {
     const q = new URL(current);

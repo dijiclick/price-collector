@@ -58,6 +58,11 @@ type CountryLike = string;
  */
 export function proxyUrlFor(base: string | undefined, country: string): string | undefined {
   if (!base) return undefined;
+  // Turkey never leaves through the proxy, except a Zara lookup on Vercel
+  // (see ZARA_TR_EXIT) — owner 2026-10-29.
+  const c = country.toLowerCase();
+  if (c === "tr") return undefined;
+  if (c === ZARA_TR_EXIT) country = "tr";
   let u: URL;
   try { u = new URL(base); } catch { return undefined; }
   if (!u.username || u.username.includes("__cr.")) return base;
@@ -75,17 +80,23 @@ export function proxyUrlFor(base: string | undefined, country: string): string |
 export const DIRECT = "direct";
 
 /**
- * `exit` unless it is Turkey's, which becomes DIRECT. For resolvers proven to
- * answer GitHub's runners with no proxy in Turkey — Zara and the itxrest
- * brands, probe run 40864254153 (2026-10-29) — the same egress the collector's
- * own Turkish sweeps of those brands use, so the reprice pass goes direct.
- *
- * NOT on Vercel: Akamai answers its fra1 egress 403 for the same Zara and
- * itxrest calls (measured on production 2026-10-29), so a pasted Turkish link
- * still leaves through the tr exit there — the only route that works for it.
- * Against the owner's no-proxy-in-Turkey rule; left for the owner to decide.
+ * `exit` unless it is Turkey's, which becomes DIRECT. Zara and the itxrest
+ * brands answer GitHub's runners with no proxy in Turkey (probe run
+ * 40864254153, 2026-10-29) — the same egress the collector's own Turkish
+ * sweeps use, so the reprice pass goes direct.
  */
-export const directInTurkey = (exit: string): string => (exit === "tr" && !process.env.VERCEL ? DIRECT : exit);
+export const directInTurkey = (exit: string): string => (exit === "tr" ? DIRECT : exit);
+
+/**
+ * The one Turkish exit allowed through the proxy: Zara product tracking on
+ * Vercel. Akamai answers Vercel's fra1 egress 403 for Zara (measured on
+ * production 2026-10-29), and the owner chose to keep the proxy for Zara only
+ * (2026-10-29: "only for zara product track use proxy"). Every other Turkish
+ * shop — the itxrest brands included — goes direct even where that fails.
+ */
+export const ZARA_TR_EXIT = "tr-zara";
+export const zaraExit = (exit: string): string =>
+  exit === "tr" && process.env.VERCEL ? ZARA_TR_EXIT : directInTurkey(exit);
 
 /**
  * One agent per country, built once. A ProxyAgent per request leaks sockets in
