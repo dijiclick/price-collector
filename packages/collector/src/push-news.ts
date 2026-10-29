@@ -46,6 +46,21 @@ export function newsWindowOpen(tz: string | null, now: Date): boolean {
   return mins >= 20 * 60 + 30 && mins < 22 * 60;
 }
 
+/**
+ * Where a news push lands (2026-10-29): Yeni with the push's own window and
+ * brands. It used to open plain `/yeni`, which shows drops since the reader's
+ * LAST VISIT on their FOLLOWED brands — a round-up counted the last 48 h on the
+ * brands of their TRACKED products, so a tap often opened an empty screen
+ * (owner: "it brings to a page with no deals"). Seconds and %2C keep the href
+ * inside the app's link check (src/notifications/pushOpen.ts); an app without
+ * this change just opens Yeni as before.
+ */
+export function yeniHref(since: Date, brands: string[]): string {
+  const q = [`since=${Math.floor(since.getTime() / 1000)}`];
+  if (brands.length) q.push(`brands=${brands.map(encodeURIComponent).join("%2C")}`);
+  return `/yeni?${q.join("&")}`;
+}
+
 /** One round-up per device per 48h (owner 2026-10-21: "every 2 days"). */
 export function newsBudgetOk(last: Date | null, now: Date): boolean {
   return !last || now.getTime() - last.getTime() >= BUDGET_MS;
@@ -158,7 +173,9 @@ export async function pushNews(db: Db, opts: { now?: Date; send?: NewsSend } = {
       if (sentKeys.has(`${d.token}|${key}`)) continue;
       tried++;
       const m = buildSaleStart(d.lang, sale.brand);
-      const out = await send(d.token, { title: m.title, body: m.body, kind: "news", href: "/yeni" });
+      // That brand's drops from the day before its sale was noticed.
+      const href = yeniHref(new Date(asDate(sale.started_at)!.getTime() - 24 * 3600_000), [sale.brand]);
+      const out = await send(d.token, { title: m.title, body: m.body, kind: "news", href });
       if (out === "ok") {
         sent++;
         await record(d, key);
@@ -220,7 +237,9 @@ export async function pushNews(db: Db, opts: { now?: Date; send?: NewsSend } = {
     if (total < MIN_DROPS) continue;
     tried++;
     const m = buildDigest(d.lang, total, rows.map((r) => r.brand));
-    const out = await send(d.token, { title: m.title, body: m.body, kind: "news", href: "/yeni" });
+    // The same 48 h and brands the count above used.
+    const href = yeniHref(new Date(now.getTime() - 48 * 3600_000), rows.map((r) => r.brand));
+    const out = await send(d.token, { title: m.title, body: m.body, kind: "news", href });
     if (out === "ok") {
       sent++;
       await record(d, `digest:${localDate(d.tz, now)}`);
