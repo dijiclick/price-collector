@@ -152,12 +152,13 @@ export function mapAlshaya(b: AlshayaBrand, country: CountryCode, h: any): Produ
   };
 }
 
-export function alshayaQuery(b: AlshayaBrand, country: CountryCode, page: number) {
+/** `fullPrice`: the whole catalogue, not only reduced rows (the top-up walk). */
+export function alshayaQuery(b: AlshayaBrand, country: CountryCode, page: number, { fullPrice = false } = {}) {
   const index = `${b.prefix}_prod_${country.toLowerCase()}_product_list`;
   const params = new URLSearchParams({
     hitsPerPage: String(PER_PAGE),
     page: String(page),
-    numericFilters: "discount.en>0",
+    ...(fullPrice ? {} : { numericFilters: "discount.en>0" }),
     attributesToRetrieve: FIELDS,
     attributesToHighlight: "",
   }).toString();
@@ -167,13 +168,10 @@ export function alshayaQuery(b: AlshayaBrand, country: CountryCode, page: number
   };
 }
 
-export async function listAlshaya(slug: string, country: CountryCode): Promise<ProductRecord[]> {
-  const b = ALSHAYA_BRANDS[slug];
-  if (!b?.sites[country]) return [];
-  const byId = new Map<string, ProductRecord>();
+async function walk(b: AlshayaBrand, country: CountryCode, fullPrice: boolean, into: Map<string, ProductRecord>) {
   for (let page = 0; page < MAX_PAGES; page++) {
     if (page > 0) await new Promise((r) => setTimeout(r, 800));
-    const q = alshayaQuery(b, country, page);
+    const q = alshayaQuery(b, country, page, { fullPrice });
     const data = await getJson<any>(q.url, {
       method: "POST",
       body: q.body,
@@ -187,11 +185,29 @@ export async function listAlshaya(slug: string, country: CountryCode): Promise<P
     const hits: any[] = data?.hits ?? [];
     for (const h of hits) {
       const r = mapAlshaya(b, country, h);
-      if (r && r.listPrice != null) byId.set(r.externalId, r);
+      if (r && !into.has(r.externalId)) into.set(r.externalId, r);
     }
     if (page + 1 >= Number(data?.nbPages ?? 0) || hits.length === 0) break;
   }
+}
+
+/**
+ * Markdowns first (in stock, deepest first), then — between sales — in-stock
+ * full-price rows (`listPrice: null`) up to the cap, as COS and Gullfunn do.
+ * BBW Kuwait, 2026-10-28: 0 of 602 products reduced, the run collected 0 for 9
+ * runs and last sale's rows stayed live. A full-price row later reduced is a real drop.
+ */
+export async function listAlshaya(slug: string, country: CountryCode): Promise<ProductRecord[]> {
+  const b = ALSHAYA_BRANDS[slug];
+  if (!b?.sites[country]) return [];
+  const sale = new Map<string, ProductRecord>();
+  await walk(b, country, false, sale);
+  const markdowns = [...sale.values()].filter((r) => r.listPrice != null);
   const off = (r: ProductRecord) => (r.listPrice! - r.price) / r.listPrice!;
-  const all = [...byId.values()].sort((a, z) => Number(z.inStock) - Number(a.inStock) || off(z) - off(a));
-  return all.slice(0, CAP);
+  markdowns.sort((a, z) => Number(z.inStock) - Number(a.inStock) || off(z) - off(a));
+  if (markdowns.length >= CAP) return markdowns.slice(0, CAP);
+  const all = new Map<string, ProductRecord>();
+  await walk(b, country, true, all);
+  const full = [...all.values()].filter((r) => r.listPrice == null && r.inStock && !sale.has(r.externalId));
+  return [...markdowns, ...full].slice(0, CAP);
 }

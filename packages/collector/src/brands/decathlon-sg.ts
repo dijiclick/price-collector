@@ -17,7 +17,9 @@
  * - `productCondition:new` — no "Second Life" refurbished items.
  * - one query per gender group (women, men, kids), which keeps the sports
  *   clothing/shoes/accessories and drops gender-less equipment (bikes,
- *   tents, weights). Each query must fit Algolia's 1,000-hit page or it throws.
+ *   tents, weights). A query over Algolia's 1,000-hit page is split into
+ *   discount bands (`percentage` halves) until each band fits; SG women's
+ *   reached 1,216 reduced models on 2026-10-25 and the run failed 5 times.
  */
 import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
@@ -51,13 +53,24 @@ export const GENDER_GROUPS: { facet: string[]; gender: ProductRecord["gender"] }
   },
 ];
 
-export function queryBody(facet: string[]): string {
+/** Discount band (lo, hi] in percent; the whole reduced range by default. */
+export type Band = [number, number];
+const ALL_REDUCED: Band = [0, 100];
+const MIN_BAND = 0.5;
+
+/** Halve a band whose query overflowed one page. Pure. */
+export function splitBand([lo, hi]: Band): Band[] {
+  const mid = Math.round(((lo + hi) / 2) * 10) / 10;
+  return [[lo, mid], [mid, hi]];
+}
+
+export function queryBody(facet: string[], [lo, hi]: Band = ALL_REDUCED): string {
   const p = new URLSearchParams({
     query: "",
     hitsPerPage: String(HITS),
     page: "0",
     facetFilters: JSON.stringify(["sellerType:decathlon", "productCondition:new", facet]),
-    numericFilters: JSON.stringify(["percentage>0"]),
+    numericFilters: JSON.stringify(hi >= 100 ? [`percentage>${lo}`] : [`percentage>${lo}`, `percentage<=${hi}`]),
     attributesToRetrieve: JSON.stringify([
       "objectID", "modelId", "superModelId", "name_en", "brand", "price", "priceBeforeDiscount", "currency",
       "url_en", "smallUrl", "otherImages", "availability", "available", "productNature_en", "colorName_en", "gender_en",
@@ -104,17 +117,27 @@ export async function listDecathlonSg(country: CountryCode): Promise<ProductReco
   if (!m) return [];
   const byId = new Map<string, ProductRecord>();
   for (const g of GENDER_GROUPS) {
-    const d = await getJson<any>(`https://${m.appId}-dsn.algolia.net/1/indexes/${m.index}/query`, {
-      method: "POST",
-      country,
-      headers: { "X-Algolia-Application-Id": m.appId, "X-Algolia-API-Key": m.apiKey, "Content-Type": "application/json" },
-      body: queryBody(g.facet),
-    });
-    if (!Array.isArray(d?.hits)) throw new Error(`decathlon/${country}: malformed Algolia answer`);
-    if (Number(d.nbHits) > HITS) throw new Error(`decathlon/${country}: ${d.nbHits} hits for ${g.gender}, over one page of ${HITS}`);
-    for (const h of d.hits) {
-      const r = mapHit(h, g.gender, country);
-      if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
+    const bands: Band[] = [ALL_REDUCED];
+    while (bands.length) {
+      const band = bands.shift()!;
+      const d = await getJson<any>(`https://${m.appId}-dsn.algolia.net/1/indexes/${m.index}/query`, {
+        method: "POST",
+        country,
+        headers: { "X-Algolia-Application-Id": m.appId, "X-Algolia-API-Key": m.apiKey, "Content-Type": "application/json" },
+        body: queryBody(g.facet, band),
+      });
+      if (!Array.isArray(d?.hits)) throw new Error(`decathlon/${country}: malformed Algolia answer`);
+      if (Number(d.nbHits) > HITS) {
+        // Too many for one page: query each half of the discount band instead,
+        // deeper half first (the index's own order, which the cap keeps).
+        if (band[1] - band[0] <= MIN_BAND) throw new Error(`decathlon/${country}: ${d.nbHits} hits for ${g.gender} in ${band[0]}–${band[1]} % off, over one page of ${HITS}`);
+        bands.unshift(...splitBand(band).reverse());
+        continue;
+      }
+      for (const h of d.hits) {
+        const r = mapHit(h, g.gender, country);
+        if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
+      }
     }
   }
   const all = [...byId.values()];

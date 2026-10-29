@@ -21,6 +21,13 @@
  *   $37.49 sale against its own $49.99), so it is dropped rather than shown at
  *   a discount it may not have.
  * - Stock: `availability.ats` (US only). No per-size stock in the index.
+ *
+ * Between sales (2026-10-29: Finland 0 of 352 footwear hits on sale, Germany
+ * 55 of 361 and only 10 clean markdowns) the run is topped up to the cap with
+ * full-price footwear (`listPrice: null`) from a second, unfiltered-by-sale
+ * query, as Gullfunn, COS and Bath & Body Works do — collecting nothing failed
+ * FI outright and left last sale's rows live at 40 % off. A full-price row
+ * later reduced is a real drop.
  */
 import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
@@ -55,9 +62,12 @@ export const CROCS_MARKETS: Partial<Record<CountryCode, { index: string; host: s
   ES: { index: "production_crocs_eu__products__en_ES", host: "https://www.crocs.eu", ...EU_APP },
 };
 
-export const CROCS_FILTER =
-  'pricing.onSale:true AND (categoryIDs:"women > women-footwear" OR categoryIDs:"men > men-footwear" OR ' +
+const FOOTWEAR =
+  '(categoryIDs:"women > women-footwear" OR categoryIDs:"men > men-footwear" OR ' +
   'categoryIDs:"kids > kids-footwear" OR categoryIDs:"silhouette > footwear")';
+export const CROCS_FILTER = `pricing.onSale:true AND ${FOOTWEAR}`;
+/** The full-price top-up: every footwear hit, sale or not (see the header). */
+export const CROCS_FULL_FILTER = FOOTWEAR;
 
 const NOT_SHOES = /^(jibbitz|charms?|bags?|backpacks?|belt bag|tote bag|bag attachments|accessories|keychains|lobster claw|socks|crew socks)$/i;
 /** Charm packs sit in kids-footwear too; their own category tree says what they are. */
@@ -77,8 +87,8 @@ export function crocsQueryUrl(country: CountryCode): string | null {
   return `https://${app}-dsn.algolia.net/1/indexes/${m.index}/query?x-algolia-application-id=${app}&x-algolia-api-key=${m.apiKey ?? API_KEY}`;
 }
 
-export function crocsQueryBody(page: number): string {
-  return JSON.stringify({ query: "", hitsPerPage: PAGE, page, filters: CROCS_FILTER, attributesToRetrieve: ATTRS, attributesToHighlight: [] });
+export function crocsQueryBody(page: number, filters = CROCS_FILTER): string {
+  return JSON.stringify({ query: "", hitsPerPage: PAGE, page, filters, attributesToRetrieve: ATTRS, attributesToHighlight: [] });
 }
 
 /** "$1,299.99", "C$57.99", "€35,99", "22,50 €", "1.299,00 €" → number. */
@@ -94,8 +104,11 @@ export const money = (v: unknown): number => {
 
 const GENDER: Record<string, ProductRecord["gender"]> = { women: "kadin", men: "erkek", kids: "cocuk" };
 
-/** One Algolia hit → record, or null when it is not a real footwear markdown. Pure. */
-export function mapCrocsHit(hit: any, country: CountryCode): ProductRecord | null {
+/**
+ * One Algolia hit → record, or null when it is not a real footwear markdown. Pure.
+ * `fullPrice`: an unreduced hit (not on sale, its own price) maps at that price, `listPrice: null`.
+ */
+export function mapCrocsHit(hit: any, country: CountryCode, { fullPrice = false } = {}): ProductRecord | null {
   const m = CROCS_MARKETS[country];
   if (!m || !hit?.objectID || !hit?.name || !hit?.url) return null;
   const lifestyle: string[] = Array.isArray(hit.lifestyle) ? hit.lifestyle : [];
@@ -108,8 +121,10 @@ export function mapCrocsHit(hit: any, country: CountryCode): ProductRecord | nul
   const price = money(p.price);
   const own = money(hit.price?.[currency]);
   const list = money(p.regularPrice ?? p.regularPriceHigh);
-  if (!(price > 0) || !(list > price)) return null;
-  if (!(Math.abs(own - price) < 0.005)) return null;
+  if (!(price > 0) || !(Math.abs(own - price) < 0.005)) return null;
+  const deal = p.onSale === true && list > price;
+  // A sale hit that is not a clean markdown stays out of the top-up too.
+  if (!deal && !(fullPrice && p.onSale !== true)) return null;
   const colorId = String(hit.color?.id ?? "").trim();
   const path = String(hit.url);
   const url = `${m.host}${path}${colorId ? `${path.includes("?") ? "&" : "?"}cid=${encodeURIComponent(colorId)}` : ""}`;
@@ -124,7 +139,7 @@ export function mapCrocsHit(hit: any, country: CountryCode): ProductRecord | nul
     imageUrl: img,
     images: cleanGallery([img, hit.altImage], img),
     price: toMinor(price),
-    listPrice: toMinor(list),
+    listPrice: deal ? toMinor(list) : null,
     currency,
     // The CA index carries no availability block; a listed sale colour is orderable there.
     inStock: typeof ats === "number" ? ats > 0 : true,
@@ -138,25 +153,34 @@ export function mapCrocsHit(hit: any, country: CountryCode): ProductRecord | nul
   };
 }
 
-export async function listCrocs(country: CountryCode): Promise<ProductRecord[]> {
-  const url = crocsQueryUrl(country);
-  if (!url) return [];
-  const byId = new Map<string, ProductRecord>();
+async function walk(url: string, country: CountryCode, filters: string, fullPrice: boolean, into: Map<string, ProductRecord>) {
   for (let page = 0; page < MAX_PAGES; page++) {
     if (page > 0) await new Promise((r) => setTimeout(r, 500));
     const res = await getJson<any>(url, {
       country,
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: crocsQueryBody(page),
+      body: crocsQueryBody(page, filters),
     });
     for (const h of res?.hits ?? []) {
-      const r = mapCrocsHit(h, country);
-      if (r) byId.set(r.externalId, r);
+      const r = mapCrocsHit(h, country, { fullPrice });
+      if (r && !into.has(r.externalId)) into.set(r.externalId, r);
     }
     if (page + 1 >= Number(res?.nbPages ?? 0)) break;
   }
-  if (!byId.size) throw new Error(`crocs ${country}: no discounted footwear in the Algolia sale index`);
+}
+
+export async function listCrocs(country: CountryCode): Promise<ProductRecord[]> {
+  const url = crocsQueryUrl(country);
+  if (!url) return [];
+  const sale = new Map<string, ProductRecord>();
+  await walk(url, country, CROCS_FILTER, false, sale);
+  const full = new Map<string, ProductRecord>();
+  if (sale.size < CAP) await walk(url, country, CROCS_FULL_FILTER, true, full);
+  for (const id of sale.keys()) full.delete(id);
+  if (!sale.size && !full.size) throw new Error(`crocs ${country}: no footwear in the Algolia index`);
   const off = (r: ProductRecord) => (r.listPrice! - r.price) / r.listPrice!;
-  return [...byId.values()].sort((a, z) => Number(z.inStock) - Number(a.inStock) || off(z) - off(a)).slice(0, CAP);
+  const markdowns = [...sale.values()].sort((a, z) => Number(z.inStock) - Number(a.inStock) || off(z) - off(a));
+  // Markdowns first, then in-stock full-price footwear up to the cap.
+  return [...markdowns, ...[...full.values()].filter((r) => r.listPrice == null && r.inStock)].slice(0, CAP);
 }
