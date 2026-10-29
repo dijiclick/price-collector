@@ -70,10 +70,14 @@ export async function logPushes(db: Db, items: LoggedPush[], now: Date = new Dat
     // One JSON parameter, not typed arrays: the production driver sent a
     // one-element boolean[] as a bare boolean ("cannot cast type boolean to
     // boolean[]", first run 2026-10-21) while PGlite in the tests did not.
+    // Cast through text: postgres.js JSON-encodes a string bound to a jsonb
+    // parameter, so `$1::jsonb` arrived as a JSON *string* and every insert
+    // failed with "cannot call jsonb_to_recordset on a non-array" — push_log
+    // stayed empty from 10-21 to 10-29 and the 48 h nudge budget never held.
     await db.query(
       `INSERT INTO push_log (token, kind, nudge, key, product_id, sent_at)
        SELECT x.token, x.kind, x.nudge, x.key, x.product_id, $2::timestamptz
-         FROM jsonb_to_recordset($1::jsonb) AS x(token text, kind text, nudge boolean, key text, product_id bigint)`,
+         FROM jsonb_to_recordset($1::text::jsonb) AS x(token text, kind text, nudge boolean, key text, product_id bigint)`,
       [JSON.stringify(items.map((i) => ({ token: i.token, kind: i.kind, nudge: i.nudge, key: i.key ?? null, product_id: i.productId ?? null }))), now.toISOString()],
     );
   } catch (err) {
