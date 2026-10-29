@@ -6,6 +6,8 @@ import { ALL_COUNTRIES, currencyFor, type CountryCode } from "../../../../lib/co
 
 const SITE = "https://shop.mango.com";
 const ORCH = "https://online-orchestrator.mango.com";
+/** Host of the catalog API the PLP itself pages through (not behind the Vercel checkpoint). */
+const API = "https://api.shop.mango.com";
 // The orchestrator (Akamai) rejects bare requests; browser-ish Origin/Referer are required.
 const HEADERS = {
   Accept: "application/json",
@@ -13,11 +15,14 @@ const HEADERS = {
   Referer: `${SITE}/`,
 };
 
-// Full-sale-catalog mode: ~6k products x 2 light orchestrator calls each. The
+// Full-sale-catalog mode: ~6k products x 3 light orchestrator calls each. The
 // calls are CDN-fast (~50ms measured at concurrency 12), so 16 products
-// in-flight (32 requests) clears ~6k products well inside the collector's
-// 4-minute brand budget. MAX_PRODUCTS is a safety cap, not a working limit.
+// in-flight (48 requests) clears ~6k products well inside the collector's
+// 5-minute brand budget. MAX_PRODUCTS is a safety cap, not a working limit.
 const MAX_PRODUCTS = Number(process.env.MANGO_MAX_PRODUCTS ?? 8000);
+// Catalog pages hold 100 entries; women's see-all is ~63 pages. A cap, not a target.
+const MAX_CATALOG_PAGES = 120;
+const PAGE_CONCURRENCY = 4;
 // Women, men, teen girls, boys, girls: the five known sale ids (see SALE_CATEGORIES).
 const MAX_SEED_CATEGORIES = Number(process.env.MANGO_MAX_SEED_CATEGORIES ?? 5);
 const CONCURRENCY = Number(process.env.MANGO_CONCURRENCY ?? 16);
@@ -67,92 +72,71 @@ export function siteFor(country: CountryCode): MangoSite {
 /** Every market the collector can sweep has a storefront here (pinned by a test). */
 export const MANGO_COUNTRIES = ALL_COUNTRIES.filter((c) => c in SITE_PATHS);
 
-/** One colour-level entry of a PLP's catalogItemsData flight payload. */
+/** One colour-level entry of a category listing, in listing order. */
 interface CatalogItem {
   productId: string;
   colorId: string;
-  sizes: string[];
-  price: number;
   portraitId: string;
   index: number;
 }
 
 /**
- * Mango has no batch catalog JSON API (v3/prices and v4/products both take
- * exactly one productId — probed: repeated params are ignored, comma lists
- * 400), BUT the *filtered* PLP at /tr/tr/c/f/<category> server-renders the
- * ENTIRE category item list in its RSC flight data: `catalogItemsData` holds
- * one entry per (productId, colorId) with the CURRENT price, size list and
- * image portraitId — ~5k entries for the women's sale category in one HTML
- * response. What it lacks is the product name, URL slug and crossed-out
- * price, so each product still needs one v3/prices + one v4/products call
- * (2 instead of the previous 3 — per-size stock now comes from the PLP).
+ * One page of a category from Mango's catalog API — the JSON the PLP itself
+ * pages through (100 entries a page). Category ids work here directly:
+ * `/catalogs/7914393e` answers for women's sale in every market, and a bogus
+ * id 404s ("Catalog id by link id not found").
+ *
+ * Until 2026-10-27 the filtered PLP HTML (/c/f/<category>) server-rendered the
+ * WHOLE category as a compact `catalogItemsData` array in its RSC flight data,
+ * with price and sellable sizes per colour. That morning Mango cut it to the
+ * first page of 100 bare {productId, colorId} entries plus `pagination`, and
+ * every market failed with "no catalogItemsData entries with productId". The
+ * pages after the first only exist here, so the HTML (and its Vercel challenge,
+ * which needed a headless browser) is no longer read for products at all.
  */
-export function parseCatalogItems(html: string): CatalogItem[] {
-  // The flight data contains TWO catalogItemsData arrays: one with ~20 fully
-  // rendered first-page items (keyed by `reference`, no productId) and one
-  // with the ENTIRE category as compact {productId, colorId, price, sizes,
-  // portraitId} entries. We want the compact one — scan every occurrence and
-  // keep the largest array whose entries carry a productId.
-  const marker = '\\"catalogItemsData\\":[';
-  let best: any[] = [];
-  let parseError: string | null = null;
-  let from = 0;
-  for (;;) {
-    const start = html.indexOf(marker, from);
-    if (start < 0) break;
-    from = start + marker.length;
-    // Bracket-scan the escaped JSON array (entries are flat objects whose
-    // only nested arrays are `sizes` and `families`).
-    let depth = 0;
-    let end = -1;
-    for (let i = start + marker.length - 1; i < html.length; i++) {
-      const ch = html[i];
-      if (ch === "[") depth++;
-      else if (ch === "]") {
-        depth--;
-        if (depth === 0) {
-          end = i + 1;
-          break;
-        }
-      }
-    }
-    if (end < 0) throw new Error("mango: unterminated catalogItemsData array");
-    // The array sits inside a JS string literal, so undo ONE level of string
-    // escaping with JSON.parse rather than a bare \" -> " swap. Since
-    // 2026-10-11 the rendered tiles carry image alt text with quoted words
-    // (`... \\\"VIBRA FUTBOLERA\\\" print`); the swap left `\\"` behind, which
-    // ends the string early, and Mango SE failed every run on kids/girls.
-    let parsed: any[];
-    try {
-      parsed = JSON.parse(JSON.parse(`"${html.slice(start + marker.length - 1, end)}"`));
-    } catch (err) {
-      // Only the compact array matters; a rendered-tiles array that does not
-      // parse must not fail the page. Fail only if nothing usable is found.
-      parseError = `mango: catalogItemsData did not parse as JSON: ${err}`;
-      continue;
-    }
-    const withIds = parsed.filter(
-      (e) => e && typeof e.productId === "string" && /^\d{6,}$/.test(e.productId),
-    );
-    if (withIds.length > best.length) best = withIds;
-  }
-  if (best.length === 0) {
-    if (parseError) throw new Error(parseError);
-    throw new Error("mango: no catalogItemsData entries with productId in PLP flight data");
-  }
-  return best.map((e) => ({
+export function catalogUrl(hash: string, site: MangoSite, page: number): string {
+  return (
+    `${API}/cs/product-lists-drive-thru/v2/channels/shop/countries/${site.country.toLowerCase()}` +
+    `/catalogs/${hash}?languageIso=${site.lang}&page=${page}`
+  );
+}
+
+/**
+ * Entries of one catalog page. They carry no name, price or sizes, so each
+ * product needs v3/prices + v4/products as before, and now v3/stock as well
+ * (the old payload listed each colour's sellable sizes).
+ * A colour can appear twice, once per look (`37085851:TO` and `:TO:01`);
+ * seedFrom keeps the first.
+ */
+export function parseCatalogPage(body: any, offset = 0): { items: CatalogItem[]; totalPages: number } {
+  if (!body || !Array.isArray(body.items)) throw new Error("mango: catalog page has no items array");
+  const items = body.items
+    .filter((e: any) => e && typeof e.productId === "string" && /^\d{6,}$/.test(e.productId))
+    .map((e: any, i: number) => ({
       productId: e.productId,
       colorId: String(e.colorId ?? ""),
-      // Strings until ~2026-09-28, {label} objects since; String({}) silently
-      // became "[object Object]" and marked every size out of stock.
-      sizes: Array.isArray(e.sizes)
-        ? e.sizes.map((s: any) => String(s && typeof s === "object" ? s.label ?? "" : s).trim()).filter(Boolean)
-        : [],
-      price: typeof e.price === "number" ? e.price : 0,
-      portraitId: String(e.portraitId ?? ""),
-      index: typeof e.index === "number" ? e.index : 0,
+      // A video portrait id names no still: buildRecord's constructed image needs a photo.
+      portraitId: e.media?.portraitFormat && e.media.portraitFormat !== "IMAGE" ? "" : String(e.media?.portraitId ?? ""),
+      index: offset + i,
     }));
+  const totalPages = Number(body.totalPages);
+  return { items, totalPages: Number.isFinite(totalPages) && totalPages > 0 ? totalPages : 1 };
+}
+
+/** Every entry of a category, all pages. Throws "no catalog items" for an empty one. */
+async function fetchCatalog(hash: string, site: MangoSite): Promise<CatalogItem[]> {
+  const page = (n: number) =>
+    getJson<any>(catalogUrl(hash, site, n), { headers: HEADERS, retries: 1, country: site.country });
+  const first = parseCatalogPage(await page(1));
+  const rest = Array.from({ length: Math.min(first.totalPages, MAX_CATALOG_PAGES) - 1 }, (_, i) => i + 2);
+  const pages: CatalogItem[][] = [first.items];
+  // A failed page throws through pool: a missing page is a truncated catalogue.
+  await pool(rest, PAGE_CONCURRENCY, async (n) => {
+    pages[n - 1] = parseCatalogPage(await page(n), (n - 1) * 1000).items;
+  });
+  const items = pages.flat();
+  if (items.length === 0) throw new Error(`mango: no catalog items for ${hash}`);
+  return items;
 }
 
 /** One product seeded from the PLPs: its id plus the colours listed on sale. */
@@ -303,7 +287,7 @@ const hashOf = (path: string): string => path.split("/").pop() ?? "";
  */
 export function seedPaths(found: Iterable<string>, max: number, site: MangoSite = siteFor("TR")): string[] {
   const byHash = new Map<string, string>();
-  // Pages link both /c/<x> and the filtered /c/f/<x>; filteredUrl adds the f/.
+  // Pages link both /c/<x> and the filtered /c/f/<x>: one id, one seed path.
   const linked = pickSalePaths(
     [...found].map((p) => p.replace(`/${site.path}/c/f/`, `/${site.path}/c/`)),
     Infinity,
@@ -316,17 +300,12 @@ export function seedPaths(found: Iterable<string>, max: number, site: MangoSite 
 
 /**
  * A known sale id the pages did not link may simply be retired in this market:
- * the PLP then answers 404 (a bogus id does, probed 2026-10-10) or lists nothing.
- * That is skipped, not counted as a failed page. Anything else (a challenge, a
- * timeout, a 5xx) still is.
+ * the catalog API then answers 404 (a bogus id does, probed 2026-10-29) or
+ * lists nothing. That is skipped, not counted as a failed page. Anything else
+ * (a 403, a timeout, a 5xx) still is.
  */
 export function isRetiredCategory(err: unknown): boolean {
-  return /HTTP 404 |no catalogItemsData entries/.test(String(err));
-}
-
-/** /{path}/c/<x> -> /{path}/c/f/<x>: the filtered PLP, which embeds every item. */
-export function filteredUrl(path: string, site: MangoSite): string {
-  return `${SITE}${path.replace(`/${site.path}/c/`, `/${site.path}/c/f/`)}`;
+  return /HTTP 404 |no catalog items/.test(String(err));
 }
 
 /** Links matching /{path}/<kind>/..., e.g. kind "c" (categories) or "h" (sections). */
@@ -338,7 +317,7 @@ function linksOf(html: string, site: MangoSite, kind: "c" | "h"): string[] {
 type SeedMap = Map<string, Seed>;
 
 /**
- * Load PLPs into `byId`. Returns how many pages failed (fetch or parse).
+ * Load categories into `byId`. Returns how many failed (fetch or parse).
  * `optional` paths (known ids no page linked) may be retired: see isRetiredCategory.
  */
 async function seedFrom(
@@ -356,22 +335,21 @@ async function seedFrom(
     try {
       // A failed page must THROW, not silently shrink the catalog to whatever
       // loaded — the collector treats a truncated-but-nonzero run as success.
-      const html = await browserText(filteredUrl(path, site));
-      items = parseCatalogItems(html);
+      items = await fetchCatalog(hashOf(path), site);
     } catch (err) {
       if (optional.has(path) && isRetiredCategory(err)) continue;
       if (strict) throw err;
       failed++;
       continue;
     }
-    // Group colour entries per product, deterministically ordered by numeric
-    // id within the category so the subset kept under the cap is stable
-    // run-to-run.
+    // Group colour entries per product (one per colour: a second look of the
+    // same colour adds nothing), deterministically ordered by numeric id within
+    // the category so the subset kept under the cap is stable run-to-run.
     const perProduct = new Map<string, CatalogItem[]>();
     for (const item of items) {
       const list = perProduct.get(item.productId);
-      if (list) list.push(item);
-      else perProduct.set(item.productId, [item]);
+      if (!list) perProduct.set(item.productId, [item]);
+      else if (!list.some((c) => c.colorId === item.colorId)) list.push(item);
     }
     const gender = pathGender(path);
     for (const id of [...perProduct.keys()].sort((a, b) => Number(a) - Number(b))) {
@@ -386,7 +364,9 @@ async function seedFrom(
 
 async function seedProducts(site: MangoSite, max: number): Promise<Seed[]> {
   // The homepage plus every section page it links (/h/women, /h/damen, ...):
-  // the homepage alone stopped linking /c/ categories on 2026-09-22.
+  // the homepage alone stopped linking /c/ categories on 2026-09-22. Only this
+  // discovery still reads HTML (through the browser, for the Vercel challenge);
+  // if it fails, the known ids below still seed the crawl.
   const home = await browserText(`${SITE}/${site.path}`).catch(() => "");
   const catPaths = new Set<string>(linksOf(home, site, "c"));
   for (const page of new Set(linksOf(home, site, "h"))) {
@@ -511,26 +491,41 @@ export function withRendition(path: string | null, assets: string): string | nul
  * (2026-10-13, owner: "it tells me request is blocked"). The v4 detail `url`
  * stops at the id, so the colour this record is for is added, with size 00.
  * Older-style links (`…_37091331`) and ones already suffixed are left alone.
+ * Colour codes are not all numeric: TM, TO, TG... (denim washes) need the same
+ * suffix — `…/17001205` 403s, `…/17001205/TM/00` opens (2026-10-29; ~9% of TR
+ * links were bare).
  */
 export function productUrl(url: string, colorId: unknown): string {
-  const c = colorId == null ? "" : String(colorId).trim();
-  if (!/^\d{1,3}$/.test(c)) return url;
-  return /\/\d{6,10}$/.test(url) ? `${url}/${c.padStart(2, "0")}/00` : url;
+  const c = colorId == null ? "" : String(colorId).trim().toUpperCase();
+  if (!/^[A-Z0-9]{1,3}$/.test(c)) return url;
+  const code = /^\d+$/.test(c) ? c.padStart(2, "0") : c;
+  return /\/\d{6,10}$/.test(url) ? `${url}/${code}/00` : url;
 }
 
 /**
- * Build one ProductRecord from a seed + its two orchestrator responses.
- * `prices` is keyed by colorId; `detail` may be null (name/url degrade).
+ * v3/stock/products: `{colors: {<colorId>: {sizes: {<sizeId>: {available}}}}}`.
+ * Size ids, not labels ("19" = XS); v4's `colors[].sizes[{id, label}]` names
+ * them. A sold-out size is `available: false` or missing, a sold-out colour
+ * missing altogether (probed 2026-10-29).
+ */
+export interface MangoStock {
+  colors?: Record<string, { sizes?: Record<string, { available?: boolean }> }>;
+}
+
+/**
+ * Build one ProductRecord from a seed + its three orchestrator responses.
+ * `prices` is keyed by colorId; `detail` may be null (name/url/size labels degrade).
  */
 export function buildRecord(
   seed: Seed,
   prices: Record<string, any>,
+  stock: MangoStock,
   detail: any,
   country: CountryCode = "TR",
 ): ProductRecord | null {
   const site = siteFor(country);
   const lead = seed.colors[0];
-  // Prefer the colour the PLP grid shows; fall back to any priced colour.
+  // Prefer the colour the listing shows; fall back to any priced colour.
   const priceEntry =
     prices[lead.colorId] ??
     Object.values(prices).find((v: any) => v && typeof v.price === "number");
@@ -540,28 +535,23 @@ export function buildRecord(
   const colors: any[] = detail?.colors ?? [];
   const ownColor = colors.find((c: any) => String(c?.id) === lead.colorId) ?? colors[0];
 
-  // Per-size labels come from the detail response; the PLP's size list for
-  // this colour is the set actually sellable right now.
-  const plpSizes = new Set(lead.sizes);
-  const sizes: SizeVariant[] = (ownColor?.sizes ?? [])
+  // Per-size labels come from the detail response, availability from v3/stock
+  // by size id — for the same colour, or the sizes describe another garment.
+  const sizeStock = stock.colors?.[String(ownColor?.id ?? lead.colorId)]?.sizes ?? {};
+  const sizeList: SizeVariant[] = (ownColor?.sizes ?? [])
     .map((s: any) => ({
       label: String(s?.label ?? "").trim(),
-      availability: (plpSizes.has(String(s?.label ?? "").trim())
+      availability: (sizeStock[String(s?.id)]?.available === true
         ? "in_stock"
         : "out_of_stock") as Availability,
     }))
     .filter((s: SizeVariant) => s.label);
-  const fallbackSizes: SizeVariant[] = lead.sizes.map((label) => ({
-    label,
-    availability: "in_stock" as Availability,
-  }));
-  const sizeList = sizes.length > 0 ? sizes : fallbackSizes;
   const colorNames: string[] = [
     ...new Set(colors.map((c: any) => c?.label).filter(Boolean) as string[]),
   ];
 
   const assets = detail?.assetsDomain ?? "https://media.mango.com";
-  // The PLP grid image is deterministic: /is/image/punto/<id>-<color>-<portrait>
+  // The grid image is deterministic: /is/image/punto/<id>-<color>-<portrait>
   const constructed =
     lead.portraitId && lead.colorId
       ? `https://media.mango.com/is/image/punto/${seed.id}-${lead.colorId}-${lead.portraitId}`
@@ -588,8 +578,11 @@ export function buildRecord(
     price: toMinor(priceEntry.price),
     listPrice: typeof orig === "number" && orig > priceEntry.price ? toMinor(orig) : null,
     currency: currencyFor(country),
-    // Listed on the filtered sale PLP with at least one sellable size.
-    inStock: sizeList.some((s) => s.availability !== "out_of_stock"),
+    // At least one sellable size; without detail (no labels) straight from stock.
+    inStock:
+      sizeList.length > 0
+        ? sizeList.some((s) => s.availability !== "out_of_stock")
+        : Object.values(sizeStock).some((v) => v?.available === true),
     category: family,
     gender: seed.gender ?? null,
     colorName: ownColor?.label ?? (lead.colorId || null),
@@ -597,12 +590,21 @@ export function buildRecord(
   };
 }
 
-/** Fetch prices (required) + detail (best-effort) for one seeded product. */
+/**
+ * Fetch prices + stock (both required) and detail (best-effort) for one seeded
+ * product. Stock is required because a record without it would be stored with
+ * a made-up availability, and restock alerts read it; a broken stock API
+ * therefore trips the failure ratio in listProducts instead.
+ */
 async function fetchOne(seed: Seed, site: MangoSite): Promise<ProductRecord | null> {
   const cc = site.country;
-  const [prices, detail] = await Promise.all([
+  const [prices, stock, detail] = await Promise.all([
     getJson<Record<string, any>>(
       `${ORCH}/v3/prices/products?channelId=shop&countryIso=${cc}&productId=${seed.id}`,
+      { headers: HEADERS, retries: 1, country: cc },
+    ).catch(() => null),
+    getJson<MangoStock>(
+      `${ORCH}/v3/stock/products?countryIso=${cc}&channelId=shop&productId=${seed.id}`,
       { headers: HEADERS, retries: 1, country: cc },
     ).catch(() => null),
     // NB: v4's language param is `languageIso` (v3 detail's was `language`).
@@ -611,8 +613,8 @@ async function fetchOne(seed: Seed, site: MangoSite): Promise<ProductRecord | nu
       { headers: HEADERS, retries: 1, country: cc },
     ).catch(() => null),
   ]);
-  if (!prices) return null; // discontinued / bogus id scraped from HTML
-  return buildRecord(seed, prices, detail, cc);
+  if (!prices || !stock) return null; // discontinued id, or the orchestrator refused us
+  return buildRecord(seed, prices, stock, detail, cc);
 }
 
 /** Run `fn` over `items` with bounded concurrency. */
@@ -637,14 +639,14 @@ export async function listProducts(country: CountryCode = "TR"): Promise<Product
     if (rec) byId.set(rec.externalId, rec);
     else failures++;
   });
-  // A few nulls are normal (ids linger in flight data after delisting), but a
+  // A few nulls are normal (ids linger in the listing after delisting), but a
   // large share means the orchestrator is rejecting us — fail the run loudly
   // instead of shipping a silently truncated catalog.
   if (failures > seeds.length * MAX_FAILURE_RATIO) {
     throw new Error(
-      `mango ${country}: ${failures}/${seeds.length} products failed price fetch — aborting run`,
+      `mango ${country}: ${failures}/${seeds.length} products failed price/stock fetch — aborting run`,
     );
   }
-  if (byId.size === 0) throw new Error(`mango ${country}: zero products built from PLP seeds`);
+  if (byId.size === 0) throw new Error(`mango ${country}: zero products built from catalog seeds`);
   return [...byId.values()];
 }
