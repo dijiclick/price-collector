@@ -17,6 +17,15 @@
  * colour whose children are reduced (`final_price < regular_price`): the price
  * is that colour's lowest reduced price (in-stock sizes first), the "was" its
  * regular price, and the sizes are that colour's children with their stock.
+ *
+ * RESTRICTED SALE (2026-10-31): ahead of 11.11 the shop hides its sale page —
+ * the service answers `isRestricted: true` (`restrictedStoryBlokKey`
+ * "sg/pages/11-11-teaser") with the real total (1,409) and an EMPTY `hits`
+ * list on every page, so five runs collected nothing. Marked-down colours are
+ * still on sale in the regular catalogue (`urlKey=shop-all`, 2,332 products in
+ * SG, 2,006 in HK; page 30 of SG carried 34 reduced products of 40), so a
+ * restricted sale page falls back to walking shop-all, where `mapHit` keeps
+ * only the reduced colours as before.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -39,9 +48,18 @@ const PAUSE_MS = 400;
 const CAP = 1500;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export function pageUrl(country: CountryCode, page: number): string {
+/** The whole catalogue, walked when the sale page is restricted. */
+export const FALLBACK_KEY = "shop-all";
+const MAX_FALLBACK_PAGES = 90;
+
+export function pageUrl(country: CountryCode, page: number, urlKey?: string): string {
   const m = LOVEBONITO_MARKETS[country]!;
-  return `${HOST}/api-2/es-catalog/catalog/getProducts?urlKey=${m.saleKey}&count=${PAGE}&agg=false&page=${page}&storeCode=${m.storeCode}`;
+  return `${HOST}/api-2/es-catalog/catalog/getProducts?urlKey=${urlKey ?? m.saleKey}&count=${PAGE}&agg=false&page=${page}&storeCode=${m.storeCode}`;
+}
+
+/** A sale page hidden behind a teaser: real total, no hits. Pure. */
+export function isRestricted(d: any): boolean {
+  return d?.result?.isRestricted === true && !d?.result?.hits?.hits?.length;
 }
 
 const img = (p: unknown): string | null =>
@@ -101,19 +119,28 @@ export function mapHit(src: any, country: CountryCode): ProductRecord[] {
   return out;
 }
 
-export async function listLoveBonito(country: CountryCode): Promise<ProductRecord[]> {
-  if (!LOVEBONITO_MARKETS[country]) return [];
-  const byId = new Map<string, ProductRecord>();
+async function walk(country: CountryCode, urlKey: string | undefined, maxPages: number, byId: Map<string, ProductRecord>): Promise<"ok" | "restricted"> {
   let total = Infinity;
   for (let page = 1; (page - 1) * PAGE < total; page++) {
-    if (page > MAX_PAGES) throw new Error(`lovebonito/${country}: ${total} products, over ${MAX_PAGES} pages`);
+    if (page > maxPages) throw new Error(`lovebonito/${country}: ${total} products, over ${maxPages} pages`);
     if (page > 1) await sleep(PAUSE_MS);
-    const d = await getJson<any>(pageUrl(country, page), { country });
+    const d = await getJson<any>(pageUrl(country, page, urlKey), { country });
+    if (page === 1 && !urlKey && isRestricted(d)) return "restricted";
     const hits: any[] | undefined = d?.result?.hits?.hits;
     if (!Array.isArray(hits)) throw new Error(`lovebonito/${country}: malformed page ${page}`);
     total = Number(d.result.hits.total?.value ?? 0);
     for (const h of hits) for (const r of mapHit(h?._source, country)) byId.set(r.externalId, r);
     if (!hits.length) break;
+  }
+  return "ok";
+}
+
+export async function listLoveBonito(country: CountryCode): Promise<ProductRecord[]> {
+  if (!LOVEBONITO_MARKETS[country]) return [];
+  const byId = new Map<string, ProductRecord>();
+  if ((await walk(country, undefined, MAX_PAGES, byId)) === "restricted") {
+    console.log(`lovebonito/${country}: sale page restricted, walking ${FALLBACK_KEY}`);
+    await walk(country, FALLBACK_KEY, MAX_FALLBACK_PAGES, byId);
   }
   const all = [...byId.values()];
   return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
