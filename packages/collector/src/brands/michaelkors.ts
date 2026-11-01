@@ -100,9 +100,6 @@ interface Market {
   outletMixed: boolean;
 }
 
-/** In order of preference: .eu last, it 403s runners since 2026-10-14. */
-const EU_EDGES = ["https://www.michaelkors.global", "https://www.michaelkors.co.uk", "https://www.michaelkors.eu"];
-
 /**
  * Two fronting groups, flipping per runner-minute (2026-10-29). Every MK host
  * CNAMEs to one Akamai property, but the edge answers each Host domain from one
@@ -142,13 +139,17 @@ const INTL_POOL = [
  */
 function EU_MARKETS(): Partial<Record<CountryCode, Market>> {
   const eu = "https://www.michaelkors.eu";
-  const edges = [eu, ...EU_EDGES.filter((h) => h !== eu)];
+  // 2026-11-01: DE failed two runs in a row (FR one), every attempt refused —
+  // its mirrors were only the three Akamai edges, which fail together, so when
+  // .de flipped to Akamai there was no Cloudflare host left to try. Like GB/CH/AU
+  // since 10-29, each euro market now walks the whole interleaved pool after its
+  // own domain, so a call reaches whichever fronting group is open.
   const mk = (host: string, site: string, locale: string): Market => ({
     host,
     api: host,
     site,
     locale,
-    mirrors: edges.filter((h) => h !== host),
+    mirrors: INTL_POOL.filter((h) => h !== host),
     outletMixed: false,
   });
   return {
@@ -237,7 +238,8 @@ async function fetchText(url: string, country: CountryCode, xhr = false): Promis
   const hostCount = 1 + (MK_MARKETS[country]?.mirrors?.length ?? 0);
   const first = lastGood.get(country) ?? 0;
   // GB/CH/AU walk a 7-host pool (both fronting groups); try enough of it that a
-  // call spans Cloudflare and Akamai hosts. The .com and 4-host EU markets keep 3-4.
+  // call spans Cloudflare and Akamai hosts (the euro markets too, since 11-01).
+  // The .com markets keep 3.
   const urls = attemptUrls(url, country, hostCount > 1 ? Math.min(hostCount, 5) : 3, first);
   let lastErr: unknown;
   for (let attempt = 0; attempt < urls.length; attempt++) {

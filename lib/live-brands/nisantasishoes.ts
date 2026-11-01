@@ -12,6 +12,9 @@
  *   - `indirimNN`  → NN % off (5, 10, 20, 25, 30, 40, 50 seen),
  *   - else `KIŞK` (the winter season) → 5 % off,
  *   - else (summer `YAZK` / untagged) → no reduction.
+ * 2026-11-01: the winter season went from 5 % to 15 % (re-measured on 30
+ * pages). `indirim5` on a KIŞK product now shows the season's 15 %, not 5 %:
+ * the theme takes the larger of the two. Other tags (10–50) still win.
  * The basket price is the shelf price × (100 − NN) / 100, rounded half-up to
  * the kuruş (1.469,90 at 25 % → 1.102,43). As with DeFacto / LCW / Altınbaş,
  * the basket price is stored as the price and the shelf price as the list price.
@@ -25,13 +28,20 @@ const SITE = "https://www.nisantasishoes.com";
 const STORE: ShopifySite = { brand: "nisantasishoes", sites: { TR: SITE }, defaultGender: "kadin" };
 
 /** The basket discount (whole percent) the theme shows for these tags, or 0. Pure. */
+export const WINTER_PERCENT = 15;
+
 export function basketPercent(tags: unknown): number {
   const list: string[] = Array.isArray(tags) ? tags.map(String) : typeof tags === "string" ? tags.split(",") : [];
+  const winter = list.some((t) => t.trim() === "KIŞK");
   for (const t of list) {
     const m = t.trim().match(/^indirim(\d{1,2})$/i);
-    if (m && Number(m[1]) > 0) return Number(m[1]);
+    if (m && Number(m[1]) > 0) {
+      const pct = Number(m[1]);
+      // Measured: indirim5 + KIŞK → 15 %, indirim10 + KIŞK → 10 %.
+      return winter && pct < 10 ? Math.max(pct, WINTER_PERCENT) : pct;
+    }
   }
-  return list.some((t) => t.trim() === "KIŞK") ? 5 : 0;
+  return winter ? WINTER_PERCENT : 0;
 }
 
 /** Shelf price (kuruş) → basket price (kuruş), half-up like the shop's own label. Pure. */
