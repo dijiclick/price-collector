@@ -16,6 +16,12 @@ import { listRnd, rndLimitsFromEnv, type RndShop } from "./_rnd";
  * no kids' line in Turkey. ~7 pages, then the quick-view pass for sizes
  * (category, colour and section ride along in its dataLayer push).
  *
+ * 2026-11-02: `/indirim` went empty ("DEPARTMANDA ÜRÜN YOK") while 260
+ * reduced products were still on sale inside `/tum-urunler`; the run collected
+ * 0 twice. The walk now reads `/tum-urunler` sorted by discount, descending
+ * (`o=12`, "Azalan İndirim"), so the reduced cards come first and the walk
+ * stops at the first page without one, whatever the sale landing page does.
+ *
  * STAYS SALE-ONLY (checked 2026-10-19): no listing holds the whole shop.
  * `/tum-urunler` counts 1,124, but the ~90 category listings linked from the
  * home page add 213 more products (13 of 15 sampled in stock, 20 of them in
@@ -27,9 +33,9 @@ export const SHOP: RndShop = {
   brand: "levis",
   site: "https://www.levis.com.tr",
   listings: [
-    { path: "/indirim?g=kadin", gender: "kadin" },
-    { path: "/indirim?g=erkek", gender: "erkek" },
-    { path: "/indirim?g=uniseks", gender: null },
+    { path: "/tum-urunler?g=kadin&o=12", gender: "kadin" },
+    { path: "/tum-urunler?g=erkek&o=12", gender: "erkek" },
+    { path: "/tum-urunler?g=uniseks&o=12", gender: null },
   ],
   detailPath: (id) => `/quicklook?productDescriptionId=${id}`,
 };

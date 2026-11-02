@@ -139,7 +139,8 @@ export function parseGrid(
     const id = c.match(/data-pid-without-size="([^"]+)"/)?.[1];
     if (!id) continue;
     const ga = jsonOf<any>(decodeEntities(c.match(/data-ga="([^"]*)"/)?.[1] ?? "")) ?? {};
-    const list = moneyOf(c.match(/class="strike-through list">\s*<span\s+class="value[^"]*">\s*([^<]+)</)?.[1]);
+    // 2026-11-02 the span gained a class ("strike-through list price-list").
+    const list = moneyOf(c.match(/class="strike-through list\b[^"]*">\s*<span\s+class="value[^"]*">\s*([^<]+)</)?.[1]);
     const sale = moneyOf(c.match(/<span\s+class="sales[^"]*">\s*([^<]+)</)?.[1]);
     if (!(sale > 0 && list > sale)) continue;
     const cur = c.match(/data-currency="([A-Z]{3})"/)?.[1] ?? c.match(/itemprop="priceCurrency" content="([A-Z]{3})"/)?.[1] ?? ga.currency;
@@ -260,6 +261,10 @@ export async function listCkGroup(slug: CkGroupSlug, country: CountryCode): Prom
         }
       }
       if (process.env.CKGROUP_DEBUG) console.error(`${slug}/${country} ${cat.cgid} p${page}: ${tiles} tiles, ${fresh} new`);
+      // Tiles but no deal parsed on the first page: the price markup changed.
+      if (page === 0 && tiles > 0 && byId.size === 0) {
+        throw new Error(`${slug}/${country}: ${cat.cgid} page 0 has ${tiles} tiles but no strikethrough price parsed — tile markup changed?`);
+      }
       // Pages must not overlap; if they do, the site's page step changed.
       if (tiles >= size && fresh < tiles * 0.8) {
         throw new Error(`${slug}/${country}: ${cat.cgid} page ${page} repeats ${tiles - fresh}/${tiles} tiles — page step changed?`);

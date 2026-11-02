@@ -58,6 +58,12 @@ export interface GroupMarket {
   saleCgids: string[];
   /** Return every hit of the walk (full price too), not only marked-down ones. SCAPI only. */
   fullCatalogue?: boolean;
+  /**
+   * Between sales: after the deals walk, top up to the row cap with full-price
+   * hits (`listPrice: null`) from these categories. SCAPI only (sfra-grid walks
+   * the whole catalogue anyway and always tops up).
+   */
+  topUpCgids?: string[];
 }
 
 export interface GroupBrand {
@@ -67,6 +73,15 @@ export interface GroupBrand {
   scapi?: ScapiClient;
   markets: Partial<Record<CountryCode, GroupMarket>>;
 }
+
+/**
+ * Calzedonia markets that had a sale and are topped up with full price between
+ * sales. 2026-11-02: PT's sale tree still lists 331 hits but none has a strike
+ * price any more, so the run collected 0 and last sale's rows stayed live at
+ * half price (quality: ours 19,95 €, shop 39,90 €). The root categories
+ * (CAL_Women 1575 / CAL_Men 195 / CAL_Kids 335 in PT) supply the top-up.
+ */
+const TOP_UP_CAL = new Set<CountryCode>(["PT", "ES"]);
 
 export const GROUP: Record<string, GroupBrand> = {
   calzedonia: {
@@ -164,7 +179,16 @@ function calzedoniaEu(): Partial<Record<CountryCode, GroupMarket>> {
     ["IT", "calzedonia-eu", "it-IT"], ["IE", "calzedonia-eu", "en-IE"],
   ];
   return Object.fromEntries(
-    rows.map(([c, siteId, locale]) => [c, { siteId, locale, path: c.toLowerCase(), saleCgids: [`CAL_Women_Sales_${c}`, `CAL_Men_Sales_${c}`, `CAL_Kids_Sales_${c}`] }]),
+    rows.map(([c, siteId, locale]) => [
+      c,
+      {
+        siteId,
+        locale,
+        path: c.toLowerCase(),
+        saleCgids: [`CAL_Women_Sales_${c}`, `CAL_Men_Sales_${c}`, `CAL_Kids_Sales_${c}`],
+        ...(TOP_UP_CAL.has(c) ? { topUpCgids: ["CAL_Women", "CAL_Men", "CAL_Kids"] } : {}),
+      },
+    ]),
   );
 }
 
@@ -187,6 +211,8 @@ const SCAPI_MAX_PAGES = Number(process.env.CALZEDONIA_SCAPI_MAX_PAGES ?? 18);
 /** Full-catalogue markets: page budget and row cap far above Falconeri TR's 928 colours (2026-10-19). */
 const FULL_SCAPI_MAX_PAGES = Number(process.env.CALZEDONIA_FULL_SCAPI_MAX_PAGES ?? 60);
 const FULL_MAX_PRODUCTS = Number(process.env.CALZEDONIA_FULL_MAX_PRODUCTS ?? 6000);
+/** Extra SCAPI pages for the full-price top-up (1500 rows at 100 a page, plus out-of-stock hits). */
+const TOP_UP_MAX_PAGES = 20;
 const SFRA_PAGE = 200;
 const SFRA_MAX_PAGES = Number(process.env.CALZEDONIA_SFRA_MAX_PAGES ?? 10);
 const SFRA_DETAIL_LIMIT = Number(process.env.CALZEDONIA_DETAIL_LIMIT ?? 35);
@@ -326,6 +352,28 @@ async function listScapi(b: GroupBrand, country: CountryCode, m: GroupMarket): P
       for (const h of hits) {
         const r = mapScapiHit(b, country, m, h);
         if (r && (full || r.listPrice != null) && !out.has(r.externalId)) out.set(r.externalId, r);
+      }
+      if (!hits.length || offset + SCAPI_PAGE >= Number(j?.total ?? 0)) break;
+    }
+  }
+  // Between sales: top up with full-price hits, deals first (they are already in `out`).
+  for (const cgid of full ? [] : m.topUpCgids ?? []) {
+    for (let offset = 0; out.size < MAX_PRODUCTS && pages < maxPages + TOP_UP_MAX_PAGES; offset += SCAPI_PAGE) {
+      await sleep(PAUSE_MS);
+      pages++;
+      const q = new URLSearchParams({
+        siteId: m.siteId, refine: `cgid=${cgid}`, limit: String(SCAPI_PAGE), offset: String(offset), locale: m.locale,
+        currency: COUNTRIES[country].currency, expand: "prices,variations,availability,images,represented_products",
+        perPricebook: "true", allVariationProperties: "true",
+      });
+      const j = await getJson<any>(
+        `https://${c.shortCode}.api.commercecloud.salesforce.com/search/shopper-search/v1/organizations/${c.organizationId}/product-search?${q}`,
+        { headers: { Authorization: `Bearer ${token}` }, retries: 1, country },
+      ).catch(() => null);
+      const hits: any[] = j?.hits ?? [];
+      for (const h of hits) {
+        const r = mapScapiHit(b, country, m, h);
+        if (r && r.inStock && !out.has(r.externalId)) out.set(r.externalId, r);
       }
       if (!hits.length || offset + SCAPI_PAGE >= Number(j?.total ?? 0)) break;
     }
@@ -481,7 +529,7 @@ function gridCategory(path: string): string | null {
  * `--lowStock` = low. The schema.org availability meta is "OutOfStock" on
  * every tile and is ignored.
  */
-export function parseGridTiles(html: string, b: GroupBrand, country: CountryCode): ProductRecord[] {
+export function parseGridTiles(html: string, b: GroupBrand, country: CountryCode, { fullPrice = false } = {}): ProductRecord[] {
   const out: ProductRecord[] = [];
   const parts = html.split(/<div class="product" data-pid="/).slice(1);
   for (const part of parts) {
@@ -493,7 +541,9 @@ export function parseGridTiles(html: string, b: GroupBrand, country: CountryCode
     const block = part.slice(pc, part.indexOf("cc-omnibusStack", pc) > 0 ? part.indexOf("cc-omnibusStack", pc) : pc + 3000);
     const sales = Number(block.match(/itemprop=price content="(\d+(?:\.\d+)?)"/)?.[1]);
     const list = Number(block.match(/class="[^"]*\bstrike-through\b[^"]*" content="(\d+(?:\.\d+)?)"/)?.[1]);
-    if (!Number.isFinite(sales) || sales <= 0 || !Number.isFinite(list) || list - sales <= 0.005) continue;
+    if (!Number.isFinite(sales) || sales <= 0) continue;
+    const reduced = Number.isFinite(list) && list - sales > 0.005;
+    if (!reduced && !fullPrice) continue;
     const sizes: SizeVariant[] = [];
     const seen = new Set<string>();
     const row = part.indexOf("quick-buy-sizes__row");
@@ -515,7 +565,7 @@ export function parseGridTiles(html: string, b: GroupBrand, country: CountryCode
       imageUrl: imgs[0] ?? null,
       images: cleanGallery(imgs, imgs[0] ?? null),
       price: toMinor(sales),
-      listPrice: toMinor(list),
+      listPrice: reduced ? toMinor(list) : null,
       currency: COUNTRIES[country].currency,
       inStock: sizes.length ? sizes.some((s) => s.availability !== "out_of_stock") : attr("item_availability") === "available",
       category: gridCategory(attr("item_category")),
@@ -547,10 +597,14 @@ async function listSfraGrid(b: GroupBrand, country: CountryCode, m: GroupMarket)
     }
     const tiles = (html.match(/<div class="product" data-pid="/g) ?? []).length;
     if (page === 0 && !tiles) throw new Error(`${b.brand}/${country}: empty catalogue page`);
-    for (const r of parseGridTiles(html, b, country)) if (!out.has(r.externalId)) out.set(r.externalId, r);
+    for (const r of parseGridTiles(html, b, country, { fullPrice: true })) if (!out.has(r.externalId)) out.set(r.externalId, r);
     if (tiles < GRID_PAGE) break;
   }
-  return [...out.values()];
+  // Markdowns first, then in-stock full price up to the cap: between sales
+  // (Spain's swimwear markdowns ended 2026-11) the walk otherwise yields 0 and
+  // last sale's rows stay live at their old price.
+  const all = [...out.values()];
+  return [...all.filter((r) => r.listPrice != null), ...all.filter((r) => r.listPrice == null && r.inStock)];
 }
 
 // ───────────────────────── entry point ─────────────────────────
