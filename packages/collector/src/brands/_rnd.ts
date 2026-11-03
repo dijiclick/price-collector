@@ -187,7 +187,8 @@ export function mapRndCard(shop: RndShop, id: string, card: string, gender: Prod
   const was = html.now != null ? html.was : num(ev?.first_price);
   if (!name || !href || now == null) return null;
   const imgs = rndImages(card);
-  const colour = typeof ev?.item_variant === "string" && ev.item_variant.trim() ? ev.item_variant.trim() : null;
+  const rawColour = ev?.item_variant ?? ev?.item_color;
+  const colour = typeof rawColour === "string" && rawColour.trim() ? rawColour.trim() : null;
   // The model code, shared by its colours: the card tag's own `data-code`
   // (Timberland), else the "more colours" link's `data-key` (Vans). Vans'
   // favourite button carries a `data-code` too, but that is the colour SKU.
@@ -212,7 +213,9 @@ export function mapRndCard(shop: RndShop, id: string, card: string, gender: Prod
     currency: "TRY",
     // The GA4 item's stock is the colour's total; Levi's cards carry none, and
     // its listings show buyable products only — the size pass corrects both.
-    inStock: ev ? Number(ev.stock ?? 0) > 0 : true,
+    // Since 2026-11 Levi's cards carry a GA4 item too, but without `stock`:
+    // a missing count is "unknown" (listed = buyable), not sold out.
+    inStock: ev && ev.stock != null ? Number(ev.stock) > 0 : true,
     category: type,
     gender: rndGender(ev?.item_category) ?? gender ?? rndGender(name),
     variants: null,

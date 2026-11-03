@@ -1,5 +1,5 @@
 import type { ProductRecord } from "../types";
-import { listRnd, rndLimitsFromEnv, type RndShop } from "./_rnd";
+import { listRnd, listRndCatalogue, rndLimitsFromEnv, type RndShop } from "./_rnd";
 
 /**
  * Levi's Turkey — www.levis.com.tr, an RND Commerce storefront (see _rnd.ts).
@@ -28,6 +28,14 @@ import { listRnd, rndLimitsFromEnv, type RndShop } from "./_rnd";
  * `/indirim`), and the categories are curated sets, not a tree (a parent
  * misses its children's products). A full-price walk could not be shown
  * complete, and the delist sweep would mark whatever it missed sold out.
+ *
+ * BETWEEN SALES (2026-11-03): the sale ended — every card in all three
+ * sections is a single price and `/indirim` is empty — so the sale walk
+ * returned 0 and every run failed (7 in a row), leaving 236 stored rows at
+ * their old sale prices. With no reduced card anywhere the run now walks the
+ * three sections in full (544 + 790 + 3 = 1,337 of `/tum-urunler`'s 1,338,
+ * each checked against its own pager count) and returns them at full price,
+ * as COS and Gullfunn do. The ~200 category-only products stay unlisted.
  */
 export const SHOP: RndShop = {
   brand: "levis",
@@ -38,10 +46,17 @@ export const SHOP: RndShop = {
     { path: "/tum-urunler?g=uniseks&o=12", gender: null },
   ],
   detailPath: (id) => `/quicklook?productDescriptionId=${id}`,
+  catalogue: [
+    { path: "/tum-urunler?g=kadin", gender: "kadin" },
+    { path: "/tum-urunler?g=erkek", gender: "erkek" },
+    { path: "/tum-urunler?g=uniseks", gender: null },
+  ],
 };
 
 export const brand = SHOP.brand;
 
 export async function listProducts(): Promise<ProductRecord[]> {
-  return listRnd(SHOP, rndLimitsFromEnv("LEVIS_TR", { maxProducts: 1500, maxPages: 20, detailLimit: 300, budgetMs: 140_000 }));
+  const sale = await listRnd(SHOP, rndLimitsFromEnv("LEVIS_TR", { maxProducts: 1500, maxPages: 20, detailLimit: 300, budgetMs: 140_000 }));
+  if (sale.length > 0) return sale;
+  return listRndCatalogue(SHOP, rndLimitsFromEnv("LEVIS_TR_FULL", { maxProducts: 3000, maxPages: 15, detailLimit: 200, budgetMs: 150_000 }));
 }

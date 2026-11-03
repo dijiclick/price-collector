@@ -19,7 +19,11 @@
  * card carries none.
  *
  * bonprix.at moved to the same Next.js shop on 2026-10-23 (its old
- * `window.modelContainer` render is gone), so AT runs through this path too.
+ * `window.modelContainer` render is gone), so AT runs through this path too. *
+ * 2026-11-03: only the first 12 cards a page are still rendered with a price
+ * block; the rest are "light tiles" with the current price alone, and DE/AT
+ * fell from ~740 to ~105 deals. Every card's price pair still rides in the
+ * page's RSC payload (`gridItem`), so the walk reads both (parseGridItems).
  */
 import type { ProductRecord } from "../types";
 import { getText } from "../http";
@@ -102,6 +106,73 @@ export function parseCards(html: string, site = BONPRIX_NEXT.DE!.site): BonprixC
   return out;
 }
 
+/** The text of every `self.__next_f.push([1,"…"])` chunk (Next.js RSC payload), joined. */
+function rscText(html: string): string {
+  let out = "";
+  for (const m of html.matchAll(/self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g)) {
+    try {
+      out += JSON.parse(m[1]);
+    } catch {
+      /* not a string chunk */
+    }
+  }
+  return out;
+}
+
+/** The balanced JSON object starting at `at`, or null. */
+function objectAt(s: string, at: number): any | null {
+  let depth = 0;
+  let inStr = false;
+  for (let i = at; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (ch === "\\") i++;
+      else if (ch === '"') inStr = false;
+    } else if (ch === '"') inStr = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}" && --depth === 0) {
+      try {
+        return JSON.parse(s.slice(at, i + 1));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Cards from the page's RSC payload. Since 2026-11 only the first 12 cards are
+ * server-rendered with a price block; the other ~96 are "light tiles" showing
+ * the current price alone. Every card's `gridItem` (active colour's
+ * `price.currentPrice` / `oldPrice`) still rides in the payload. Pure.
+ */
+export function parseGridItems(html: string, site = BONPRIX_NEXT.DE!.site): BonprixCard[] {
+  const rsc = rscText(html);
+  const imgHost = site.replace("://www.", "://image01.");
+  const out: BonprixCard[] = [];
+  for (const m of rsc.matchAll(/\{"gridItem":\{"displayType":"ARTICLE"/g)) {
+    const g = objectAt(rsc, m.index!)?.gridItem;
+    const style = g?.styles?.find((x: any) => x?.main) ?? g?.styles?.[0];
+    const c = style?.colors?.[0];
+    const price = Math.round(Number(c?.price?.currentPrice) * 100);
+    const was = Math.round(Number(c?.price?.oldPrice) * 100);
+    const path = String(c?.url ?? "").replace(/^\/[a-z]{2}_[a-z]{2}(?=\/produkt\/)/, "");
+    if (!c?.itemNumber || !g?.title || !/^\/produkt\//.test(path)) continue;
+    if (!(price > 0) || !(was > price)) continue;
+    const src = c.images?.[0]?.src;
+    out.push({
+      itemNumber: String(c.itemNumber),
+      url: `${site}${path}`,
+      title: decode(String(g.title)),
+      image: src ? `${imgHost}/assets/477x668/${String(src).replace(/\.webp$/, ".jpg")}` : null,
+      price,
+      was,
+    });
+  }
+  return out;
+}
+
 export function toRecord(c: BonprixCard, gender: ProductRecord["gender"], inStock: boolean, country: CountryCode = "DE"): ProductRecord {
   return {
     brand: "bonprix",
@@ -138,7 +209,9 @@ export async function listBonprix(country: CountryCode, fetchHtml?: (u: string) 
         if (byId.size === 0 && page === 1) throw err;
         break;
       }
-      const cards = parseCards(html, SITE);
+      const rendered = parseCards(html, SITE);
+      const seen = new Set(rendered.map((c) => c.itemNumber));
+      const cards = [...rendered, ...parseGridItems(html, SITE).filter((c) => !seen.has(c.itemNumber))];
       // Past the last page bonprix serves page 1 again: stop when the first card repeats.
       if (page > 1 && cards[0]?.itemNumber === firstOfTree) break;
       if (page === 1) firstOfTree = cards[0]?.itemNumber ?? null;
