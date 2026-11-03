@@ -14,7 +14,7 @@
  *                 stop packshots + stylist-judge;
  *        step 2 — the next bad run: also stop tagger + look, quarter embed;
  *      and cancels queries older than 60 s from those jobs' own connections
- *      (by application_name, localhost only — never the API's);
+ *      (by application_name — never the API's);
  *   3. after 30 healthy minutes, undoes one step (step 2 first), so the jobs
  *      come back in reverse order and a relapse is caught before the next;
  *   4. emails the owner on each escalation and on full recovery, at most once
@@ -312,8 +312,15 @@ async function systemctl(...args: string[]): Promise<string> {
   return stdout.trim();
 }
 
+/**
+ * Over TCP. Postgres left this box on 2026-10-27, and `runuser -u postgres psql`
+ * over the dead socket failed on every call, which read as -1 long queries, a
+ * probe product stuck on its last pick and nothing ever cancelled.
+ */
 async function psql(sql: string, timeoutMs = 10000): Promise<string> {
-  const { stdout } = await run("runuser", ["-u", "postgres", "--", "psql", "modadrop", "-X", "-A", "-t", "-q", "-c", sql], {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL is not set");
+  const { stdout } = await run("psql", [url, "-X", "-A", "-t", "-q", "-c", sql], {
     timeout: timeoutMs + 5000,
     env: { ...process.env, PGOPTIONS: `-c statement_timeout=${timeoutMs}` },
   });
@@ -451,7 +458,8 @@ async function cancelLongQueries(dry: boolean): Promise<string[]> {
     const out = await psql(
       `SELECT application_name || ' ' || extract(epoch FROM now() - query_start)::int || 's ' || ${fn} ` +
       `FROM pg_stat_activity WHERE state = 'active' AND application_name IN (${names}) ` +
-      `AND (client_addr IS NULL OR client_addr IN ('127.0.0.1', '::1')) AND now() - query_start > interval '60 seconds'`,
+      // By name alone: these jobs now reach the database over the network, and no API connection carries these names.
+      `AND now() - query_start > interval '60 seconds'`,
     );
     return out ? out.split("\n").map((l) => `cancelled query: ${l.replace(/ t$/, "")}`) : [];
   } catch (e) {

@@ -27,6 +27,13 @@ One process, two jobs sharing one model in memory:
      Looks the feed can show first, Turkey first. A changed prompt file only
      re-scores the stored vectors.
 
+  4. POST /v1/image (2026-11-03, photo search): the shopper's photo itself, as
+     the request body, with a bearer token; ?box=ymin,xmin,ymax,xmax for a crop.
+     Off unless EMBED_API_TOKEN is set. Runs as its own process
+     (modadrop-embed-api.service: no backfill, no looks, not niced, EMBED_PORT
+     8092) because the shared one answered in 1-5 s behind the backfill's
+     CPU cap and a search cannot wait that long; Caddy exposes this path only.
+
 Requests always win over the backfill: the backfill embeds in small slices and
 waits while a request is pending, so a /embed call waits at most one slice.
 
@@ -38,9 +45,10 @@ same bag on a person does.
 
 Env: DATABASE_URL, EMBED_MODEL_DIR (/opt/modadrop-embed/model), EMBED_THREADS (4),
 EMBED_PORT (8091), EMBED_BACKFILL (1), EMBED_ORDER (TR,US,GB,…), EMBED_IDLE (600),
-EMBED_LOOKS (1: score look photos).
+EMBED_LOOKS (1: score look photos), EMBED_API_TOKEN (unset: no /v1/image).
 """
 import gzip
+import hmac
 import io
 import json
 import os
@@ -72,6 +80,9 @@ CHUNK = int(os.environ.get("EMBED_CHUNK", "1500"))  # candidates per DB query
 SLICE = 8                                           # images per backfill turn on the model
 # The types a worn item can map to (brief: role -> product_type).
 TYPES = ["ust", "alt", "elbise", "dis-giyim", "triko", "ayakkabi", "canta", "aksesuar", "mayo"]
+API_TOKEN = os.environ.get("EMBED_API_TOKEN", "")
+MAX_UPLOAD = 8_000_000                              # /v1/image body; Vercel sends at most ~3.2 MB
+MAX_API_WAITING = 6                                 # more than this waiting: answer 503, the app gets the words' search
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36")
 
@@ -117,6 +128,7 @@ def embed_one(x, session=None):
 
 _infer_lock = threading.Lock()
 _waiting = 0           # HTTP requests waiting for the model
+_api_waiting = 0       # /v1/image requests being decoded or waiting for the model
 _waiting_lock = threading.Lock()
 
 
@@ -185,6 +197,10 @@ def fetch(url, width):
     # and urllib does not undo Content-Encoding (2026-10-24: 520 looks unreadable).
     if data[:2] == b"\x1f\x8b":
         data = gzip.decompress(data)
+    return decode(data, width)
+
+
+def decode(data, width):
     img = Image.open(io.BytesIO(data))
     # Shops without a resizing CDN serve 3-8k originals. Decode JPEGs at a
     # reduced DCT scale and shrink the rest at once: eight fetchers holding
@@ -254,6 +270,26 @@ def prepare(url, box=None):
     return to_tensor(trim_plain(img))
 
 
+def prepare_upload(data, box=None):
+    """An uploaded photo, exactly as prepare() treats a fetched one, so its vector means the same."""
+    if box is not None:
+        img = crop_box(decode(data, 1200), box)
+    else:
+        img = decode(data, 480)
+    return to_tensor(trim_plain(img))
+
+
+def parse_box(query):
+    """?box=ymin,xmin,ymax,xmax (0-1000) -> the four floats, None without one. ValueError on junk."""
+    raw = urllib.parse.parse_qs(query).get("box", [None])[0]
+    if raw is None:
+        return None
+    box = [float(v) for v in raw.split(",")]
+    if len(box) != 4 or not all(0 <= v <= 1000 for v in box):
+        raise ValueError("box must be ymin,xmin,ymax,xmax in 0-1000")
+    return box
+
+
 # ---------------------------------------------------------------- HTTP
 
 STATS = {"started": time.time(), "requests": 0, "request_errors": 0, "backfill_done": 0,
@@ -280,7 +316,40 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "model": MODEL_NAME, "dim": DIM, **STATS})
         self._send(404, {"error": "not found"})
 
+    def _image(self, query):
+        global _api_waiting
+        STATS["requests"] += 1
+        given = self.headers.get("Authorization", "").encode()
+        if not hmac.compare_digest(given, f"Bearer {API_TOKEN}".encode()):
+            self.close_connection = True
+            return self._send(401, {"error": "unauthorized"})
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = 0
+        if n <= 0 or n > MAX_UPLOAD:
+            self.close_connection = True
+            return self._send(413, {"error": "body must be 1 byte to 8 MB"})
+        data = self.rfile.read(n)
+        with _waiting_lock:
+            if _api_waiting >= MAX_API_WAITING:
+                return self._send(503, {"error": "busy"})
+            _api_waiting += 1
+        try:
+            x = prepare_upload(data, parse_box(query))
+            emb = infer(x[None], priority=True)[0]
+        except Exception as e:
+            STATS["request_errors"] += 1
+            return self._send(400, {"error": f"image: {type(e).__name__}"})
+        finally:
+            with _waiting_lock:
+                _api_waiting -= 1
+        self._send(200, {"emb": [round(float(v), 6) for v in emb], "model": MODEL_NAME})
+
     def do_POST(self):
+        parts = urllib.parse.urlsplit(self.path)
+        if API_TOKEN and parts.path.rstrip("/") == "/v1/image":
+            return self._image(parts.query)
         if self.path.rstrip("/") != "/embed":
             return self._send(404, {"error": "not found"})
         STATS["requests"] += 1
@@ -569,7 +638,8 @@ def look_loop():
 
 
 def main():
-    log(f"model {MODEL_NAME} dim {DIM} threads {THREADS}; http 127.0.0.1:{PORT}; backfill {'on' if BACKFILL else 'off'}")
+    log(f"model {MODEL_NAME} dim {DIM} threads {THREADS}; http 127.0.0.1:{PORT}; backfill {'on' if BACKFILL else 'off'}; "
+        f"/v1/image {'on' if API_TOKEN else 'off'}")
     if BACKFILL:
         threading.Thread(target=backfill_loop, daemon=True, name="backfill").start()
     else:

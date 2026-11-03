@@ -124,7 +124,7 @@ export const PRODUCT_TYPES: ProductType[] = [
   // detaylı gömlek" — a tie-detail SHIRT — was filed as a handbag. Mango names
   // a lot of things that way. Requiring an English compound keeps "shoulder
   // bag" working while "bağ detaylı" no longer matches anything here.
-  { key: "canta",      label: "Çanta",         re: /canta|\b(?:hand|shoulder|tote|bucket|cross ?body|gym|beach|duffle|shopper|top ?handle)[ -]?bag\b|cuzdan|wallet|sirt cant|backpack|clutch|postaci|crossbody|\btote\b|kartlik|card ?holder|portfoy|pasaportluk|valiz|bavul|suitcase|luggage/i },
+  { key: "canta",      label: "Çanta",         re: /canta|\b(?:hand|shoulder|tote|bucket|cross ?body|gym|beach|duffle|shopper|top ?handle)[ -]?bag\b|\b(?:top ?handle|cross ?body)[ -]?bags\b|cuzdan|wallet|sirt cant|backpack|clutch|postaci|crossbody|\btote\b|kartlik|card ?holder|portfoy|pasaportluk|valiz|bavul|suitcase|luggage/i },
   { key: "mayo",       label: "Mayo & Plaj",   re: /\bmayo\b|bikini|plaj|beach|swim/i },
   // `\bklt\b` is Penti's own abbreviation for külot ("PRETTY LOLIPOP KLT., 1,
   // MERCAN"); without it a chunk of their catalogue carried no type at all.
