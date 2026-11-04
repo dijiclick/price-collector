@@ -218,11 +218,15 @@ async function landmarkPage(s: LandmarkSite, country: CountryCode, q: string, st
   throw new Error(`${s.slug}/${country}: Bloomreach ${q}${saleOnly ? " (reduced)" : ""} page at ${start} came back short (${why})`);
 }
 
+/** At most this many rows behind the reduced filter (summed over the roots) reads as "no sale on". */
+export const SALE_ENDED_MAX = 10;
+
 export async function listLandmark(slug: string, country: CountryCode): Promise<ProductRecord[]> {
   const s = LANDMARK_SITES[slug];
   if (!s || !s.markets.includes(country)) return [];
   const byId = new Map<string, ProductRecord>();
   let reduced = 0;
+  let saleFound = 0;
   let first = true;
   for (const root of s.roots) {
     let taken = 0;
@@ -232,6 +236,7 @@ export async function listLandmark(slug: string, country: CountryCode): Promise<
         if (!first) await sleep(PAUSE_MS);
         first = false;
         const { docs, numFound } = await landmarkPage(s, country, root.q, start, saleOnly);
+        if (saleOnly && start === 0) saleFound += numFound;
         for (const d of docs) {
           if (taken >= root.cap) break;
           const r = mapLandmark(s, country, root.gender, d);
@@ -244,10 +249,16 @@ export async function listLandmark(slug: string, country: CountryCode): Promise<
       }
     }
   }
-  // Max/Centrepoint/Splash always carry markdowns somewhere; none at all means
-  // the reduced filter answered wrong, and a full-price-only run would sweep
+  // No reduced row at all is only believed when the shop's own reduced filter
+  // agrees: it found (next to) nothing, and the full-price rows walked carry no
+  // markdown either. Max Kuwait ended its sale on 2026-11-03 (1 reduced item
+  // of ~8,400, while AE/SA/QA hold thousands): that run is the full-price
+  // catalogue, as for COS. A filter that found rows none of which mapped as
+  // reduced means the mapping broke, and a full-price-only run would sweep
   // every deal away.
-  if (byId.size && !reduced) throw new Error(`${slug}/${country}: Bloomreach returned no reduced rows`);
+  if (byId.size && !reduced && saleFound >= SALE_ENDED_MAX) {
+    throw new Error(`${slug}/${country}: Bloomreach returned no reduced rows (${saleFound} found by the reduced filter)`);
+  }
   const all = [...byId.values()];
   const rank = (r: ProductRecord) => (r.listPrice != null ? 0 : 2) + (r.inStock ? 0 : 1);
   return all.sort((a, b) => rank(a) - rank(b)).slice(0, CAP);

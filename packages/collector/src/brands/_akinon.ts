@@ -312,6 +312,16 @@ export function sortedHalvesCover(ascMax: number, descMin: number): boolean {
   return Number.isFinite(ascMax) && Number.isFinite(descMin) && descMin < ascMax;
 }
 
+/** The listing's `price` facet bands, or null when the path already filters on price or there is none. */
+export function priceBands(first: any, path: string): { value: string; quantity: number }[] | null {
+  if (/[?&]price=/.test(path)) return null;
+  const f = (first?.facets ?? []).find((x: any) => x?.key === "price" || x?.search_key === "price");
+  const choices = (f?.data?.choices ?? [])
+    .map((c: any) => ({ value: String(c?.value ?? ""), quantity: Number(c?.quantity ?? 0) || 0 }))
+    .filter((c: { value: string }) => c.value);
+  return choices.length > 1 ? choices : null;
+}
+
 /**
  * Every row of one Akinon listing (`path` may carry filters), 250 per page.
  *
@@ -355,6 +365,26 @@ export async function walkAkinonListing(
   // Past the window: price ascending up to the window, then descending for the
   // remainder plus two pages of overlap, and prove the halves meet.
   const descPages = Math.ceil((total - RESULT_WINDOW) / FULL_PAGE_SIZE) + 2;
+  const bands = priceBands(first, path);
+  if (total > 2 * RESULT_WINDOW - 2 * FULL_PAGE_SIZE && bands) {
+    // Too big even for two sorted halves (SuperStep /list/ 20,353 on
+    // 2026-11-04): walk each of the shop's own price bands on its own. The
+    // bands only take the facet's values (an arbitrary range is ignored), they
+    // touch at the seams (a row priced exactly 1,500 is in two), so rows are
+    // de-duplicated by the caller, and their counts must add up to the total.
+    const sum = bands.reduce((a, b) => a + b.quantity, 0);
+    if (sum < total) throw new Error(`akinon: ${site}${path} price bands hold ${sum} of ${total} rows`);
+    const rows: any[] = [];
+    let budget = opts.maxPages;
+    for (const b of bands) {
+      if (b.quantity <= 0) continue;
+      const w = await walkAkinonListing(site, withQuery(path, `price=${encodeURIComponent(b.value)}`), { ...opts, maxPages: budget });
+      requests += w.requests;
+      budget -= w.requests;
+      rows.push(...w.rows);
+    }
+    return { rows, first, requests };
+  }
   if (total > 2 * RESULT_WINDOW - 2 * FULL_PAGE_SIZE || windowPages + descPages > opts.maxPages) {
     throw new Error(`akinon: ${site}${path} lists ${total} rows, more than a sorted walk can reach (cap ${opts.maxPages} pages)`);
   }

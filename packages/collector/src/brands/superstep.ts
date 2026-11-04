@@ -30,7 +30,7 @@ import { akinonRecords, walkAkinonListing } from "./_akinon";
  */
 const SITE = "https://www.superstep.com.tr";
 const LIST_PATH = "/list/";
-const MAX_PAGES = Number(process.env.SUPERSTEP_MAX_PAGES ?? 100); // 25,000 rows
+const MAX_PAGES = Number(process.env.SUPERSTEP_MAX_PAGES ?? 130); // price bands: ~90 pages at 20k rows
 const MAX_PRODUCTS = Number(process.env.SUPERSTEP_MAX_PRODUCTS ?? 25000);
 
 const kw = (p: any, key: string): string | null => {

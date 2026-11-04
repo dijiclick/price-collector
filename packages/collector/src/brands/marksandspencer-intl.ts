@@ -26,19 +26,31 @@ const CAP = 1500;
 const PAUSE_MS = Number(process.env.MS_INTL_PAUSE_MS ?? 900);
 const MAX_PAGES = Number(process.env.MS_INTL_MAX_PAGES ?? 40);
 
-/** Clearance trees, in priority order, each with its own share of the cap. */
+/**
+ * Clearance and sale trees, in priority order, each with its own share of the
+ * cap. 2026-11-04: clearance wound down to 106 women's hits in GB (1 in IE)
+ * and the reductions moved to a new `/l/offers/sale/…` tree (810 women's hits
+ * in GB, ~90% with a was price), so the sale trees come first now. Rows
+ * without a was price are dropped and an id seen in two trees is kept once.
+ */
 export const MS_SECTIONS: { path: string; gender: ProductRecord["gender"]; max: number }[] = [
-  { path: "/l/offers/clearance/womens-clearance", gender: "kadin", max: 1150 },
-  { path: "/l/offers/clearance/lingerie-and-nightwear-clearance", gender: "kadin", max: 350 },
+  { path: "/l/offers/sale/womens", gender: "kadin", max: 1000 },
+  { path: "/l/offers/clearance/womens-clearance", gender: "kadin", max: 400 },
+  { path: "/l/offers/sale/lingerie-and-nightwear", gender: "kadin", max: 100 },
+  { path: "/l/offers/clearance/lingerie-and-nightwear-clearance", gender: "kadin", max: 100 },
+  { path: "/l/offers/sale/mens", gender: "erkek", max: 200 },
+  { path: "/l/offers/clearance/mens-clearance", gender: "erkek", max: 100 },
 ];
 
 /**
  * Ireland (2026-10-21): the same Next.js listing under `/ie/…`, prices in EUR
- * (`price.currency` on every hit). Clearance there is small (~325 women's
- * hits, ~60% of them with a was price; no lingerie clearance tree).
+ * (`price.currency` on every hit). Small: on 2026-11-04 the sale trees held 36
+ * women's + 19 men's hits and clearance 1 + 9.
  */
 export const MS_SECTIONS_IE: { path: string; gender: ProductRecord["gender"]; max: number }[] = [
+  { path: "/ie/l/offers/sale/womens", gender: "kadin", max: 1000 },
   { path: "/ie/l/offers/clearance/womens-clearance", gender: "kadin", max: 1000 },
+  { path: "/ie/l/offers/sale/mens", gender: "erkek", max: 500 },
   { path: "/ie/l/offers/clearance/mens-clearance", gender: "erkek", max: 500 },
 ];
 
@@ -112,7 +124,7 @@ export async function listMarksIntl(country: CountryCode): Promise<ProductRecord
       if (requests++ > 0) await sleep(PAUSE_MS);
       const r = await page(`${SITE}${s.path}${n > 1 ? `?page=${n}` : ""}`);
       if (!r) {
-        if (requests === 1) throw new Error("marksandspencer/GB: clearance listing refused");
+        if (requests === 1) throw new Error(`marksandspencer/GB: listing refused (${s.path})`);
         break;
       }
       for (const p of r.products) {
