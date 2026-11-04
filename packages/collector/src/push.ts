@@ -54,6 +54,13 @@ export function refundable(r: Pick<PushRow, "type" | "new_price" | "bought_price
   return r.new_price < r.bought_price;
 }
 
+/**
+ * The smallest plain drop worth an alert (owner 2026-11-04). Measured on the 266
+ * drop alerts of 10-29..11-04: 2 were under 3%, so this removes the odd pointless
+ * buzz and leaves the rest alone.
+ */
+export const MIN_DROP_PCT = 3;
+
 /** The app's NotifPrefs, as /api/push/sync stores them (lib/push.ts PushPrefs). */
 export interface DevicePrefs {
   drop: boolean;
@@ -273,13 +280,15 @@ export function devicePrefs(raw: unknown): DevicePrefs | null {
  * hours, which only DELAY an alert and are handled by the hold path.
  *
  * minPct applies to plain drops only: a hit target is the alert someone asked
- * for by name, and a restock has no percentage.
+ * for by name, and a restock has no percentage. The same goes for MIN_DROP_PCT,
+ * which holds for every device, with or without prefs.
  */
 export function allowedByPrefs(
   prefs: DevicePrefs | null,
   kind: "drop" | "target" | "restock",
   pct: number,
 ): boolean {
+  if (kind === "drop" && Math.abs(pct) < MIN_DROP_PCT) return false;
   if (!prefs) return true;
   if (kind === "drop" && !prefs.drop) return false;
   if (kind === "target" && !prefs.target) return false;

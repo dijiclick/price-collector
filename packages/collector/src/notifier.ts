@@ -1,5 +1,6 @@
 import type { Db } from "./db";
 import { fromMinor } from "./normalize";
+import { MIN_DROP_PCT } from "./push";
 // Shared with the web app rather than duplicated: this list was hand-maintained
 // here and had already drifted — Boyner and Beymen were missing, so their alert
 // emails would have shown the raw slug as the brand name.
@@ -66,6 +67,12 @@ export const MAX_ALERT_AGE_MS = 24 * 60 * 60 * 1000;
 export function stillTrue(r: DropRow & { current_price: number; in_stock: boolean; ts: string | Date }, now: Date): boolean {
   if (now.getTime() - new Date(r.ts).getTime() > MAX_ALERT_AGE_MS) return false;
   return r.type === "back_in_stock" ? r.in_stock : r.new_price === r.current_price;
+}
+
+/** Same floor as the push alerts: a hit target is always sent, whatever its size. */
+export function bigEnough(r: DropRow): boolean {
+  if (r.type !== "price_drop" || (r.target != null && r.new_price <= r.target)) return true;
+  return Math.abs(r.pct) >= MIN_DROP_PCT;
 }
 
 function itemHtml(i: DropRow): string {
@@ -179,7 +186,7 @@ export async function notify(db: Db, now: Date = new Date()): Promise<number> {
     return 0;
   }
 
-  const fresh = rows.filter((r) => stillTrue(r, now));
+  const fresh = rows.filter((r) => stillTrue(r, now) && bigEnough(r));
   const staleIds = rows.filter((r) => !stillTrue(r, now)).map((r) => r.event_id);
 
   const byEmail = new Map<string, DropRow[]>();
