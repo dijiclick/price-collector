@@ -118,6 +118,10 @@ export function pageFacts(html: string): PageFacts {
   // and read as one string the digits run together (7999105.00).
   for (const v of meta("product:price:amount|og:price:amount|product:sale_price:amount"))
     for (const part of v.split(/\s+[-–]\s+/)) add(part, ogCurrency);
+  // A Turkish basket price printed beside the shelf price ("Sepette %20 İndirim"
+  // then "3,511.92 TL" — Nişantaşı Shoes, 2026-11-05). The collector stores that
+  // basket price, and it is in no JSON-LD or meta tag, so read the label.
+  for (const m of html.matchAll(/Sepette\s*%\s*\d{1,2}\s*[İI]ndirim((?:\s|<[^>]{0,200}>){0,6})([\d.,]+)\s*(?:TL|₺)/gi)) add(m[2], "TRY");
   const shopCur = html.match(/Shopify\.currency\s*=\s*\{[^}]*"active"\s*:\s*"([A-Za-z]{3})"/)?.[1];
   const t = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
   return {

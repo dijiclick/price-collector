@@ -39,6 +39,8 @@ const CAP = 1500;
 /** COS's whole catalogue (3,194 rows in GB on 2026-10-21): uncapped in effect, so no listed row is swept as sold out. */
 const CAP_FULL = 5000;
 const PAUSE_MS = 600;
+/** Fewer reduced rows than this is the tail of a finished sale, not a sale (see listHmGroup). */
+export const COS_MIN_SALE = 25;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -371,7 +373,11 @@ export async function listHmGroup(slug: HmGroupSlug, country: CountryCode): Prom
         rows.forEach((p) => add(mapCos(country, p, !onSale)));
         if (!rows.length || off + b.pageSize >= (d?.data?.pagination?.totalProducts ?? 0)) break;
       }
-      if (byId.size) break;
+      // 2026-11-04: cos/GB's sale filter kept ONE straggler after the sale, and
+      // that single row counted as "a sale is on" — three runs stored 1 product
+      // instead of ~3,200. A sale this thin is out of season too: keep its rows
+      // (they come first) and walk the whole catalogue after them.
+      if (byId.size >= COS_MIN_SALE) break;
       cap = CAP_FULL;
     }
   } else {

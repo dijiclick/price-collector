@@ -93,7 +93,9 @@ function elementAfter(tile: string, cls: RegExp, span = 600): string[] {
     if (gt < 0) continue;
     let chunk = tile.slice(gt + 1, gt + 1 + span);
     // Stop at the next price element so "was" never swallows "now".
-    const next = chunk.search(/class="[^"]*(?:price|sales|strike|m-new|m-old)/);
+    // eShopWorld wraps each amount in `esw-general-price` (Talbots, 2026-11-04):
+    // that is the price itself, not the next element.
+    const next = chunk.search(/class="(?![^"]*esw-general-price)[^"]*(?:price|sales|strike|m-new|m-old)/);
     if (next > 0) chunk = chunk.slice(0, next);
     out.push(chunk.replace(/<span class="(?:sr-only|visually-hidden)">[\s\S]*?<\/span>|<small>[\s\S]*?<\/small>/g, " "));
   }

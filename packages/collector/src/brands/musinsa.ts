@@ -36,7 +36,7 @@ export const brand = "musinsa";
 
 const API = "https://api.musinsa.com/api2/dp/v1/plp/goods";
 const CAP = 1500;
-const PAUSE_MS = 350;
+const PAUSE_MS = Number(process.env.MUSINSA_PAUSE_MS ?? 350);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** [Musinsa category code, English label for the classifier, rows to take]. */
@@ -122,9 +122,9 @@ export const MUSINSA_LEAVES: [string, string, number][] = [
   ["104016", "Eye Makeup", 10],
 ];
 
-export function listUrl(code: string, size: number, page = 1, brandSlug?: string): string {
+export function listUrl(code: string, size: number, page = 1, brandSlug?: string, sale = true): string {
   const b = brandSlug ? `&brand=${encodeURIComponent(brandSlug)}` : "";
-  return `${API}?gf=A&sortCode=POPULAR&page=${page}&size=${size}&caller=CATEGORY&category=${code}${b}&isSale=true`;
+  return `${API}?gf=A&sortCode=POPULAR&page=${page}&size=${size}&caller=CATEGORY&category=${code}${b}${sale ? "&isSale=true" : ""}`;
 }
 
 /**
@@ -194,12 +194,21 @@ function genderOf(t: unknown): ProductRecord["gender"] {
 }
 
 /** One listing row → a record. Pure; null unless the shop strikes a real price. */
-export function mapMusinsaGoods(g: any, category: string | null, country: CountryCode = "KR", asBrand?: string): ProductRecord | null {
+export function mapMusinsaGoods(
+  g: any,
+  category: string | null,
+  country: CountryCode = "KR",
+  asBrand?: string,
+  /** Between sales: keep an unreduced row too, at full price with no "was". */
+  fullPrice = false,
+): ProductRecord | null {
   if (!g?.goodsNo || !g?.goodsName) return null;
   const was = Number(g.normalPrice);
   const now = Number(g.price);
-  if (!(now > 0) || !(was > now)) return null;
+  if (!(now > 0)) return null;
   if (g.isOptionSalePriceVaried) return null;
+  const reduced = was > now;
+  if (!reduced && !fullPrice) return null;
   return {
     brand: asBrand ?? brand,
     country,
@@ -208,7 +217,7 @@ export function mapMusinsaGoods(g: any, category: string | null, country: Countr
     url: typeof g.goodsLinkUrl === "string" && g.goodsLinkUrl ? g.goodsLinkUrl : `https://www.musinsa.com/products/${g.goodsNo}`,
     imageUrl: typeof g.thumbnail === "string" ? g.thumbnail : null,
     price: Math.round(now * 100),
-    listPrice: Math.round(was * 100),
+    listPrice: reduced ? Math.round(was * 100) : null,
     currency: "KRW",
     inStock: g.isSoldOut !== true,
     category,
@@ -266,6 +275,33 @@ export async function listMusinsaStore(ourSlug: string, country: CountryCode): P
     }
   }
   const all = [...byId.values()];
-  if (all.length === 0) throw new Error(`musinsa/${ourSlug}: 0 discounted rows in the brand's store`);
+  if (all.length === 0) return listMusinsaStoreFullPrice(ourSlug, slug, country);
   return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
+}
+
+/**
+ * Between sales (Matin Kim, 2026-11-03 →: its store's sale filter answers no
+ * reduced row): rather than fail every run and leave last sale's rows "in
+ * stock" at old prices, return the store's in-stock full-price catalogue — as
+ * Gullfunn, COS and the Akinon shops do. One page per category; a full-price
+ * row that is later reduced is then a real drop. Still nothing → the store
+ * itself is empty or gone, and the run fails.
+ */
+async function listMusinsaStoreFullPrice(ourSlug: string, slug: string, country: CountryCode): Promise<ProductRecord[]> {
+  const byId = new Map<string, ProductRecord>();
+  for (const [code, label] of MUSINSA_BRAND_LEAVES) {
+    await sleep(PAUSE_MS);
+    const data = await getJson<any>(listUrl(code, BRAND_PAGE, 1, slug, false), { country, retries: 2, headers: { Referer: "https://www.musinsa.com/" } });
+    if (data?.meta?.result !== "SUCCESS" || !Array.isArray(data?.data?.list)) {
+      throw new Error(`musinsa/${ourSlug}: category ${code} answered ${JSON.stringify(data?.meta ?? null)}`);
+    }
+    for (const g of data.data.list) {
+      if (g?.brand !== slug) continue;
+      const r = mapMusinsaGoods(g, label || null, country, ourSlug, true);
+      if (r && r.inStock && !byId.has(r.externalId)) byId.set(r.externalId, r);
+    }
+  }
+  const all = [...byId.values()];
+  if (all.length === 0) throw new Error(`musinsa/${ourSlug}: 0 rows in the brand's store, sale or full price`);
+  return all.slice(0, CAP);
 }

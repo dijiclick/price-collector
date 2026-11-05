@@ -72,7 +72,9 @@ export function euros(s: string | undefined | null): number {
   return parseFloat(t.replace(/\./g, "").replace(",", "."));
 }
 
-const SALE = /\/(?:[a-z-]+\/)*(?:promociones|rebajas)\/[a-z0-9-]+(?:\/[a-z0-9-]+)*|\/(?:mujer|hombre)\/precios-especiales(?:-marcas)?/;
+// 2026-11-05: Pedro del Hierro and Cortefiel moved their shelves to
+// "/mujer/venta-especial" (guest brands "-mp") and PT "/mulher/promocoes-inverno".
+const SALE = /\/(?:[a-z-]+\/)*(?:promociones|rebajas)\/[a-z0-9-]+(?:\/[a-z0-9-]+)*|\/(?:mujer|hombre)\/(?:precios-especiales(?:-marcas)?|venta-especial(?:-mp|-marcas)?)(?=\/|$)/;
 const MULTIBUY = /\d+-por-\d+|\d+x\d+|unidad-al|de-dos-en-dos|packs?-/;
 const NOT_ADULT = /\/(?:ninos?|ninas?|nino|nina|teen|hogar|home|deporte-ninos)(?:\/|-|$)|-(?:nino|nina|ninos|ninas|teen|hogar)(?:\/|$)/;
 /**
@@ -81,7 +83,7 @@ const NOT_ADULT = /\/(?:ninos?|ninas?|nino|nina|teen|hogar|home|deporte-ninos)(?
  * "preco-especial/2x25" and "2a-unidade-a-50" are multi-buy; "criancas",
  * "kids-5-14-anos/menin[ao]" and "casa" are kids/home.
  */
-const SALE_PT = /\/(?:[a-z0-9-]+\/)*(?:promocoes|promotions?)\/[a-z0-9-]+(?:\/[a-z0-9-]+)*|\/(?:mulher|homem)\/precos-especiais(?:-[a-z]+)*/;
+const SALE_PT = /\/(?:[a-z0-9-]+\/)*(?:promocoes|promotions?)\/[a-z0-9-]+(?:\/[a-z0-9-]+)*|\/(?:mulher|homem)\/(?:precos-especiais(?:-[a-z]+)*|promocoes-inverno(?:-mp|-marcas)?(?=\/|$))/;
 const MULTIBUY_PT = /\d+-por-\d+|\d+x\d+|unidade-a|packs?-/;
 const NOT_ADULT_PT = /\/(?:criancas?|menin[ao]s?|kids[a-z0-9-]*|teen|casa|home)(?:\/|-|$)|-(?:menin[ao]s?|criancas?|casa|teen)(?:\/|$)/;
 const RULES: Record<string, { sale: RegExp; multibuy: RegExp; notAdult: RegExp; bare: RegExp }> = {
@@ -109,7 +111,7 @@ export function saleListings(homeHtml: string, prefix: string): string[] {
   }
   const list = [...out];
   // The house's own shelves before guest-brand ones; women's before men's.
-  const rank = (p: string) => (/guest|marcas/.test(p) ? 10 : 0) + (/mujer|mulher/.test(p) ? 0 : /hombre|homem/.test(p) ? 1 : 2);
+  const rank = (p: string) => (/guest|marcas|-mp$/.test(p) ? 10 : 0) + (/mujer|mulher/.test(p) ? 0 : /hombre|homem/.test(p) ? 1 : 2);
   return list.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 }
 
