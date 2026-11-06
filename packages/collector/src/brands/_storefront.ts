@@ -36,6 +36,12 @@ export interface StorefrontStore {
   maxProducts?: number;
   /** Handles of retired listings the API still returns (their pages 404). */
   skipHandle?: RegExp;
+  /**
+   * Between sales, walk the whole catalogue at full price instead of
+   * returning nothing (Away, 2026-11-06: the `sale` collection went empty and
+   * three runs stored 0 products). The reduced rows come first if any exist.
+   */
+  fullPriceWhenNoSale?: boolean;
 }
 
 const API_VERSION = "2025-01";
@@ -134,6 +140,23 @@ export async function listStorefront(store: StorefrontStore, country: CountryCod
         const r = p && mapShopify(store, country, site, p);
         if (r && r.gender == null && store.tagGender) r.gender = store.tagGender(p.tags);
         if (r && r.listPrice != null && byId.size < cap) byId.set(r.externalId, r);
+      }
+      if (!conn.pageInfo?.hasNextPage) break;
+      after = conn.pageInfo.endCursor;
+    }
+  }
+  if (store.collection && store.fullPriceWhenNoSale && byId.size === 0) {
+    let after: string | null = null;
+    for (let n = 0; n < MAX_PAGES && byId.size < cap; n++) {
+      if (requests++ > 0) await sleep(PAUSE_MS);
+      const conn: any = (await post(store, CATALOGUE_QUERY, { c: country, a: after }))?.products;
+      if (!conn) break;
+      for (const node of conn.nodes ?? []) {
+        if (isRetired(store, node)) continue;
+        const p = toProductsJson(node, currency);
+        const r = p && mapShopify(store, country, site, p);
+        if (r && r.gender == null && store.tagGender) r.gender = store.tagGender(p.tags);
+        if (r && byId.size < cap) byId.set(r.externalId, r);
       }
       if (!conn.pageInfo?.hasNextPage) break;
       after = conn.pageInfo.endCursor;

@@ -28,7 +28,8 @@ export const STOREFRONT_DTCB: StorefrontStore[] = [
   { brand: "alexandani", host: "www.alexandani.com", collection: "all-sale", sites: { US: "https://www.alexandani.com", CA: "https://www.alexandani.com" }, defaultGender: "kadin" },
   { brand: "faherty", host: "www.fahertybrand.com", collection: "sale", sites: { US: "https://fahertybrand.com", CA: "https://fahertybrand.com" } },
   // US only: the CA market's `ca-sale` collection carries no compare-at price in CAD (0 rows).
-  { brand: "away", host: "www.awaytravel.com", collection: "sale", sites: { US: "https://www.awaytravel.com" } },
+  // Between sales (2026-11-06: `sale` empty) the full-price catalogue.
+  { brand: "away", host: "www.awaytravel.com", collection: "sale", sites: { US: "https://www.awaytravel.com" }, fullPriceWhenNoSale: true },
 ];
 
 /** Spanx runs two Shopify stores: spanx.com (USD, no CA market) and spanx.ca (CAD). */

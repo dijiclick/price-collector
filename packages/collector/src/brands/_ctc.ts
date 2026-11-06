@@ -30,6 +30,12 @@ export interface CtcBanner {
   serviceClient: string;
   /** A store id the web app sends (only scopes "in stock at my store"). */
   store: string;
+  /**
+   * Values of the gateway's "deals" facet to walk, in order. Mark's moved most
+   * markdowns from Sale to Clearance on 2026-11-05 (facet counts Sale 68,
+   * Clearance 967; the store had been ~1,186 rows), so it walks both.
+   */
+  deals: string[];
 }
 
 /** Public, from the storefront config (`apim-subscriptionkey`); the same for every CTC banner. */
@@ -49,8 +55,8 @@ const RETRY_WAITS = [2_000, 5_000].map((ms) => (ms * Number(process.env.CTC_RETR
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const CTC: Record<CtcBanner["brand"], CtcBanner> = {
-  sportchek: { brand: "sportchek", banner: "SC", site: "https://www.sportchek.ca", api: "https://apim.sportchek.ca", serviceClient: "sc/web", store: "241" },
-  marks: { brand: "marks", banner: "MKS", site: "https://www.marks.com", api: "https://apim.marks.com", serviceClient: "mks/web", store: "208" },
+  sportchek: { brand: "sportchek", banner: "SC", site: "https://www.sportchek.ca", api: "https://apim.sportchek.ca", serviceClient: "sc/web", store: "241", deals: ["Sale"] },
+  marks: { brand: "marks", banner: "MKS", site: "https://www.marks.com", api: "https://apim.marks.com", serviceClient: "mks/web", store: "208", deals: ["Sale", "Clearance"] },
 };
 
 export function ctcHeaders(b: CtcBanner): Record<string, string> {
@@ -67,8 +73,8 @@ export function ctcHeaders(b: CtcBanner): Record<string, string> {
 }
 
 /** The sale facet ("x1=deals&q1=Sale" is the url the API itself hands out for its Sale filter). */
-export function ctcSearchUrl(b: CtcBanner, page: number): string {
-  const p = new URLSearchParams({ q: "*", lang: "en_CA", site: "ct", format: "json", x1: "deals", q1: "Sale", count: String(COUNT), page: String(page), store: b.store });
+export function ctcSearchUrl(b: CtcBanner, page: number, deal = "Sale"): string {
+  const p = new URLSearchParams({ q: "*", lang: "en_CA", site: "ct", format: "json", x1: "deals", q1: deal, count: String(COUNT), page: String(page), store: b.store });
   return `${b.api}/v1/search/v2/search?${p}`;
 }
 
@@ -133,13 +139,15 @@ export async function listCtc(b: CtcBanner, country: CountryCode): Promise<Produ
   const byId = new Map<string, ProductRecord>();
   let seen = 0;
   const problems: string[] = [];
+  let calls = 0;
+  for (const deal of b.deals)
   for (let page = 1; page <= MAX_PAGES && byId.size < CAP; page++) {
-    if (page > 1) await sleep(600);
+    if (calls++ > 0) await sleep(600);
     let data: any = null;
     for (let attempt = 0; attempt <= RETRY_WAITS.length; attempt++) {
       if (attempt > 0) await sleep(RETRY_WAITS[attempt - 1]);
-      data = await getJson<any>(ctcSearchUrl(b, page), { country, headers: ctcHeaders(b), retries: 1, timeoutMs: 45_000 }).catch((e) => {
-        if (attempt === RETRY_WAITS.length) problems.push(`p${page}: ${String(e).slice(0, 120)}`);
+      data = await getJson<any>(ctcSearchUrl(b, page, deal), { country, headers: ctcHeaders(b), retries: 1, timeoutMs: 45_000 }).catch((e) => {
+        if (attempt === RETRY_WAITS.length) problems.push(`${deal} p${page}: ${String(e).slice(0, 120)}`);
         return null;
       });
       if (data) break;
