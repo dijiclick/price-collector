@@ -83,7 +83,8 @@ export function buildSaleStart(lang: string | null, brand: string): { title: str
   return { title: c.saleStartTitle(BRAND_LABELS[brand] ?? brand), body: c.saleStartBody };
 }
 
-async function realSend(token: string, c: PushContent): Promise<Outcome> {
+/** The real sender (also used by push-brands.ts). */
+export async function realNewsSend(token: string, c: PushContent): Promise<Outcome> {
   const creds = loadCreds();
   const kind = classifyToken(token);
   if (kind === "apns" && creds.apns) {
@@ -133,7 +134,7 @@ const asDate = (v: Date | string | null) => (v == null ? null : v instanceof Dat
 
 export async function pushNews(db: Db, opts: { now?: Date; send?: NewsSend } = {}): Promise<number> {
   const now = opts.now ?? new Date();
-  const send = opts.send ?? realSend;
+  const send = opts.send ?? realNewsSend;
   const devices = await newsDevices(db);
   // One budget for every nudge (push-log.ts): 48 h apart, longer when ignored.
   // Sale starts and calendar eves used to be exempt; since 2026-10-21 nothing is.

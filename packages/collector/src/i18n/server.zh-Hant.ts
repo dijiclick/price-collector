@@ -36,6 +36,17 @@ export const zhHant: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `${brand} 減價開始了`,
     saleStartBody: "趁貨品未賣完，看看你追蹤的商品和尺碼。",
   },
+  brandAlert: {
+    deals: [
+      (b: string, n: string) => ({ title: `${b}：新折扣`, body: `今天有 ${n} 件商品降價。看看折扣吧。` }),
+    ],
+    arrivals: [
+      (b: string, n: string) => ({ title: `${b}：新品上架`, body: `${n} 件新品剛剛上架。去看看吧。` }),
+    ],
+    sale: [
+      (b: string, n: string) => ({ title: `${b}：大促開始了`, body: `${n} 件商品剛剛降價。看看現在的折扣。` }),
+    ],
+  },
   /**
    * Sale-calendar eves (sale-calendar.ts), keyed by the campaign key there.
    * Black Friday is called that in Hong Kong too; the Turkish "Efsane Cuma" is

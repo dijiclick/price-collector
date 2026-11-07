@@ -36,6 +36,17 @@ export const fr: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `Les promos ont commencé chez ${brand}`,
     saleStartBody: "Jette un œil à tes articles suivis et à ta taille avant tout le monde.",
   },
+  brandAlert: {
+    deals: [
+      (b: string, n: string) => ({ title: `${b} : nouvelles promos`, body: `${n} prix ont baissé aujourd'hui. Découvre les offres.` }),
+    ],
+    arrivals: [
+      (b: string, n: string) => ({ title: `${b} : nouveautés`, body: `${n} nouvelles pièces viennent d'arriver. Jette un œil.` }),
+    ],
+    sale: [
+      (b: string, n: string) => ({ title: `${b} : les soldes ont commencé`, body: `${n} prix viennent de baisser. Vois les offres du moment.` }),
+    ],
+  },
   saleCalendar: {
     "1111-eve-2026": { title: "Le 11.11, c’est demain", body: "Suis dès maintenant ce qui te plaît : on te prévient en premier dès que le prix baisse." },
     "efsane-cuma-eve-2026": { title: "Le Black Friday, c’est demain", body: "Suis tes coups de cœur dès maintenant : on te prévient dès que le prix baisse ou que ta taille revient." },

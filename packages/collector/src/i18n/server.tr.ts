@@ -28,6 +28,24 @@ export const tr: ServerCopy = {
     saleStartTitle: (brand: string) => `İndirim başladı: ${brand}`,
     saleStartBody: "Takip ettiğin ürünlere ve bedenine bak, ilk sen yakala.",
   },
+  brandAlert: {
+    deals: [
+      (b: string, n: string) => ({ title: `${b}: yeni indirimler`, body: `Bugün ${n} ürünün fiyatı düştü. Güncel indirimlere göz at.` }),
+      (b: string, n: string) => ({ title: `${b}: ${n} yeni indirim`, body: "Takip ettiğin markadan yeni indirimler geldi. Bir göz at." }),
+      (b: string, n: string, pct: string) => ({ title: `${b}: fiyatlar düştü`, body: `${n} üründe en az %${pct} fiyat düşüşü var. İndirimler burada.` }),
+      (b: string, n: string) => ({ title: `${b}: bugünün indirimleri`, body: `${n} üründe bugün fiyat düştü. Hepsi markanın sayfasında.` }),
+      (b: string, n: string) => ({ title: `${b}: indirimlere bir bak`, body: `${n} üründe yeni fiyat düşüşü var. Güncel fiyatlar burada.` }),
+    ],
+    arrivals: [
+      (b: string, n: string) => ({ title: `${b}: yeni gelenler`, body: `${n} yeni parça eklendi. Hemen göz at.` }),
+      (b: string, n: string) => ({ title: `${b}: ${n} yeni parça`, body: "Yeni gelenlere göz at. Beğendiklerini takibe alabilirsin." }),
+      (b: string, n: string) => ({ title: `${b}: yeni ürünler geldi`, body: `Bugün ${n} yeni ürün eklendi. Güncel indirimler de aynı sayfada.` }),
+    ],
+    sale: [
+      (b: string, n: string) => ({ title: `${b}: büyük indirim başladı`, body: `${n} ürünün fiyatı son saatlerde düştü. Güncel indirimlere bak.` }),
+      (b: string, n: string, pct: string) => ({ title: `${b}: indirim zamanı`, body: `${n} üründe en az %${pct} fiyat düşüşü var. Hepsine göz at.` }),
+    ],
+  },
   saleCalendar: {
     "1111-eve-2026": { title: "Yarın 11.11", body: "İstediğin ürünleri şimdi takibe al, fiyatı düşünce ilk sen öğren." },
     "efsane-cuma-eve-2026": { title: "Yarın Efsane Cuma", body: "Beğendiklerini takibe al; fiyatı düşünce ya da bedenin gelince haber verelim." },

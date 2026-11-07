@@ -399,6 +399,10 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
   try {
     const { detectBrandSales } = await import("./brand-sales");
     await detectBrandSales(db);
+    // The followed-brand alert goes first: it is the daily one, and the
+    // round-up steps aside on an evening it already went (push-brands.ts).
+    const { pushBrands } = await import("./push-brands");
+    await pushBrands(db);
     const { pushNews } = await import("./push-news");
     await pushNews(db);
   } catch (err) {

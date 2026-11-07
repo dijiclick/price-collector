@@ -31,6 +31,17 @@ export const nb: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `Salget hos ${brand} har startet`,
     saleStartBody: "Sjekk varene og størrelsene du følger, før de forsvinner.",
   },
+  brandAlert: {
+    deals: [
+      (b: string, n: string) => ({ title: `${b}: nye tilbud`, body: `${n} priser har falt i dag. Se tilbudene.` }),
+    ],
+    arrivals: [
+      (b: string, n: string) => ({ title: `${b}: nyheter`, body: `${n} nye plagg har kommet. Ta en titt.` }),
+    ],
+    sale: [
+      (b: string, n: string) => ({ title: `${b}: salget har startet`, body: `${n} priser har nettopp falt. Se tilbudene nå.` }),
+    ],
+  },
   saleCalendar: {
     "1111-eve-2026": { title: "11.11 er i morgen", body: "Følg det du vil ha nå, og bli den første som får vite når prisen synker." },
     "efsane-cuma-eve-2026": { title: "Black Friday er i morgen", body: "Følg favorittene dine nå, så sier vi fra med en gang prisene faller." },

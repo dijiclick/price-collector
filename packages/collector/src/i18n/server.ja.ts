@@ -35,6 +35,17 @@ export const ja: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `${brand}のセールが始まりました`,
     saleStartBody: "お気に入りの商品とサイズを、売り切れる前にチェックしましょう。",
   },
+  brandAlert: {
+    deals: [
+      (b: string, n: string) => ({ title: `${b}：新しいセール`, body: `今日 ${n} 点の価格が下がりました。セールをチェック。` }),
+    ],
+    arrivals: [
+      (b: string, n: string) => ({ title: `${b}：新着アイテム`, body: `${n} 点の新作が入荷しました。のぞいてみて。` }),
+    ],
+    sale: [
+      (b: string, n: string) => ({ title: `${b}：大型セール開始`, body: `${n} 点の価格が下がりました。今のセールを見る。` }),
+    ],
+  },
   saleCalendar: {
     "1111-eve-2026": { title: "明日は11.11", body: "欲しいものを今のうちにお気に入り登録して、値下がりをいち早くキャッチしましょう。" },
     "efsane-cuma-eve-2026": { title: "明日はブラックフライデー", body: "気になるアイテムをお気に入りに登録しておけば、値下がりした瞬間にお知らせします。" },

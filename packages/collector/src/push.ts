@@ -75,6 +75,10 @@ export interface DevicePrefs {
   quietTo?: string | null;
   /** Round-up and sale alerts (push-news.ts). Absent = on. */
   news?: boolean;
+  /** Favourite brands ticked in the app (absent = follows every brand), push-brands.ts. */
+  brands?: string[];
+  /** The market the app is set to. */
+  country?: string;
 }
 
 /**
@@ -266,6 +270,13 @@ export function devicePrefs(raw: unknown): DevicePrefs | null {
   if (typeof minPct !== "number" || !Number.isFinite(minPct)) return null;
   const { news } = v as Record<string, unknown>;
   const base: DevicePrefs = typeof news === "boolean" ? { drop, target, restock, minPct, news } : { drop, target, restock, minPct };
+  // Favourite brands and market (app sync since 2026-11-07, push-brands.ts).
+  const { brands, country } = v as Record<string, unknown>;
+  if (Array.isArray(brands)) {
+    const list = brands.filter((b): b is string => typeof b === "string");
+    if (list.length) base.brands = list;
+  }
+  if (typeof country === "string") base.country = country;
   // Only a complete pair counts as a choice. Absent, or half a window (which
   // no writer produces), falls back to the default rather than guessing.
   if (quietFrom === undefined || quietTo === undefined) return base;

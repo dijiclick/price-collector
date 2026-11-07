@@ -43,6 +43,30 @@ export const en = {
     saleStartBody: "Check your tracked items and sizes before they go.",
   },
   /**
+   * The daily followed-brand alert (push-brands.ts, 2026-11-07). Templates from
+   * Codex's review; one is picked per device and day so the wording varies.
+   * `n` arrives formatted, `pct` is the smallest qualifying cut. "New
+   * arrivals", never "collection": a launch cannot be told from a restock.
+   */
+  brandAlert: {
+    deals: [
+      (b: string, n: string) => ({ title: `${b}: new deals`, body: `${n} prices dropped today. See the deals available now.` }),
+      (b: string, n: string) => ({ title: `${b}: ${n} new deals`, body: "Fresh deals from a brand you follow. Take a look." }),
+      (b: string, n: string, pct: string) => ({ title: `${b}: prices dropped`, body: `${n} items dropped by at least ${pct}%. See the latest deals.` }),
+      (b: string, n: string) => ({ title: `${b}: today's deals`, body: `${n} prices dropped today. Find them on the brand page.` }),
+      (b: string, n: string) => ({ title: `${b}: take a look`, body: `${n} more prices have dropped. Check the current deals.` }),
+    ],
+    arrivals: [
+      (b: string, n: string) => ({ title: `${b}: new arrivals`, body: `${n} new pieces just landed. Have a look.` }),
+      (b: string, n: string) => ({ title: `${b}: ${n} new pieces`, body: "Just added today. Track anything you like." }),
+      (b: string, n: string) => ({ title: `${b}: just in`, body: `${n} new pieces today. Current deals are on the same page.` }),
+    ],
+    sale: [
+      (b: string, n: string) => ({ title: `${b}: big sale started`, body: `${n} prices dropped in the past few hours. See the current deals.` }),
+      (b: string, n: string, pct: string) => ({ title: `${b}: sale time`, body: `${n} items dropped by at least ${pct}%. Browse them now.` }),
+    ],
+  },
+  /**
    * Sale-calendar eves (sale-calendar.ts), keyed by the campaign key there. A
    * campaign with no entry in a language is sent in English; one with no
    * English entry is not sent to that reader at all.

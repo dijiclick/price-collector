@@ -35,6 +35,17 @@ export const fi: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `Ale alkoi: ${brand}`,
     saleStartBody: "Tarkista seuraamasi tuotteet ja kokosi ennen kuin ne loppuvat.",
   },
+  brandAlert: {
+    deals: [
+      (b: string, n: string) => ({ title: `${b}: uusia tarjouksia`, body: `${n} hintaa laski tänään. Katso tarjoukset.` }),
+    ],
+    arrivals: [
+      (b: string, n: string) => ({ title: `${b}: uutuuksia`, body: `${n} uutta tuotetta saapui. Kurkkaa.` }),
+    ],
+    sale: [
+      (b: string, n: string) => ({ title: `${b}: ale alkoi`, body: `${n} hintaa laski juuri. Katso tämän hetken tarjoukset.` }),
+    ],
+  },
   saleCalendar: {
     "1111-eve-2026": { title: "Huomenna on 11.11.", body: "Ota haluamasi tuotteet seurantaan nyt, niin kuulet ensimmäisenä, kun hinta laskee." },
     "efsane-cuma-eve-2026": { title: "Huomenna on Black Friday", body: "Ota suosikkisi seurantaan nyt, niin kerromme heti, kun hinnat laskevat." },

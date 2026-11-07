@@ -35,6 +35,17 @@ export const ko: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `${brand} 세일이 시작됐어요`,
     saleStartBody: "찜한 상품과 내 사이즈를 품절 전에 확인해 보세요.",
   },
+  brandAlert: {
+    deals: [
+      (b: string, n: string) => ({ title: `${b}: 새 할인`, body: `오늘 ${n}개 상품 가격이 내렸어요. 할인을 확인해 보세요.` }),
+    ],
+    arrivals: [
+      (b: string, n: string) => ({ title: `${b}: 신상품`, body: `신상품 ${n}개가 들어왔어요. 구경해 보세요.` }),
+    ],
+    sale: [
+      (b: string, n: string) => ({ title: `${b}: 빅세일 시작`, body: `방금 ${n}개 상품 가격이 내렸어요. 지금 할인을 보세요.` }),
+    ],
+  },
   saleCalendar: {
     "1111-eve-2026": { title: "내일은 11.11", body: "원하는 상품을 지금 찜해 두고, 가격이 내려가면 가장 먼저 알아보세요." },
     "efsane-cuma-eve-2026": { title: "내일은 블랙 프라이데이", body: "마음에 드는 상품을 지금 찜해 두세요. 가격이 내려가는 순간 알려 드릴게요." },

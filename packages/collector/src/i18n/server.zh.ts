@@ -31,6 +31,17 @@ export const zh: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `${brand} 打折开始了`,
     saleStartBody: "看看你关注的商品和尺码，抢先下手。",
   },
+  brandAlert: {
+    deals: [
+      (b: string, n: string) => ({ title: `${b}：新折扣`, body: `今天有 ${n} 件商品降价。看看折扣吧。` }),
+    ],
+    arrivals: [
+      (b: string, n: string) => ({ title: `${b}：新品上架`, body: `${n} 件新品刚刚上架。去看看吧。` }),
+    ],
+    sale: [
+      (b: string, n: string) => ({ title: `${b}：大促开始了`, body: `${n} 件商品刚刚降价。看看现在的折扣。` }),
+    ],
+  },
   saleCalendar: {
     "1111-eve-2026": { title: "明天就是双十一", body: "现在就关注想要的商品，降价第一时间通知你。" },
     "efsane-cuma-eve-2026": { title: "明天就是黑色星期五", body: "现在关注心仪的商品，一降价或你的尺码到货，我们马上告诉你。" },
