@@ -179,7 +179,10 @@ export function judgePrice(
     if (range) {
       fake = true;
       fakeNote = `our was-price is the top of the shop's price range ${range.low}–${range.high}`;
-    } else if (shopOk && price === "match" && list > s.price * 1.02 && !shop!.hasWasPrice) {
+    } else if (shopOk && shop!.prices.some((p) => near(p, s.price)) && list > s.price * 1.02 && !shop!.hasWasPrice) {
+      // Only when OUR price is one the .js itself lists. A price matched only on
+      // the page (a printed "Sepette %NN" basket price — nisantasishoes) has the
+      // shelf price as its honest "was", which compare_at_price never carries.
       fake = true;
       fakeNote = "the shop shows no was-price (no compare_at_price on any variant)";
     }

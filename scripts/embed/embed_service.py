@@ -45,7 +45,8 @@ same bag on a person does.
 
 Env: DATABASE_URL, EMBED_MODEL_DIR (/opt/modadrop-embed/model), EMBED_THREADS (4),
 EMBED_PORT (8091), EMBED_BACKFILL (1), EMBED_ORDER (TR,US,GB,…), EMBED_IDLE (600),
-EMBED_LOOKS (1: score look photos), EMBED_API_TOKEN (unset: no /v1/image).
+EMBED_LOOKS (1: score look photos), EMBED_API_TOKEN (unset: no /v1/image),
+EMBED_FULLPRICE (markets whose full-price products are embedded once the discounted are done; unset: none).
 """
 import gzip
 import hmac
@@ -74,6 +75,7 @@ PORT = int(os.environ.get("EMBED_PORT", "8091"))
 BACKFILL = os.environ.get("EMBED_BACKFILL", "1") == "1"
 ORDER = [c for c in os.environ.get("EMBED_ORDER", "TR,US,GB,CA,AU,DE,FR,ES,IT,NL").split(",") if c]
 IDLE = int(os.environ.get("EMBED_IDLE", "600"))
+FULLPRICE = [c for c in os.environ.get("EMBED_FULLPRICE", "").split(",") if c]
 LOOKS = os.environ.get("EMBED_LOOKS", "1") == "1"
 FETCHERS = int(os.environ.get("EMBED_FETCHERS", "8"))
 CHUNK = int(os.environ.get("EMBED_CHUNK", "1500"))  # candidates per DB query
@@ -394,6 +396,27 @@ SELECT c.id, COALESCE(p.url, c.image_url) AS url
           (e.product_id IS NULL) DESC, c.id DESC
  LIMIT %(limit)s
 """
+# Full-price products of the EMBED_FULLPRICE markets (2026-11-06, "Get the look from
+# Pinterest": the owner wants the truly nearest product even at full price, and
+# only ~5% of Turkey's 428k full-price clothing had a vector). Asked only when no
+# discounted product is waiting, so the sale stays first; newest first.
+FULL_CANDIDATES = """
+SELECT c.id, COALESCE(p.url, c.image_url) AS url
+  FROM catalogue_items c
+  LEFT JOIN product_packshots p ON p.product_id = c.id AND p.url IS NOT NULL
+  LEFT JOIN product_embeddings e ON e.product_id = c.id
+  LEFT JOIN embed_failures f ON f.product_id = c.id
+        AND f.image_url = COALESCE(p.url, c.image_url)
+        AND f.failed_at > now() - interval '3 days'
+ WHERE c.in_stock AND c.pct <= 0 AND c.image_url IS NOT NULL
+   AND c.country = ANY(%(full)s) AND c.product_type = ANY(%(types)s)
+   AND c.gender IS DISTINCT FROM 'cocuk'
+   AND (e.product_id IS NULL OR e.image_url IS DISTINCT FROM COALESCE(p.url, c.image_url)
+        OR e.model <> %(model)s)
+   AND f.product_id IS NULL
+ ORDER BY (e.product_id IS NULL) DESC, c.id DESC
+ LIMIT %(limit)s
+"""
 REMAINING = """
 SELECT count(*) FROM catalogue_items c
   LEFT JOIN product_packshots p ON p.product_id = c.id AND p.url IS NOT NULL
@@ -450,6 +473,11 @@ def backfill_loop():
                 last_remaining = time.time()
             rows = conn.execute(CANDIDATES, {"types": TYPES, "order": ORDER, "limit": CHUNK, "model": MODEL_NAME,
                                              "nshards": 1, "shard": 0, "skip": []}).fetchall()
+            if not rows and FULLPRICE:
+                rows = conn.execute(FULL_CANDIDATES, {"types": TYPES, "full": FULLPRICE, "limit": CHUNK, "model": MODEL_NAME}).fetchall()
+                STATS["backfill_phase"] = "full price" if rows else "idle"
+            else:
+                STATS["backfill_phase"] = "discounted"
             if not rows:
                 STATS["backfill_state"] = "idle"
                 STATS["remaining"] = 0

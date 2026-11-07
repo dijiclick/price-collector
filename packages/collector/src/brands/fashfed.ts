@@ -1,7 +1,8 @@
 import type { ProductRecord } from "../types";
 import type { AkinonCatalogueLimits } from "./_akinon";
 import { akinonRecords, limitsFromEnv, walkAkinonListing } from "./_akinon";
-import { DIRECT_BRANDS, NON_FASHION, foldBrand, listAkinonStoreCatalogue, mapStoreProduct, type AkinonStore } from "./_akinonstore";
+import { getJson } from "../http";
+import { DIRECT_BRANDS, NON_FASHION, foldBrand, includeChunks, listAkinonStoreCatalogue, mapStoreProduct, type AkinonStore } from "./_akinonstore";
 
 /**
  * FashFed — the Beymen group's multi-brand Akinon marketplace (287 brands,
@@ -81,11 +82,31 @@ export function overlayFlash(catalogue: ProductRecord[], flash: ProductRecord[])
   return [...byId.values()];
 }
 
+/**
+ * The `/flash-indirim/` listing paths to walk: narrowed to kept brands in
+ * chunks that each fit the result window. 2026-11-07 the sale grew to 24,251
+ * rows — past two sorted halves — and the shop's price facet has NO 4,000–5,000
+ * TL band (…3000-4000, then "5000 ÜZERİ"; an unlisted range is ignored), so the
+ * price-band walk could only ever reach 21,679 rows and threw every run since
+ * 11-04. The brand facet has no gap. Pure, for its test.
+ */
+export function flashPaths(facets: any[] | null | undefined, excluded: Set<string>): string[] {
+  const path = STORE.shop.listPath;
+  const chunks = includeChunks(STORE, facets, excluded, undefined, true) ?? [""];
+  return chunks.map((q) => (q ? `${path}${path.includes("?") ? "&" : "?"}${q}` : path));
+}
+
 export async function listProducts(): Promise<ProductRecord[]> {
   const lim = limits();
   const catalogue = await listAkinonStoreCatalogue(CATALOGUE, lim);
   const excluded = new Set(STORE.exclude.map(foldBrand));
-  const walk = await walkAkinonListing(STORE.shop.site, STORE.shop.listPath, { maxPages: lim.maxPages, concurrency: lim.concurrency });
-  const flash = akinonRecords(walk.rows, (p) => mapStoreProduct(STORE, p, excluded));
+  const { site, listPath } = STORE.shop;
+  const head = await getJson<any>(`${site}${listPath}?format=json&page_size=1`);
+  const rows: any[] = [];
+  for (const path of flashPaths(head?.facets, excluded)) {
+    const walk = await walkAkinonListing(site, path, { maxPages: lim.maxPages, concurrency: lim.concurrency });
+    rows.push(...walk.rows);
+  }
+  const flash = akinonRecords(rows, (p) => mapStoreProduct(STORE, p, excluded));
   return overlayFlash(catalogue, flash);
 }

@@ -211,12 +211,14 @@ export function includeChunks(
   facets: any[] | null | undefined,
   excluded: Set<string>,
   maxRows = RESULT_WINDOW - 1_000,
+  /** Chunk even when nothing is excluded (a listing too big to walk whole). */
+  force = false,
 ): string[] | null {
   const f = (facets ?? []).find((x) => x?.key === store.brandAttr);
   const choices: any[] = f?.data?.choices ?? [];
   if (!choices.length) return null;
   const keep = choices.filter((c) => c?.label && c?.value != null && !excluded.has(foldBrand(String(c.label))));
-  if (keep.length === choices.length) return [""];
+  if (keep.length === choices.length && !force) return [""];
   const key = f.search_key || `attributes_${store.brandAttr}`;
   // Biggest first, so the big brands each start a chunk and the small ones fill gaps.
   keep.sort((a, b) => Number(b.quantity ?? 0) - Number(a.quantity ?? 0));
