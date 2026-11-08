@@ -51,6 +51,18 @@ export const COLOR_FAMILIES: ColorFamily[] = [
   { key: "cok-renkli", hex: "linear", re: /cok renkli|\bmulti|\bmix\b|rengarenk|\bprint\b|desenli|cizgili|striped|ekose|\bcheck/ },
 ];
 
+/**
+ * Colours a product's NAME says outright, every one of them, the fabric words
+ * and the brand's own name left out ("Mavi" jeans, stone wash, denim). `metal`
+ * false: a gold or silver in the name is a button or a zip, not the colour.
+ */
+export function nameColours(name: string, brand?: string | null, metal = true): string[] {
+  let n = fold(name ?? "").replace(/stone ?wash(ed)?|\bdenim\b|\bkot\b/g, " ");
+  const b = brand ? fold(brand).replace(/[^a-z0-9]/g, "") : "";
+  if (b) n = n.replace(new RegExp(`\\b${b}\\b`, "g"), " ");
+  return COLOR_FAMILIES.filter((f) => f.key !== "cok-renkli" && (metal || f.key !== "metalik") && f.re.test(n)).map((f) => f.key);
+}
+
 /** Cosmetics names are full of colour-ish words that are not the product's colour. */
 const NO_NAME_FALLBACK = new Set(["makyaj", "cilt-bakim", "kisisel-bakim", "parfum", "sac"]);
 

@@ -46,8 +46,9 @@ const NEW_PRODUCTS: Forms = ["منتج جديد", "منتجان جديدان", "
 
 export const ar: ServerCopyPartial = {
   alert: {
+    line: (was: string, now: string) => `الآن ${now} بدلًا من ${was}.`,
     restock: (size: string | null) => (size ? `المقاس ${size} عاد إلى المخزون 🎉` : "عاد إلى المخزون 🎉"),
-    target: (drop: string) => `🎯 وصل إلى هدفك — ${drop}`,
+    target: (drop: string) => `وصل إلى هدفك: ${drop}`,
     refund: (saving: string, now: string) => `أرخص بـ${saving} مما دفعت: ${now}. يمكنك إرجاعه وشراؤه مجددًا.`,
     withSize: (size: string, base: string) => `المقاس ${size} · ${base}`,
   },
@@ -69,16 +70,11 @@ export const ar: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `بدأت تخفيضات ${brand}`,
     saleStartBody: "المنتجات التي تتابعها ومقاساتك قد تنفد بسرعة.",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}: عروض جديدة`, body: `انخفض سعر ${n} منتجًا اليوم. شاهدي العروض.` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}: وصل حديثًا`, body: `وصلت ${n} قطعة جديدة. ألقي نظرة.` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}: بدأت التخفيضات الكبيرة`, body: `انخفض سعر ${n} منتجًا للتو. شاهدي العروض الحالية.` }),
-    ],
+  daily: {
+    fromFollowed: 'من علامة تتابعينها',
+    onSale: (b: string) => `${b}: بسعر مخفّض`,
+    saleStarted: (b: string) => `${b}: بدأ التخفيض`,
+    justAdded: (b: string) => `${b}: جديد`,
   },
   saleCalendar: {
     "1111-eve-2026": { title: "عروض 11.11 غدًا", body: "تتبّع ما تريده الآن، وستعرف قبل الجميع عندما ينخفض سعره." },
@@ -106,6 +102,7 @@ export const ar: ServerCopyPartial = {
     note: "الرمز صالح لمدة 10 دقائق. إذا لم يكن هذا الطلب منك، يمكن تجاهل هذه الرسالة، ولن يتغير شيء في حسابك.",
   },
   stilist: {
+    alarmFor: (q: string) => `بحثك: ${q}`,
     alarmTitle: (n: number) => `منبّه البحث الذكي: ${count(n, NEW_MATCHES)}`,
     interestTitle: (what: string, n: number) =>
       n === 1 ? `جديد في نتائج ${what}` : `نتائج ${what}: ${count(n, NEW_PRODUCTS)}`,

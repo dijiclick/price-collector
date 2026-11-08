@@ -11,8 +11,9 @@ import type { ServerCopyPartial } from "./server";
  */
 export const ko: ServerCopyPartial = {
   alert: {
+    line: (was: string, now: string) => `지금 ${now}, 이전 ${was}`,
     restock: (size: string | null) => (size ? `${size} 사이즈가 재입고됐어요 🎉` : "재입고됐어요 🎉"),
-    target: (drop: string) => `🎯 목표가 도달 — ${drop}`,
+    target: (drop: string) => `목표가 도달: ${drop}`,
     refund: (saving: string, now: string) => `구매가보다 ${saving} 저렴해졌어요: 지금 ${now}. 반품하고 다시 구매할 수 있어요.`,
     withSize: (size: string, base: string) => `${size} 사이즈 · ${base}`,
   },
@@ -35,16 +36,11 @@ export const ko: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `${brand} 세일이 시작됐어요`,
     saleStartBody: "찜한 상품과 내 사이즈를 품절 전에 확인해 보세요.",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}: 새 할인`, body: `오늘 ${n}개 상품 가격이 내렸어요. 할인을 확인해 보세요.` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}: 신상품`, body: `신상품 ${n}개가 들어왔어요. 구경해 보세요.` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}: 빅세일 시작`, body: `방금 ${n}개 상품 가격이 내렸어요. 지금 할인을 보세요.` }),
-    ],
+  daily: {
+    fromFollowed: '팔로우한 브랜드에서',
+    onSale: (b: string) => `${b}: 세일 중`,
+    saleStarted: (b: string) => `${b}: 세일 시작`,
+    justAdded: (b: string) => `${b}: 신상`,
   },
   saleCalendar: {
     "1111-eve-2026": { title: "내일은 11.11", body: "원하는 상품을 지금 찜해 두고, 가격이 내려가면 가장 먼저 알아보세요." },
@@ -72,6 +68,7 @@ export const ko: ServerCopyPartial = {
     note: "코드는 10분 동안 유효해요. 직접 요청하지 않으셨다면 이 메일은 무시하셔도 돼요. 계정에는 아무 변화도 없어요.",
   },
   stilist: {
+    alarmFor: (q: string) => `내 검색: ${q}`,
     alarmTitle: (n: number) => `스마트 검색 알림: 새 상품 ${n}개`,
     interestTitle: (what: string, n: number) => (n === 1 ? `새 상품: ${what}` : `새 상품 ${n}개: ${what}`),
     yourSearch: "내 검색어",

@@ -12,8 +12,9 @@ const jaQuote = (what: string) => what.replace(/^“([\s\S]*)”$/, "「$1」");
 
 export const ja: ServerCopyPartial = {
   alert: {
+    line: (was: string, now: string) => `今 ${now}（元 ${was}）`,
     restock: (size: string | null) => (size ? `${size}サイズが再入荷しました 🎉` : "再入荷しました 🎉"),
-    target: (drop: string) => `🎯 目標価格に到達 — ${drop}`,
+    target: (drop: string) => `目標価格に到達: ${drop}`,
     refund: (saving: string, now: string) => `購入時より${saving}安くなりました（現在${now}）。返品して買い直すことができます。`,
     withSize: (size: string, base: string) => `サイズ ${size} · ${base}`,
   },
@@ -35,16 +36,11 @@ export const ja: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `${brand}のセールが始まりました`,
     saleStartBody: "お気に入りの商品とサイズを、売り切れる前にチェックしましょう。",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}：新しいセール`, body: `今日 ${n} 点の価格が下がりました。セールをチェック。` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}：新着アイテム`, body: `${n} 点の新作が入荷しました。のぞいてみて。` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}：大型セール開始`, body: `${n} 点の価格が下がりました。今のセールを見る。` }),
-    ],
+  daily: {
+    fromFollowed: 'フォロー中のブランドから',
+    onSale: (b: string) => `${b}：セール中`,
+    saleStarted: (b: string) => `${b}：セール開始`,
+    justAdded: (b: string) => `${b}：新着`,
   },
   saleCalendar: {
     "1111-eve-2026": { title: "明日は11.11", body: "欲しいものを今のうちにお気に入り登録して、値下がりをいち早くキャッチしましょう。" },
@@ -72,6 +68,7 @@ export const ja: ServerCopyPartial = {
     note: "コードの有効期限は10分です。お心当たりがない場合は、このメールを無視してください。アカウントには何の変更もありません。",
   },
   stilist: {
+    alarmFor: (q: string) => `検索中：${q}`,
     alarmTitle: (n: number) => `スマート検索アラート：新たに${n}件が一致`,
     interestTitle: (what: string, n: number) => (n === 1 ? `${jaQuote(what)}の新着` : `${jaQuote(what)}の新着${n}件`),
     yourSearch: "保存した検索",

@@ -36,7 +36,16 @@ import { listRnd, listRndCatalogue, rndLimitsFromEnv, type RndShop } from "./_rn
  * three sections in full (544 + 790 + 3 = 1,337 of `/tum-urunler`'s 1,338,
  * each checked against its own pager count) and returns them at full price,
  * as COS and Gullfunn do. The ~200 category-only products stay unlisted.
+ *
+ * TAIL OF A SALE (2026-11-08): one reduced product was left, so the sale walk
+ * returned 1 row and the fallback (0 only) never ran — four runs flagged
+ * `drop` (1 of 1,396) and the delist sweep would have marked the rest sold
+ * out. Under MIN_SALE_ROWS the catalogue walk runs instead; it reads the same
+ * cards, so the few reduced ones keep their strike price. If that walk fails,
+ * the sale rows are still returned.
  */
+export const MIN_SALE_ROWS = 30;
+
 export const SHOP: RndShop = {
   brand: "levis",
   site: "https://www.levis.com.tr",
@@ -57,6 +66,12 @@ export const brand = SHOP.brand;
 
 export async function listProducts(): Promise<ProductRecord[]> {
   const sale = await listRnd(SHOP, rndLimitsFromEnv("LEVIS_TR", { maxProducts: 1500, maxPages: 20, detailLimit: 300, budgetMs: 140_000 }));
-  if (sale.length > 0) return sale;
-  return listRndCatalogue(SHOP, rndLimitsFromEnv("LEVIS_TR_FULL", { maxProducts: 3000, maxPages: 15, detailLimit: 200, budgetMs: 150_000 }));
+  if (sale.length >= MIN_SALE_ROWS) return sale;
+  try {
+    return await listRndCatalogue(SHOP, rndLimitsFromEnv("LEVIS_TR_FULL", { maxProducts: 3000, maxPages: 15, detailLimit: 200, budgetMs: 150_000 }));
+  } catch (err) {
+    if (!sale.length) throw err;
+    console.warn(`levis TR: catalogue walk failed (${(err as Error).message}); keeping ${sale.length} sale rows`);
+    return sale;
+  }
 }

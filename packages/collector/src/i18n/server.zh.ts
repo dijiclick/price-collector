@@ -8,8 +8,9 @@ import type { ServerCopyPartial } from "./server";
  */
 export const zh: ServerCopyPartial = {
   alert: {
+    line: (was: string, now: string) => `现价 ${now}，原价 ${was}。`,
     restock: (size: string | null) => (size ? `${size} 码已补货 🎉` : "已补货 🎉"),
-    target: (drop: string) => `🎯 已达到你的目标价 — ${drop}`,
+    target: (drop: string) => `已达到你的目标价: ${drop}`,
     refund: (saving: string, now: string) => `比你买的时候便宜了 ${saving}：现价 ${now}。可以退货后重新下单。`,
     withSize: (size: string, base: string) => `${size} 码 · ${base}`,
   },
@@ -31,16 +32,11 @@ export const zh: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `${brand} 打折开始了`,
     saleStartBody: "看看你关注的商品和尺码，抢先下手。",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}：新折扣`, body: `今天有 ${n} 件商品降价。看看折扣吧。` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}：新品上架`, body: `${n} 件新品刚刚上架。去看看吧。` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}：大促开始了`, body: `${n} 件商品刚刚降价。看看现在的折扣。` }),
-    ],
+  daily: {
+    fromFollowed: '来自你关注的品牌',
+    onSale: (b: string) => `${b}：折扣中`,
+    saleStarted: (b: string) => `${b}：促销开始了`,
+    justAdded: (b: string) => `${b}：新品`,
   },
   saleCalendar: {
     "1111-eve-2026": { title: "明天就是双十一", body: "现在就关注想要的商品，降价第一时间通知你。" },
@@ -68,6 +64,7 @@ export const zh: ServerCopyPartial = {
     note: "验证码 10 分钟内有效。如果不是你本人申请的，请忽略这封邮件，你的账户不会有任何变化。",
   },
   stilist: {
+    alarmFor: (q: string) => `你的搜索：${q}`,
     alarmTitle: (n: number) => `助手提醒：${n} 件新匹配`,
     interestTitle: (what: string, n: number) => (n === 1 ? `${what} 有新品` : `${what} 有 ${n} 件新品`),
     yourSearch: "你的搜索",

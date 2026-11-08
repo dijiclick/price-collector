@@ -8,8 +8,9 @@ import type { ServerCopyPartial } from "./server";
  */
 export const pt: ServerCopyPartial = {
   alert: {
+    line: (was: string, now: string) => `Agora ${now}, antes ${was}.`,
     restock: (size: string | null) => (size ? `Tamanho ${size} de novo em stock 🎉` : "De novo em stock 🎉"),
-    target: (drop: string) => `🎯 Atingiu o teu alvo — ${drop}`,
+    target: (drop: string) => `Atingiu o teu alvo: ${drop}`,
     refund: (saving: string, now: string) => `${saving} mais barato do que pagaste: ${now}. Podes devolver e voltar a comprar.`,
     withSize: (size: string, base: string) => `Tamanho ${size} · ${base}`,
   },
@@ -33,16 +34,11 @@ export const pt: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `Começaram as promoções: ${brand}`,
     saleStartBody: "Vê os artigos e tamanhos que segues antes que esgotem.",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}: novas promoções`, body: `${n} preços baixaram hoje. Veja as ofertas.` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}: novidades`, body: `Chegaram ${n} peças novas. Dê uma olhada.` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}: começaram as promoções`, body: `${n} preços acabaram de baixar. Veja as ofertas atuais.` }),
-    ],
+  daily: {
+    fromFollowed: 'De uma marca que segue',
+    onSale: (b: string) => `${b}: em promoção`,
+    saleStarted: (b: string) => `${b}: a promoção começou`,
+    justAdded: (b: string) => `${b}: novidade`,
   },
   saleCalendar: {
     "1111-eve-2026": { title: "O 11.11 é amanhã", body: "Segue já o que queres e fica a saber antes de todos quando baixar." },
@@ -70,6 +66,7 @@ export const pt: ServerCopyPartial = {
     note: "O código é válido durante 10 minutos. Se não o pediste, ignora este e-mail — nada muda na tua conta.",
   },
   stilist: {
+    alarmFor: (q: string) => `A sua pesquisa: ${q}`,
     alarmTitle: (n: number) => `Alarme de pesquisa: ${n} ${n === 1 ? "novo resultado" : "novos resultados"}`,
     interestTitle: (what: string, n: number) => (n === 1 ? `Novidade para ${what}` : `${n} novidades para ${what}`),
     yourSearch: "a tua pesquisa",

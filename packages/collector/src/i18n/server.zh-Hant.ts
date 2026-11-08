@@ -10,8 +10,9 @@ import type { ServerCopyPartial } from "./server";
 export const zhHant: ServerCopyPartial = {
   /** Personal price alerts (push.ts). */
   alert: {
+    line: (was: string, now: string) => `現價 ${now}，原價 ${was}。`,
     restock: (size: string | null) => (size ? `${size} 碼已補貨 🎉` : "已補貨 🎉"),
-    target: (drop: string) => `🎯 已達你的目標價 — ${drop}`,
+    target: (drop: string) => `已達你的目標價: ${drop}`,
     refund: (saving: string, now: string) => `比你的購買價低 ${saving}：現價 ${now}。你可以退貨後再買。`,
     withSize: (size: string, base: string) => `${size} 碼 · ${base}`,
   },
@@ -36,16 +37,11 @@ export const zhHant: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `${brand} 減價開始了`,
     saleStartBody: "趁貨品未賣完，看看你追蹤的商品和尺碼。",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}：新折扣`, body: `今天有 ${n} 件商品降價。看看折扣吧。` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}：新品上架`, body: `${n} 件新品剛剛上架。去看看吧。` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}：大促開始了`, body: `${n} 件商品剛剛降價。看看現在的折扣。` }),
-    ],
+  daily: {
+    fromFollowed: '來自你關注的品牌',
+    onSale: (b: string) => `${b}：優惠中`,
+    saleStarted: (b: string) => `${b}：優惠開始了`,
+    justAdded: (b: string) => `${b}：新品`,
   },
   /**
    * Sale-calendar eves (sale-calendar.ts), keyed by the campaign key there.
@@ -82,6 +78,7 @@ export const zhHant: ServerCopyPartial = {
     note: "驗證碼 10 分鐘內有效。如果不是你本人要求的，請忽略這封電郵，你的帳戶不會有任何改變。",
   },
   stilist: {
+    alarmFor: (q: string) => `你的搜尋：${q}`,
     alarmTitle: (n: number) => `助手提示：${n} 件新的相符商品`,
     /** `what` is the search in quotes, or `yourSearch`. */
     interestTitle: (what: string, n: number) => (n === 1 ? `${what}有新貨` : `${what}有 ${n} 件新貨`),

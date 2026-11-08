@@ -1,6 +1,6 @@
 /**
- * The push log and the nudge budget (owner 2026-10-21: "don't send every day —
- * every 2 days").
+ * The push log and the nudge budget (owner 2026-11-08: one a day, every day;
+ * 2026-10-21 it was every 2 days with a back-off).
  *
  * Every push sent is logged (push_log), and the app reports when one is opened
  * (app/api/push/opened marks the device's latest push). Two classes:
@@ -9,15 +9,12 @@
  *   nudge     the app reaching out unasked: round-up, sale start, calendar,
  *             remembered searches, the day-3 reminder, the first-week series
  *
- * Nudges share ONE budget per device: at least 48 h apart; 96 h once the last
- * five were all ignored; none at all after 30 days with six or more nudges and
- * not a single open. That is the back-off — someone who never taps should stop
- * hearing from us long before they switch notifications off.
+ * Nudges share ONE budget per device: one a day. 20 h, not 24: the evening slot
+ * moves with the collector's runs, and 24 h would skip the next evening.
  */
 import type { Db } from "./db";
 
-export const NUDGE_GAP_MS = 48 * 3600_000;
-export const IGNORED_GAP_MS = 96 * 3600_000;
+export const NUDGE_GAP_MS = 20 * 3600_000;
 
 export interface NudgeStats {
   lastNudge: Date | null;
@@ -30,9 +27,7 @@ export interface NudgeStats {
 }
 
 export function nudgeOk(s: NudgeStats, now: Date): boolean {
-  if (s.nudges30 >= 6 && s.opens30 === 0) return false;
-  const gap = s.recent >= 5 && s.recentUnopened >= 5 ? IGNORED_GAP_MS : NUDGE_GAP_MS;
-  return !s.lastNudge || now.getTime() - s.lastNudge.getTime() >= gap;
+  return !s.lastNudge || now.getTime() - s.lastNudge.getTime() >= NUDGE_GAP_MS;
 }
 
 const asDate = (v: Date | string | null) => (v == null ? null : v instanceof Date ? v : new Date(v));

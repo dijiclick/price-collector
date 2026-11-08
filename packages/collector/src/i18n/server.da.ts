@@ -8,8 +8,9 @@ import type { ServerCopyPartial } from "./server";
  */
 export const da: ServerCopyPartial = {
   alert: {
+    line: (was: string, now: string) => `Nu ${now}, før ${was}.`,
     restock: (size: string | null) => (size ? `Størrelse ${size} er på lager igen 🎉` : "På lager igen 🎉"),
-    target: (drop: string) => `🎯 Din målpris er nået – ${drop}`,
+    target: (drop: string) => `Din målpris er nået: ${drop}`,
     refund: (saving: string, now: string) => `${saving} billigere, end du betalte: ${now}. Du kan returnere den og købe den igen.`,
     withSize: (size: string, base: string) => `Str. ${size} · ${base}`,
   },
@@ -32,16 +33,11 @@ export const da: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `Udsalget hos ${brand} er startet`,
     saleStartBody: "Tjek de varer og størrelser, du følger, før de er væk.",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}: nye tilbud`, body: `${n} priser er faldet i dag. Se tilbuddene.` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}: nyheder`, body: `${n} nye styk er landet. Tag et kig.` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}: udsalget er startet`, body: `${n} priser er lige faldet. Se de aktuelle tilbud.` }),
-    ],
+  daily: {
+    fromFollowed: 'Fra et mærke, du følger',
+    onSale: (b: string) => `${b}: på tilbud`,
+    saleStarted: (b: string) => `${b}: udsalget er begyndt`,
+    justAdded: (b: string) => `${b}: nyhed`,
   },
   saleCalendar: {
     "1111-eve-2026": { title: "11.11 er i morgen", body: "Følg det, du gerne vil have, nu, og hør det først, når prisen falder." },
@@ -69,6 +65,7 @@ export const da: ServerCopyPartial = {
     note: "Koden er gyldig i 10 minutter. Hvis du ikke har bedt om den, kan du se bort fra denne mail – der ændres ikke noget på din konto.",
   },
   stilist: {
+    alarmFor: (q: string) => `Din søgning: ${q}`,
     alarmTitle: (n: number) => `Smart søgning: ${n} ${n === 1 ? "nyt match" : "nye match"}`,
     interestTitle: (what: string, n: number) => (n === 1 ? `Nyt i ${what}` : `${n} nye i ${what}`),
     yourSearch: "din søgning",

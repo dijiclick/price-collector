@@ -11,8 +11,9 @@ import type { ServerCopyPartial } from "./server";
  */
 export const fi: ServerCopyPartial = {
   alert: {
+    line: (was: string, now: string) => `Nyt ${now}, ennen ${was}.`,
     restock: (size: string | null) => (size ? `Koko ${size} on taas varastossa 🎉` : "Taas varastossa 🎉"),
-    target: (drop: string) => `🎯 Tavoite saavutettu – ${drop}`,
+    target: (drop: string) => `Tavoite saavutettu: ${drop}`,
     refund: (saving: string, now: string) => `${saving} halvempi kuin ostohintasi: nyt ${now}. Voit palauttaa tuotteen ja ostaa sen uudelleen.`,
     withSize: (size: string, base: string) => `Koko ${size} · ${base}`,
   },
@@ -35,16 +36,11 @@ export const fi: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `Ale alkoi: ${brand}`,
     saleStartBody: "Tarkista seuraamasi tuotteet ja kokosi ennen kuin ne loppuvat.",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}: uusia tarjouksia`, body: `${n} hintaa laski tänään. Katso tarjoukset.` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}: uutuuksia`, body: `${n} uutta tuotetta saapui. Kurkkaa.` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}: ale alkoi`, body: `${n} hintaa laski juuri. Katso tämän hetken tarjoukset.` }),
-    ],
+  daily: {
+    fromFollowed: 'Seuraamaltasi merkiltä',
+    onSale: (b: string) => `${b}: alennuksessa`,
+    saleStarted: (b: string) => `${b}: ale alkoi`,
+    justAdded: (b: string) => `${b}: uutuus`,
   },
   saleCalendar: {
     "1111-eve-2026": { title: "Huomenna on 11.11.", body: "Ota haluamasi tuotteet seurantaan nyt, niin kuulet ensimmäisenä, kun hinta laskee." },
@@ -72,6 +68,7 @@ export const fi: ServerCopyPartial = {
     note: "Koodi on voimassa 10 minuuttia. Jos et pyytänyt sitä, voit jättää tämän viestin huomiotta – tilillesi ei tapahdu mitään.",
   },
   stilist: {
+    alarmFor: (q: string) => `Hakusi: ${q}`,
     alarmTitle: (n: number) => (n === 1 ? "Älyhaun hälytys: 1 uusi osuma" : `Älyhaun hälytys: ${n} uutta osumaa`),
     // `what` is the search in quotes or `yourSearch`, always at the start.
     interestTitle: (what: string, n: number) => (n === 1 ? `${what}: uusi osuma` : `${what}: ${n} uutta osumaa`),

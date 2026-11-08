@@ -9,8 +9,9 @@ import type { ServerCopyPartial } from "./server";
  */
 export const es: ServerCopyPartial = {
   alert: {
+    line: (was: string, now: string) => `${now}, antes ${was}.`,
     restock: (size: string | null) => (size ? `La talla ${size} vuelve a estar disponible 🎉` : "De nuevo disponible 🎉"),
-    target: (drop: string) => `🎯 Llegó a tu precio objetivo — ${drop}`,
+    target: (drop: string) => `Llegó a tu precio objetivo: ${drop}`,
     refund: (saving: string, now: string) =>
       `${saving} más barato de lo que pagaste: ${now}. Puedes devolverlo y volver a comprarlo.`,
     withSize: (size: string, base: string) => `Talla ${size} · ${base}`,
@@ -37,16 +38,11 @@ export const es: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `Empiezan las rebajas: ${brand}`,
     saleStartBody: "Revisa lo que sigues y tus tallas antes de que se agoten.",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}: nuevas ofertas`, body: `${n} precios han bajado hoy. Mira las ofertas.` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}: novedades`, body: `Han llegado ${n} prendas nuevas. Échales un vistazo.` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}: empiezan las rebajas`, body: `${n} precios acaban de bajar. Mira las ofertas de ahora.` }),
-    ],
+  daily: {
+    fromFollowed: 'De una marca que sigues',
+    onSale: (b: string) => `${b}: en oferta`,
+    saleStarted: (b: string) => `${b}: empezó la oferta`,
+    justAdded: (b: string) => `${b}: novedad`,
   },
   saleCalendar: {
     "1111-eve-2026": { title: "Mañana es el 11.11", body: "Sigue ahora lo que quieres y entérate antes que nadie cuando baje." },
@@ -79,6 +75,7 @@ export const es: ServerCopyPartial = {
     note: "El código es válido durante 10 minutos. Si no lo has pedido tú, ignora este correo: no cambia nada en tu cuenta.",
   },
   stilist: {
+    alarmFor: (q: string) => `Tu búsqueda: ${q}`,
     alarmTitle: (n: number) =>
       `Alarma del asistente: ${n} ${n === 1 ? "coincidencia nueva" : "coincidencias nuevas"}`,
     interestTitle: (what: string, n: number) => (n === 1 ? `Novedad para ${what}` : `${n} novedades para ${what}`),

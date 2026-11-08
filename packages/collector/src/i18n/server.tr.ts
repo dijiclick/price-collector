@@ -3,10 +3,11 @@ import type { ServerCopy } from "./server";
 /** Turkish: the original copy, and the voice every other language matches. Complete. */
 export const tr: ServerCopy = {
   alert: {
-    restock: (size: string | null) => (size ? `Beden ${size} tekrar stokta 🎉` : "Tekrar stokta 🎉"),
-    target: (drop: string) => `🎯 Hedefe ulaştı — ${drop}`,
-    refund: (saving: string, now: string) => `Aldığından ${saving} ucuz: ${now}. İade edip yeniden alabilirsin.`,
-    withSize: (size: string, base: string) => `Beden ${size} · ${base}`,
+    line: (was: string, now: string) => `${was} yerine ${now}.`,
+    restock: (size: string | null) => (size ? `${size} beden geri geldi` : "Yeniden stokta"),
+    target: (drop: string) => `Hedef fiyatına ulaştı. ${drop}`,
+    refund: (saving: string, now: string) => `Aldığından ${saving} daha ucuz: ${now}. İade koşullarını kontrol et.`,
+    withSize: (size: string, base: string) => `${size} beden. ${base}`,
   },
   email: {
     size: (s: string) => `Beden ${s}`,
@@ -22,49 +23,36 @@ export const tr: ServerCopy = {
   news: {
     and: "ve",
     digestTitle: (n: number) => `Takip ettiğin markalarda ${n} yeni indirim`,
-    digestBody: (brands: string) => `${brands} fiyatlarını düşürdü. Bedenin tükenmeden göz at.`,
+    digestBody: (brands: string) => `${brands} fiyatlarını düşürdü.`,
     // No locative suffix ('da/'de/'ta/'te): it depends on how each brand name
     // ends and sounds, and a wrong one reads as a machine wrote it.
     saleStartTitle: (brand: string) => `İndirim başladı: ${brand}`,
-    saleStartBody: "Takip ettiğin ürünlere ve bedenine bak, ilk sen yakala.",
+    saleStartBody: "Takip ettiğin ürünlerin fiyatına bak.",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}: yeni indirimler`, body: `Bugün ${n} ürünün fiyatı düştü. Güncel indirimlere göz at.` }),
-      (b: string, n: string) => ({ title: `${b}: ${n} yeni indirim`, body: "Takip ettiğin markadan yeni indirimler geldi. Bir göz at." }),
-      (b: string, n: string, pct: string) => ({ title: `${b}: fiyatlar düştü`, body: `${n} üründe en az %${pct} fiyat düşüşü var. İndirimler burada.` }),
-      (b: string, n: string) => ({ title: `${b}: bugünün indirimleri`, body: `${n} üründe bugün fiyat düştü. Hepsi markanın sayfasında.` }),
-      (b: string, n: string) => ({ title: `${b}: indirimlere bir bak`, body: `${n} üründe yeni fiyat düşüşü var. Güncel fiyatlar burada.` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}: yeni gelenler`, body: `${n} yeni parça eklendi. Hemen göz at.` }),
-      (b: string, n: string) => ({ title: `${b}: ${n} yeni parça`, body: "Yeni gelenlere göz at. Beğendiklerini takibe alabilirsin." }),
-      (b: string, n: string) => ({ title: `${b}: yeni ürünler geldi`, body: `Bugün ${n} yeni ürün eklendi. Güncel indirimler de aynı sayfada.` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}: büyük indirim başladı`, body: `${n} ürünün fiyatı son saatlerde düştü. Güncel indirimlere bak.` }),
-      (b: string, n: string, pct: string) => ({ title: `${b}: indirim zamanı`, body: `${n} üründe en az %${pct} fiyat düşüşü var. Hepsine göz at.` }),
-    ],
+  daily: {
+    fromFollowed: 'Takip ettiğin markadan',
+    onSale: (b: string) => `${b}: indirimde`,
+    saleStarted: (b: string) => `${b}: indirim başladı`,
+    justAdded: (b: string) => `${b}: yeni eklendi`,
   },
   saleCalendar: {
-    "1111-eve-2026": { title: "Yarın 11.11", body: "İstediğin ürünleri şimdi takibe al, fiyatı düşünce ilk sen öğren." },
-    "efsane-cuma-eve-2026": { title: "Yarın Efsane Cuma", body: "Beğendiklerini takibe al; fiyatı düşünce ya da bedenin gelince haber verelim." },
+    "1111-eve-2026": { title: "11.11 yarın", body: "Beğendiklerini takibe al, fiyatı düşünce haber verelim." },
+    "efsane-cuma-eve-2026": { title: "Efsane Cuma yarın", body: "Beğendiklerini takibe al; fiyatı düşünce ya da bedenin gelince haber verelim." },
   },
   reminder: {
-    title: "Takibin sürüyor 👀",
-    body: (n: number) =>
-      `${n} ürününü izliyoruz: fiyatı düşünce ya da bedenin gelince haber vereceğiz. Bu arada bugünkü indirimlere göz at.`,
+    title: "Listendekiler",
+    body: (n: number) => `${n} ürün listende. Fiyatı düşerse ya da bedenin gelirse haber veririz.`,
   },
   welcome: {
     and: " ve ",
-    drops1Title: (n: number, pct: string) => `Bugün ${n} üründe ${pct}+ indirim`,
-    drops1Body: (brands: string) => `${brands} başı çekiyor. Bedenin tükenmeden göz at.`,
+    drops1Title: (n: number, pct: string) => `Bugün ${n} üründe ${pct} ve üzeri indirim`,
+    drops1Body: (brands: string) => `${brands} bugünün indirimlerinde.`,
     deal3Title: (brand: string, pct: string) => `${brand}: ${pct} indirim`,
-    deal3Body: (name: string, price: string) => `${name} şimdi ${price}. ♡ ile takibe al, daha da düşerse ilk sen öğren.`,
-    look5Title: "Sana özel bir kombin",
-    look5Body: "Stilistimiz bugünün indirimlerinden bir kombin hazırladı. Her parçayı tek dokunuşla değiştir.",
+    deal3Body: (name: string, price: string) => `${name} şimdi ${price}. Takibe al, fiyatı düşünce haber verelim.`,
+    look5Title: "Bugünün kombini",
+    look5Body: "Bugünün indirimlerinden bir kombin. Her parçayı değiştirebilirsin.",
     week7Title: (n: string) => `Bu hafta ${n} yeni indirim`,
-    week7Body: "Beğendiğin bir ürünü takibe al, sadece senin ürünlerin için haber verelim.",
+    week7Body: "Beğendiğin bir ürünü takibe al, fiyatı düşünce haber verelim.",
   },
   signIn: {
     subject: (code: string) => `Modadrop giriş kodun: ${code}`,
@@ -72,7 +60,8 @@ export const tr: ServerCopy = {
     note: "Kod 10 dakika geçerli. Bu isteği sen yapmadıysan bu e-postayı yok sayabilirsin — hesabında hiçbir şey değişmez.",
   },
   stilist: {
-    alarmTitle: (n: number) => `Asistan alarmı: ${n} yeni eşleşme`,
+    alarmFor: (q: string) => `Aradığın: ${q}`,
+    alarmTitle: (n: number) => `Aradığın üründen ${n} yeni model`,
     interestTitle: (what: string, n: number) => (n === 1 ? `${what} için yeni ürün` : `${what} için ${n} yeni ürün`),
     yourSearch: "aradığın ürün",
     interestBody: (item: string) => `${item} yeni geldi.`,

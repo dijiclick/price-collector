@@ -113,7 +113,8 @@ export function alarmWhere(f: AlarmFilters, country: string, since: string, newO
 
 export function alarmMessage(lang: string | null, summary: string | null, n: number, top: { brand: string; name: string; price: number; currency: string | null }): { title: string; body: string } {
   const item = `${BRAND_LABELS[top.brand] ?? top.brand} ${top.name} ${money(top.price, top.currency)}`;
-  return { title: serverCopy(lang).stilist.alarmTitle(n), body: summary ? `${summary} — ${item}` : item };
+  const c = serverCopy(lang).stilist;
+  return { title: summary ? c.alarmFor(summary) : c.alarmTitle(n), body: item };
 }
 
 /** "You searched for X: N new products" — the brand of the best one named. */

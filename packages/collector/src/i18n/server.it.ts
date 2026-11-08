@@ -8,6 +8,7 @@ import type { ServerCopyPartial } from "./server";
  */
 export const it: ServerCopyPartial = {
   alert: {
+    line: (was: string, now: string) => `${now} invece di ${was}.`,
     restock: (size: string | null) => (size ? `Taglia ${size} di nuovo disponibile 🎉` : "Di nuovo disponibile 🎉"),
     target: (drop: string) => `🎯 Obiettivo raggiunto: ${drop}`,
     refund: (saving: string, now: string) => `${saving} in meno di quanto hai pagato: ora costa ${now}. Puoi restituirlo e ricomprarlo.`,
@@ -32,16 +33,11 @@ export const it: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `Al via gli sconti: ${brand}`,
     saleStartBody: "Controlla i prodotti che segui e le tue taglie prima che finiscano.",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}: nuove offerte`, body: `Oggi sono scesi ${n} prezzi. Guarda le offerte.` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}: nuovi arrivi`, body: `Sono arrivati ${n} nuovi capi. Dai un'occhiata.` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}: sono iniziati i saldi`, body: `${n} prezzi sono appena scesi. Guarda le offerte.` }),
-    ],
+  daily: {
+    fromFollowed: 'Da un brand che segui',
+    onSale: (b: string) => `${b}: in saldo`,
+    saleStarted: (b: string) => `${b}: saldi iniziati`,
+    justAdded: (b: string) => `${b}: novità`,
   },
   saleCalendar: {
     "1111-eve-2026": { title: "Domani è l’11.11", body: "Segui ora quello che vuoi e scopri subito quando il prezzo scende." },
@@ -69,6 +65,7 @@ export const it: ServerCopyPartial = {
     note: "Il codice è valido per 10 minuti. Se non l’hai richiesto tu, ignora questa email: sul tuo account non cambia nulla.",
   },
   stilist: {
+    alarmFor: (q: string) => `La tua ricerca: ${q}`,
     alarmTitle: (n: number) => `Allarme assistente: ${n} ${n === 1 ? "nuovo risultato" : "nuovi risultati"}`,
     interestTitle: (what: string, n: number) => (n === 1 ? `Novità per ${what}` : `${n} novità per ${what}`),
     yourSearch: "la tua ricerca",

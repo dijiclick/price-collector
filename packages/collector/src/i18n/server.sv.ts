@@ -10,8 +10,9 @@ import type { ServerCopyPartial } from "./server";
  */
 export const sv: ServerCopyPartial = {
   alert: {
+    line: (was: string, now: string) => `Nu ${now}, förut ${was}.`,
     restock: (size: string | null) => (size ? `Storlek ${size} är tillbaka i lager 🎉` : "Tillbaka i lager 🎉"),
-    target: (drop: string) => `🎯 Ditt målpris är nått — ${drop}`,
+    target: (drop: string) => `Ditt målpris är nått: ${drop}`,
     refund: (saving: string, now: string) => `${saving} billigare än du betalade: ${now}. Du kan returnera den och köpa den igen.`,
     withSize: (size: string, base: string) => `Storlek ${size} · ${base}`,
   },
@@ -36,16 +37,11 @@ export const sv: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `Rean har börjat hos ${brand}`,
     saleStartBody: "Kolla dina bevakade varor och storlekar innan de tar slut.",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}: nya erbjudanden`, body: `${n} priser har sänkts i dag. Se erbjudandena.` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}: nyheter`, body: `${n} nya plagg har kommit. Ta en titt.` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}: rean har börjat`, body: `${n} priser har precis sänkts. Se erbjudandena nu.` }),
-    ],
+  daily: {
+    fromFollowed: 'Från ett märke du följer',
+    onSale: (b: string) => `${b}: på rea`,
+    saleStarted: (b: string) => `${b}: rean har börjat`,
+    justAdded: (b: string) => `${b}: nytt`,
   },
   saleCalendar: {
     "1111-eve-2026": { title: "Imorgon är det 11.11", body: "Bevaka det du vill ha nu, så får du veta först när priset sjunker." },
@@ -73,6 +69,7 @@ export const sv: ServerCopyPartial = {
     note: "Koden gäller i 10 minuter. Om du inte har bett om den kan du ignorera det här mejlet – inget ändras på ditt konto.",
   },
   stilist: {
+    alarmFor: (q: string) => `Din sökning: ${q}`,
     alarmTitle: (n: number) => `Assistentlarm: ${n} ${n === 1 ? "ny träff" : "nya träffar"}`,
     interestTitle: (what: string, n: number) => (n === 1 ? `Ny träff på ${what}` : `${n} nya träffar på ${what}`),
     yourSearch: "din sökning",

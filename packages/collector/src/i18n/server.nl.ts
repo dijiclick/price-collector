@@ -7,8 +7,9 @@ import type { ServerCopyPartial } from "./server";
  */
 export const nl: ServerCopyPartial = {
   alert: {
+    line: (was: string, now: string) => `Nu ${now}, was ${was}.`,
     restock: (size: string | null) => (size ? `Maat ${size} is weer op voorraad 🎉` : "Weer op voorraad 🎉"),
-    target: (drop: string) => `🎯 Je streefprijs is bereikt — ${drop}`,
+    target: (drop: string) => `Je streefprijs is bereikt: ${drop}`,
     refund: (saving: string, now: string) => `${saving} goedkoper dan je betaalde: ${now}. Je kunt het retourneren en opnieuw kopen.`,
     withSize: (size: string, base: string) => `Maat ${size} · ${base}`,
   },
@@ -31,16 +32,11 @@ export const nl: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `De sale bij ${brand} is begonnen`,
     saleStartBody: "Check je gevolgde items en maten voordat ze op zijn.",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}: nieuwe deals`, body: `Vandaag zijn ${n} prijzen gedaald. Bekijk de deals.` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}: nieuw binnen`, body: `Er zijn ${n} nieuwe items binnen. Neem een kijkje.` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}: de sale is begonnen`, body: `${n} prijzen zijn net gedaald. Bekijk de deals van nu.` }),
-    ],
+  daily: {
+    fromFollowed: 'Van een merk dat je volgt',
+    onSale: (b: string) => `${b}: in de aanbieding`,
+    saleStarted: (b: string) => `${b}: sale begonnen`,
+    justAdded: (b: string) => `${b}: nieuw`,
   },
   saleCalendar: {
     "1111-eve-2026": { title: "Morgen is het 11.11", body: "Volg nu wat je wilt hebben en hoor als eerste wanneer de prijs daalt." },
@@ -68,6 +64,7 @@ export const nl: ServerCopyPartial = {
     note: "De code is 10 minuten geldig. Heb je hem niet aangevraagd? Negeer dan deze e-mail – er verandert niets aan je account.",
   },
   stilist: {
+    alarmFor: (q: string) => `Je zoekopdracht: ${q}`,
     alarmTitle: (n: number) => `Zoekalarm: ${n} ${n === 1 ? "nieuwe match" : "nieuwe matches"}`,
     interestTitle: (what: string, n: number) => (n === 1 ? `Nieuw voor ${what}` : `${n} nieuwe items voor ${what}`),
     yourSearch: "je zoekopdracht",

@@ -399,12 +399,12 @@ export async function main(adapters: BrandAdapter[]): Promise<void> {
   try {
     const { detectBrandSales } = await import("./brand-sales");
     await detectBrandSales(db);
-    // The followed-brand alert goes first: it is the daily one, and the
-    // round-up steps aside on an evening it already went (push-brands.ts).
-    const { pushBrands } = await import("./push-brands");
-    await pushBrands(db);
+    // A sale start or a calendar eve first: rarer, and the day's one nudge goes to
+    // it. Then the one push a day, to everybody who had no nudge today (push-brands.ts).
     const { pushNews } = await import("./push-news");
     await pushNews(db);
+    const { pushBrands } = await import("./push-brands");
+    await pushBrands(db);
   } catch (err) {
     console.error("push news failed:", err instanceof Error ? err.message : err);
   }

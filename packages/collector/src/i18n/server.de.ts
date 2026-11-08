@@ -10,8 +10,9 @@ import type { ServerCopyPartial } from "./server";
  */
 export const de: ServerCopyPartial = {
   alert: {
+    line: (was: string, now: string) => `Jetzt ${now}, vorher ${was}.`,
     restock: (size: string | null) => (size ? `Größe ${size} ist wieder verfügbar 🎉` : "Wieder verfügbar 🎉"),
-    target: (drop: string) => `🎯 Wunschpreis erreicht – ${drop}`,
+    target: (drop: string) => `Wunschpreis erreicht: ${drop}`,
     refund: (saving: string, now: string) => `${saving} günstiger als bezahlt: jetzt ${now}. Zurückschicken und günstiger neu kaufen.`,
     withSize: (size: string, base: string) => `Größe ${size} · ${base}`,
   },
@@ -34,16 +35,11 @@ export const de: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `Der Sale bei ${brand} hat begonnen`,
     saleStartBody: "Check deine beobachteten Artikel und Größen, bevor sie weg sind.",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}: neue Angebote`, body: `${n} Preise sind heute gefallen. Sieh dir die Angebote an.` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}: Neuheiten`, body: `${n} neue Teile sind da. Schau mal rein.` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}: großer Sale gestartet`, body: `${n} Preise sind gerade gefallen. Zu den aktuellen Angeboten.` }),
-    ],
+  daily: {
+    fromFollowed: 'Von einer Marke, der du folgst',
+    onSale: (b: string) => `${b}: im Angebot`,
+    saleStarted: (b: string) => `${b}: Sale gestartet`,
+    justAdded: (b: string) => `${b}: neu dabei`,
   },
   saleCalendar: {
     "1111-eve-2026": { title: "Morgen ist 11.11", body: "Beobachte jetzt, was du willst, und erfahre als Erstes, wenn der Preis fällt." },
@@ -71,6 +67,7 @@ export const de: ServerCopyPartial = {
     note: "Der Code ist 10 Minuten gültig. Wenn du ihn nicht angefordert hast, ignoriere diese E-Mail – an deinem Konto ändert sich nichts.",
   },
   stilist: {
+    alarmFor: (q: string) => `Deine Suche: ${q}`,
     alarmTitle: (n: number) => `Suchalarm: ${n} ${n === 1 ? "neuer Treffer" : "neue Treffer"}`,
     interestTitle: (what: string, n: number) => (n === 1 ? `Neu für ${what}` : `${n} neue Treffer für ${what}`),
     yourSearch: "deine Suche",

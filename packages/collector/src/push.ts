@@ -1,7 +1,8 @@
 import { logPushes } from "./push-log";
 import type { Db } from "./db";
 import { fromMinor } from "./normalize";
-import { BRAND_LABELS, percent } from "../../../lib/format";
+import { BRAND_LABELS, productTitle } from "../../../lib/format";
+import { fold } from "../../../lib/productTypes";
 import { copyLang, serverCopy } from "./i18n/server";
 import { hasCoinChannel,
   classifyToken, loadCreds, sendApns, sendFcm, type PushContent,
@@ -109,9 +110,35 @@ export interface PushMessage {
  * invent a price nobody is charging, and a lira sign over a British amount is
  * that mistake in the smallest possible space.
  */
+/** A product's name for a notification: no brand said twice, no shouting, cut at a word to fit `room`. */
+export function pushName(brand: string, name: string, lang: string | null, room: number): string {
+  const label = BRAND_LABELS[brand] ?? brand;
+  let n = productTitle(name).trim();
+  if (fold(n).startsWith(`${fold(label)} `)) n = n.slice(label.length + 1).trim();
+  // A shop's size and colour codes after a comma ("Basic t-shirt, l, bk3 siyah"), a dash inside.
+  n = n.split(",")[0].replace(/\s+[-–—]\s+/g, " ").trim();
+  // Who it is for says nothing on a notification, and takes the room.
+  n = n.replace(/^(kadın|women'?s|womens|woman|fabrika)\s+/i, "").replace(/^(kadın|women'?s)\s+/i, "").trim();
+  n = n.replace(/\s+/g, " ");
+  // A Turkish name stays Turkish for an English reader: "PUANTİYE".toLowerCase() keeps a combining dot.
+  const locale = copyLang(lang) === "tr" || /[İŞĞÇÖÜ]/.test(n) ? "tr-TR" : "en-US";
+  if (n === n.toLocaleUpperCase(locale) && /\p{L}{3}/u.test(n)) {
+    const low = n.toLocaleLowerCase(locale);
+    n = low.charAt(0).toLocaleUpperCase(locale) + low.slice(1);
+  }
+  if (n.length <= room) return n;
+  const cut = n.slice(0, room + 1);
+  const at = cut.lastIndexOf(" ");
+  return (at > 8 ? cut.slice(0, at) : n.slice(0, room)).trim();
+}
+
+/** A price in a notification: ₺650, not ₺650,00. Only an exact ",00" goes; ₺649,90 stays what the shop charges. */
+export const pushMoney = (formatted: string): string => formatted.replace(/[.,]00(?=\D|$)/, "");
+
 export function buildMessage(r: PushRow): PushMessage {
   const c = serverCopy(r.lang).alert;
-  const title = `${BRAND_LABELS[r.brand] ?? r.brand} · ${r.name}`;
+  const label = BRAND_LABELS[r.brand] ?? r.brand;
+  const title = `${label} ${pushName(r.brand, r.name, r.lang, Math.max(12, 40 - label.length - 1))}`;
   if (r.type === "back_in_stock") {
     return {
       to: r.token,
@@ -121,7 +148,7 @@ export function buildMessage(r: PushRow): PushMessage {
       channelId: "price-drops",
     };
   }
-  const money = (m: number) => fromMinor(m, r.currency, r.lang);
+  const money = (m: number) => pushMoney(fromMinor(m, r.currency, r.lang));
   // "Aldım": money they can get back beats any other framing of the drop.
   // Sent as kind "target" — an alert the user explicitly asked for, so muting
   // plain drops never swallows it, and older app builds already know the kind.
@@ -134,7 +161,7 @@ export function buildMessage(r: PushRow): PushMessage {
       channelId: "price-drops",
     };
   }
-  const drop = `${money(r.old_price)} → ${money(r.new_price)} (${percent(Math.abs(r.pct), { off: true }, copyLang(r.lang))})`;
+  const drop = c.line(money(r.old_price), money(r.new_price));
   const goal = r.target != null && r.new_price <= r.target;
   const base = goal ? c.target(drop) : drop;
   return {
@@ -511,6 +538,17 @@ export async function pushNotify(db: Db, opts: PushNotifyOpts = {}): Promise<num
        -- Gratis drops are card-price campaigns that come and go (gratis.ts):
        -- shown in the app, never pushed (owner 2026-10-18). Marked below.
        AND NOT (e.type = 'price_drop' AND p.brand = 'gratis')
+       -- Once per drop (2026-11-08): a price flipping between crawls made a new
+       -- "drop" each time, 455 of 469 alerts in 14 days repeated one the device
+       -- already had (one blazer 40 times, 3000 to 2727). Only a price lower
+       -- than every drop of the last 30 days is news.
+       AND NOT (e.type = 'price_drop' AND EXISTS (
+         SELECT 1 FROM events prev WHERE prev.product_id = e.product_id AND prev.type = 'price_drop'
+            AND prev.id <> e.id AND prev.ts < e.ts AND prev.ts > e.ts - interval '30 days' AND prev.new_price <= e.new_price))
+       -- The same for a size that keeps coming and going.
+       AND NOT (e.type = 'back_in_stock' AND e.size IS NOT NULL AND EXISTS (
+         SELECT 1 FROM events prev WHERE prev.product_id = e.product_id AND prev.type = 'back_in_stock'
+            AND prev.size = e.size AND prev.id <> e.id AND prev.ts < e.ts AND prev.ts > e.ts - interval '3 days'))
        AND NOT EXISTS (SELECT 1 FROM push_held h WHERE h.event_id = e.id AND h.token = w.token)`,
     [now.toISOString()],
   );

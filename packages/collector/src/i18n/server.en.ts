@@ -15,10 +15,12 @@
 export const en = {
   /** Personal price alerts (push.ts). */
   alert: {
-    restock: (size: string | null) => (size ? `Size ${size} is back in stock 🎉` : "Back in stock 🎉"),
-    target: (drop: string) => `🎯 Hit your target — ${drop}`,
-    refund: (saving: string, now: string) => `${saving} cheaper than you paid: ${now}. You can return it and buy it again.`,
-    withSize: (size: string, base: string) => `Size ${size} · ${base}`,
+    /** The two prices of a drop, in a sentence. */
+    line: (was: string, now: string) => `${now}, was ${was}.`,
+    restock: (size: string | null) => (size ? `Size ${size} is back` : "Back in stock"),
+    target: (drop: string) => `Your target price is here. ${drop}`,
+    refund: (saving: string, now: string) => `Now ${saving} less than you paid: ${now}. Check your return options.`,
+    withSize: (size: string, base: string) => `Size ${size}. ${base}`,
   },
   /** The alert email (notifier.ts). */
   email: {
@@ -38,33 +40,21 @@ export const en = {
     /** Joins the last two brand names: "Zara, Mango and H&M". */
     and: "and",
     digestTitle: (n: number) => `${n} new ${n === 1 ? "drop" : "drops"} on your brands`,
-    digestBody: (brands: string) => `${brands}: prices just fell. Take a look before your size goes.`,
+    digestBody: (brands: string) => `${brands} cut prices.`,
     saleStartTitle: (brand: string) => `The ${brand} sale has started`,
-    saleStartBody: "Check your tracked items and sizes before they go.",
+    saleStartBody: "Check the prices of your tracked items.",
   },
   /**
-   * The daily followed-brand alert (push-brands.ts, 2026-11-07). Templates from
-   * Codex's review; one is picked per device and day so the wording varies.
+   * The one push a day (push-brands.ts, 2026-11-08): one real product, its price.
+   * Titles and wording reviewed with Codex.
    * `n` arrives formatted, `pct` is the smallest qualifying cut. "New
    * arrivals", never "collection": a launch cannot be told from a restock.
    */
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}: new deals`, body: `${n} prices dropped today. See the deals available now.` }),
-      (b: string, n: string) => ({ title: `${b}: ${n} new deals`, body: "Fresh deals from a brand you follow. Take a look." }),
-      (b: string, n: string, pct: string) => ({ title: `${b}: prices dropped`, body: `${n} items dropped by at least ${pct}%. See the latest deals.` }),
-      (b: string, n: string) => ({ title: `${b}: today's deals`, body: `${n} prices dropped today. Find them on the brand page.` }),
-      (b: string, n: string) => ({ title: `${b}: take a look`, body: `${n} more prices have dropped. Check the current deals.` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}: new arrivals`, body: `${n} new pieces just landed. Have a look.` }),
-      (b: string, n: string) => ({ title: `${b}: ${n} new pieces`, body: "Just added today. Track anything you like." }),
-      (b: string, n: string) => ({ title: `${b}: just in`, body: `${n} new pieces today. Current deals are on the same page.` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}: big sale started`, body: `${n} prices dropped in the past few hours. See the current deals.` }),
-      (b: string, n: string, pct: string) => ({ title: `${b}: sale time`, body: `${n} items dropped by at least ${pct}%. Browse them now.` }),
-    ],
+  daily: {
+    fromFollowed: 'From a brand you follow',
+    onSale: (b: string) => `${b}: on sale`,
+    saleStarted: (b: string) => `${b}: sale started`,
+    justAdded: (b: string) => `${b}: just added`,
   },
   /**
    * Sale-calendar eves (sale-calendar.ts), keyed by the campaign key there. A
@@ -72,27 +62,26 @@ export const en = {
    * English entry is not sent to that reader at all.
    */
   saleCalendar: {
-    "1111-eve-2026": { title: "11.11 is tomorrow", body: "Track what you want now and hear first when it drops." },
-    "efsane-cuma-eve-2026": { title: "Black Friday is tomorrow", body: "Track your picks now and we'll tell you the moment prices fall." },
+    "1111-eve-2026": { title: "11.11 is tomorrow", body: "Track what you like and we'll tell you when the price drops." },
+    "efsane-cuma-eve-2026": { title: "Black Friday is tomorrow", body: "Track what you like and we'll tell you when the price drops." },
   } as Record<string, { title: string; body: string }>,
   /** The one day-3 reminder (push-reminder.ts). */
   reminder: {
-    title: "Still watching for you 👀",
-    body: (n: number) =>
-      `We're watching your ${n} ${n === 1 ? "item" : "items"}: you'll hear when the price drops or your size is back. Meanwhile, see today's deals.`,
+    title: "Still on your list",
+    body: (n: number) => `${n} items on your list. We'll tell you if a price drops or your size is back.`,
   },
   /** The first-week welcome series (push-welcome.ts). `pct` is formatted ("30%"). */
   welcome: {
     and: " and ",
     drops1Title: (n: number, pct: string) => `${n} items dropped ${pct}+ today`,
-    drops1Body: (brands: string) => `${brands} lead today's drops. Have a look before your size goes.`,
+    drops1Body: (brands: string) => `${brands} are in today's deals.`,
     deal3Title: (brand: string, pct: string) => `${brand}: ${pct} off`,
-    deal3Body: (name: string, price: string) => `${name} is now ${price}. Tap ♡ to track it — we'll tell you if it drops again.`,
-    look5Title: "A look picked for you",
-    look5Body: "Our stylist put an outfit together from today's deals. Swap any piece with one tap.",
+    deal3Body: (name: string, price: string) => `${name} is now ${price}. Track it for price updates.`,
+    look5Title: "Today's look",
+    look5Body: "A look from today's deals. Swap any piece.",
     /** `n` arrives grouped ("1,240"). */
     week7Title: (n: string) => `${n} new deals this week`,
-    week7Body: "Track one item you like and we'll only message you about what's yours.",
+    week7Body: "Track one item you like and we'll tell you when the price drops.",
   },
   /**
    * The sign-in code email (lib/auth/mailer.ts), sent the moment someone taps
@@ -105,7 +94,8 @@ export const en = {
   },
   /** Assistant alarms and remembered searches (stilist-alarms.ts). */
   stilist: {
-    alarmTitle: (n: number) => `Assistant alarm: ${n} new ${n === 1 ? "match" : "matches"}`,
+    alarmFor: (q: string) => `For your search: ${q}`,
+    alarmTitle: (n: number) => `${n} new for your search`,
     /** `what` is the search in quotes, or `yourSearch`. */
     interestTitle: (what: string, n: number) => (n === 1 ? `New for ${what}` : `${n} new for ${what}`),
     yourSearch: "your search",

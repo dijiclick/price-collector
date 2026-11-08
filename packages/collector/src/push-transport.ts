@@ -75,6 +75,8 @@ export interface PushContent {
   sound?: "coin";
   /** Android only: this device created the "coin" channel (its prefs say `coin: true`). */
   coinChannel?: boolean;
+  /** The product's photo. Android shows it from FCM; iPhone needs a notification service extension (next store build). */
+  image?: string;
 }
 
 /** Whether a device's synced prefs say it has the coin channel (app ≥ 2.9.3). */
@@ -125,7 +127,7 @@ export function buildFcmMessage(token: string, c: PushContent): Record<string, u
   return {
     message: {
       token,
-      notification: { title: c.title, body: c.body },
+      notification: { title: c.title, body: c.body, ...(c.image ? { image: c.image } : {}) },
       data: Object.fromEntries(Object.entries(pushData(c)).map(([k, v]) => [k, String(v)])),
       android: {
         priority: "high",

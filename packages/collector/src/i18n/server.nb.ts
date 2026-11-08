@@ -8,8 +8,9 @@ import type { ServerCopyPartial } from "./server";
  */
 export const nb: ServerCopyPartial = {
   alert: {
+    line: (was: string, now: string) => `Nå ${now}, før ${was}.`,
     restock: (size: string | null) => (size ? `Størrelse ${size} er tilbake på lager 🎉` : "Tilbake på lager 🎉"),
-    target: (drop: string) => `🎯 Målprisen er nådd – ${drop}`,
+    target: (drop: string) => `Målprisen er nådd: ${drop}`,
     refund: (saving: string, now: string) => `${saving} billigere enn du betalte: ${now}. Du kan returnere den og kjøpe den på nytt.`,
     withSize: (size: string, base: string) => `Størrelse ${size} · ${base}`,
   },
@@ -31,16 +32,11 @@ export const nb: ServerCopyPartial = {
     saleStartTitle: (brand: string) => `Salget hos ${brand} har startet`,
     saleStartBody: "Sjekk varene og størrelsene du følger, før de forsvinner.",
   },
-  brandAlert: {
-    deals: [
-      (b: string, n: string) => ({ title: `${b}: nye tilbud`, body: `${n} priser har falt i dag. Se tilbudene.` }),
-    ],
-    arrivals: [
-      (b: string, n: string) => ({ title: `${b}: nyheter`, body: `${n} nye plagg har kommet. Ta en titt.` }),
-    ],
-    sale: [
-      (b: string, n: string) => ({ title: `${b}: salget har startet`, body: `${n} priser har nettopp falt. Se tilbudene nå.` }),
-    ],
+  daily: {
+    fromFollowed: 'Fra et merke du følger',
+    onSale: (b: string) => `${b}: på salg`,
+    saleStarted: (b: string) => `${b}: salget har startet`,
+    justAdded: (b: string) => `${b}: nyhet`,
   },
   saleCalendar: {
     "1111-eve-2026": { title: "11.11 er i morgen", body: "Følg det du vil ha nå, og bli den første som får vite når prisen synker." },
@@ -68,6 +64,7 @@ export const nb: ServerCopyPartial = {
     note: "Koden er gyldig i 10 minutter. Hvis du ikke ba om den, kan du se bort fra denne e-posten – ingenting endres på kontoen din.",
   },
   stilist: {
+    alarmFor: (q: string) => `Søket ditt: ${q}`,
     alarmTitle: (n: number) => `Søkealarm: ${n} ${n === 1 ? "nytt treff" : "nye treff"}`,
     interestTitle: (what: string, n: number) => (n === 1 ? `Nytt treff på ${what}` : `${n} nye treff på ${what}`),
     yourSearch: "søket ditt",
