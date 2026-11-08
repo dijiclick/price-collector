@@ -28,6 +28,16 @@ async function main(): Promise<void> {
       const sent = await pushNotify(db);
       console.log(`priority: ${sent} pushes`);
     }
+    // The one push a day has a 3-hour evening window and a full sweep can miss it
+    // (10-25 to 11-07: 7 of 14 evenings in Turkey). This job runs far more often
+    // and holds the same concurrency group, so nothing can send it twice.
+    try {
+      const { pushBrands } = await import("./push-brands");
+      const daily = await pushBrands(db);
+      console.log(`priority: ${daily} daily pushes`);
+    } catch (err) {
+      console.error("daily push failed:", err instanceof Error ? err.message : err);
+    }
   } finally {
     await db.close();
   }
