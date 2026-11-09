@@ -94,17 +94,30 @@ export function parseCourirGrid(html: string, country: CountryCode = "FR"): Prod
 export async function listCourir(country: CountryCode): Promise<ProductRecord[]> {
   if (country !== "FR") return [];
   const byId = new Map<string, ProductRecord>();
+  const seen = new Set<string>();
   for (let page = 0; page < MAX_PAGES; page++) {
     if (page) await new Promise((r) => setTimeout(r, 700));
-    const html = await getText(courirGridUrl(page * PAGE), {
-      country,
-      timeoutMs: 30000,
-      headers: { "X-Requested-With": "XMLHttpRequest", "Accept-Language": "fr-FR,fr;q=0.9", Referer: `${HOST}/fr/c/promotions-en-cours/` },
-    });
-    const tiles = html.split('js-product-tile"').length - 1;
+    let html: string;
+    try {
+      html = await getText(courirGridUrl(page * PAGE), {
+        country,
+        timeoutMs: 30000,
+        headers: { "X-Requested-With": "XMLHttpRequest", "Accept-Language": "fr-FR,fr;q=0.9", Referer: `${HOST}/fr/c/promotions-en-cours/` },
+      });
+    } catch (e) {
+      // A refusal deep in the walk (seen 2026-11-09: 403 at start=504) must not
+      // throw away the pages already read.
+      if (byId.size) break;
+      throw e;
+    }
+    const ids = [...html.matchAll(/js-product-tile" data-itemid="([^"]+)"/g)].map((m) => m[1]);
+    const fresh = ids.filter((id) => !seen.has(id));
+    for (const id of ids) seen.add(id);
     for (const r of parseCourirGrid(html, country)) byId.set(r.externalId, r);
-    // A page can hold one tile fewer than `sz` (a content slot), so stop on an empty page.
-    if (tiles === 0) break;
+    // Past the end the grid is not empty: it repeats one unpromoted tile
+    // (measured 2026-11-09), so stop on a page with nothing new, or a short page.
+    // A full page can hold one tile fewer than `sz` (a content slot).
+    if (!fresh.length || ids.length < PAGE - 1) break;
   }
   return [...byId.values()].slice(0, CAP);
 }

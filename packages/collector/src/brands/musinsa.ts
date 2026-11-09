@@ -276,8 +276,24 @@ export async function listMusinsaStore(ourSlug: string, country: CountryCode): P
   }
   const all = [...byId.values()];
   if (all.length === 0) return listMusinsaStoreFullPrice(ourSlug, slug, country);
+  if (all.length < MIN_SALE_ROWS) {
+    // The tail of a sale (WHO.A.U, 2026-11-09: 4 reduced rows left of ~234):
+    // returning only those leaves the rest "in stock" at last sale's prices.
+    // Walk the full-price catalogue instead; the few reduced rows keep their
+    // strike there. If that walk fails, the sale rows still go out.
+    try {
+      const full = await listMusinsaStoreFullPrice(ourSlug, slug, country);
+      const ids = new Set(full.map((r) => r.externalId));
+      return [...full, ...all.filter((r) => r.inStock && !ids.has(r.externalId))].slice(0, CAP);
+    } catch {
+      /* fall through to the sale rows */
+    }
+  }
   return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
 }
+
+/** Fewer reduced rows than this and the store is between sales (see above). */
+export const MIN_SALE_ROWS = 30;
 
 /**
  * Between sales (Matin Kim, 2026-11-03 →: its store's sale filter answers no
