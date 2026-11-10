@@ -142,8 +142,14 @@ function inTurn<T>(job: () => Promise<T>): Promise<T> {
 
 const limited = (d: any): boolean => /TOO_MANY_REQUESTS/.test(String(d?.errors?.[0]?.extensions?.code ?? ""));
 
+/** 4 s apart in market order, so 18 markets do not open with one burst. */
+export const startOffset = (country: CountryCode): number =>
+  Math.max(0, Object.keys(MYTHERESA_MARKETS).indexOf(country)) * Number(process.env.MYTHERESA_STAGGER_MS ?? 4000);
+
 export async function listMytheresa(country: CountryCode): Promise<ProductRecord[]> {
   if (!MYTHERESA_MARKETS[country]) return [];
+  // Stagger the markets' first call (they all start together, one runner each).
+  await sleep(startOffset(country));
   const byId = new Map<string, ProductRecord>();
   const problems: string[] = [];
   let seen = 0;
@@ -155,8 +161,11 @@ export async function listMytheresa(country: CountryCode): Promise<ProductRecord
           getJson<any>(API, { country, method: "POST", body: requestBody(page), headers: requestHeaders(country, w.section), retries: 1, timeoutMs: 45_000 }),
         ).catch((e) => ({ errors: [{ message: String(e).slice(0, 120) }] }));
       let d: any = await call();
-      if (limited(d)) {
-        await sleep(12_000);
+      // Every market's job starts at the same minute on its own runner, and the
+      // API limits them together (DE got nothing on 2026-11-10): back off 15,
+      // 30, then 45 s before giving a page up.
+      for (let i = 1; i <= 3 && limited(d); i++) {
+        await sleep(15_000 * i);
         d = await call();
       }
       const plp = d?.data?.xProductListingPageV2;

@@ -278,7 +278,7 @@ export const BRANDS: BrandInfo[] = [
   { slug: "torrid", label: "Torrid", category: "Giyim", logo: "/brands/torrid.svg", countries: ["US"] },
   { slug: "express", label: "Express", category: "Giyim", logo: "/brands/express.svg", countries: ["US"] },
   { slug: "marcjacobs", label: "Marc Jacobs", category: "Çanta", logo: "/brands/marcjacobs.svg", countries: ["US", "CA"] },
-  { slug: "cos", label: "COS", category: "Giyim", logo: "/brands/cos.svg", countries: ["US", "GB", "CH", "NO", "SE", "DK", "FI"] },
+  { slug: "cos", label: "COS", category: "Giyim", logo: "/brands/cos.svg", countries: ["US", "GB", "CH", "NO"] },
   { slug: "joefresh", label: "Joe Fresh", category: "Giyim", logo: "/brands/joefresh.svg", countries: ["CA"] },
   { slug: "sportchek", label: "Sport Chek", category: "Spor", logo: "/brands/sportchek.svg", countries: ["CA"] },
   { slug: "marks", label: "Mark's", category: "Giyim", logo: "/brands/marks.svg", countries: ["CA"] },

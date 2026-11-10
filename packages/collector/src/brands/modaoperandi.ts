@@ -58,6 +58,8 @@ export function mapModa(h: any, country: CountryCode): ProductRecord | null {
   const href = String(h?.href ?? "");
   const section = href.split("/")[1];
   if (!currency || !id || !title || (section !== "women" && section !== "men")) return null;
+  // A withdrawn label still sits in the index as "INACTIVE IMPORT BRAND …" and its page is a 404 (2026-11-10).
+  if (/\binactive\b/i.test(title) || /\binactive\b/i.test(String(h.designer_name ?? ""))) return null;
   const cur = currency.toLowerCase();
   const own = (Array.isArray(h.variants_data) ? h.variants_data : []).find((v: any) => String(v?.id) === id);
   const price = Math.round(Number(h[`markdown_price_${cur}`]) * 100);
