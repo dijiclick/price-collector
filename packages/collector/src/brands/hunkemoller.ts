@@ -48,6 +48,8 @@ export const HUNKEMOLLER_MARKETS: Partial<Record<CountryCode, Market>> = {
   SE: { origin: "https://www.hunkemoller.se", site: "hunkemoller-se", locale: "sv-SE", currency: "SEK" },
   NO: { origin: "https://www.hunkemoller.no", site: "hunkemoller-no", locale: "no-NO", currency: "NOK" },
   DK: { origin: "https://www.hunkemoller.dk", site: "hunkemoller-dk", locale: "da-DK", currency: "DKK" },
+  // 2026-11-10: hunkemoller.co.uk (siteId from its home page), GBP.
+  GB: { origin: "https://www.hunkemoller.co.uk", site: "hunkemoller-uk", locale: "en-GB", currency: "GBP" },
 };
 
 /** Root categories that hold the markdowns. */

@@ -72,8 +72,12 @@ import { maviUrl } from "./mavi";
 import { colinsUrl } from "./colins";
 import { mudoUrl } from "./mudo";
 import { SHOPIFY_RESOLVERS } from "./shopify";
+import { LUX_RESOLVERS } from "./lux-storefront";
+import { mytheresaUrl } from "./mytheresa";
+import { modaoperandiUrl } from "./modaoperandi";
 import { TICIMAX_RESOLVERS } from "./ticimax";
 import { lutvelizadeUrl } from "./lutvelizade";
+import { harryrosenUrl, thelasthuntUrl } from "./ca-algolia";
 
 export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduct | null>> = {
   lefties: leftiesUrl,
@@ -124,7 +128,14 @@ export const EXTRA_RESOLVERS: Record<string, (url: string) => Promise<LiveProduc
   mudo: mudoUrl,
   // 2026-10-11: every Shopify storefront (shopify-sites.ts) through one resolver.
   ...SHOPIFY_RESOLVERS,
+  // 2026-11-10: luxury Shopify-Markets stores (lux-sites.ts), tokenless Storefront API.
+  ...LUX_RESOLVERS,
+  mytheresa: mytheresaUrl,
+  modaoperandi: modaoperandiUrl,
   // 2026-10-23: small Turkish Ticimax shops (ticimax.ts), direct egress.
   ...TICIMAX_RESOLVERS,
   lutvelizade: lutvelizadeUrl,
+  // 2026-11-10: Canadian stores resolved from their own Algolia index (ca-algolia.ts).
+  harryrosen: harryrosenUrl,
+  thelasthunt: thelasthuntUrl,
 };

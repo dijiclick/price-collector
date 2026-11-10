@@ -20,6 +20,24 @@ export interface ShopifySite {
    * compare-at is the sum of the parts ("worth $284"), not a markdown.
    */
   skipTitle?: RegExp;
+  /**
+   * Multi-brand retailers: the product `vendor` is the real brand, stored as
+   * the row's `maker` (lib/maker.ts) — "Nike at Livestock".
+   */
+  vendorAsMaker?: boolean;
+  /** Prefix the vendor to titles that do not carry it ("Checked Coat" → "MM6 Checked Coat"). */
+  vendorInName?: boolean;
+  /**
+   * Walk `/collections/<handle>/products.json` instead of the whole catalogue
+   * (2026-11-10): for stores too large for the 40-page walk (Culture Kings,
+   * Myer-size multi-brand shops), the sale collection is read directly. Rows
+   * are still kept only when compare-at > price.
+   */
+  collections?: Partial<Record<CountryCode, string>>;
+  /** Multi-brand store: the product's `vendor` is the real brand (`maker`). */
+  vendorIsMaker?: boolean;
+  /** Products per call (default 250) — smaller for stores whose rows are huge (WEGO: ~40 KB a product). */
+  pageSize?: number;
 }
 
 export const SHOPIFY_STORES: ShopifySite[] = [

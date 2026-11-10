@@ -3,14 +3,30 @@
  * The website is Cloudflare-challenged; the Android app's GraphQL federation
  * (`constellation.ssense.com/graphql`, only an `x-client-version` header)
  * answers one product by id — the same source and id as the collector
- * (packages/collector/src/brands/ssense.ts). Prices are whole CAD dollars;
- * `lowestPrice(discountNames: [])` is the public price (no private-sale tags).
+ * (packages/collector/src/brands/ssense.ts). Prices are whole units of the
+ * market's currency; `lowestPrice(discountNames: [])` is the public price (no
+ * private-sale tags). The market is the url's `/en-<cc>/` prefix when SSENSE
+ * prices that country in its own currency (SSENSE_CURRENCY), else Canada.
  */
 import type { LiveProduct } from "../live-lookup";
 import { UA, countryFor, dispatcher, usingProxy } from "../live-http";
 
 const API = "https://constellation.ssense.com/graphql";
 const IMG = "c_scale,h_960/f_auto,q_auto";
+
+/** Markets SSENSE prices in their own currency (the collector's SSENSE_MARKETS). */
+export const SSENSE_CURRENCY: Record<string, string> = {
+  CA: "CAD", US: "USD", GB: "GBP", AU: "AUD", JP: "JPY", HK: "HKD",
+  DE: "EUR", FR: "EUR", IT: "EUR", ES: "EUR", NL: "EUR", BE: "EUR", AT: "EUR", IE: "EUR", PT: "EUR", FI: "EUR",
+};
+
+/** The market a pasted url is for: `/en-gb/`, `/fr-fr/`, `/ja-jp/` → GB, FR, JP; anything else Canada. */
+export function ssenseCountryFromUrl(url: string): string {
+  try {
+    const cc = new URL(url).pathname.match(/^\/[a-z]{2}-([a-z]{2})\//i)?.[1]?.toUpperCase();
+    return cc && SSENSE_CURRENCY[cc] ? cc : "CA";
+  } catch { return "CA"; }
+}
 
 export function ssenseIdFromUrl(url: string): { id: string; section: string } | null {
   let u: URL;
@@ -32,11 +48,11 @@ const QUERY = `query getProducts($country: String!, $first: Int!, $languageSelec
 const en = (v: any): string => String((v && typeof v === "object" ? v.en : v) ?? "").trim();
 
 /** Map a GraphQL body. Pure. */
-export function mapSsenseProduct(body: any, id: string, url: string): LiveProduct | null {
+export function mapSsenseProduct(body: any, id: string, url: string, market = "CA"): LiveProduct | null {
   const n = (body?.data?.products?.edges ?? []).map((e: any) => e?.node).find((x: any) => String(x?.id) === id);
   const title = en(n?.name);
   if (!n || !title) return null;
-  const pr = (Array.isArray(n.price) ? n.price : []).find((p: any) => p?.currency === "CAD");
+  const pr = (Array.isArray(n.price) ? n.price : []).find((p: any) => p?.currency === SSENSE_CURRENCY[market]);
   const regular = Math.round(Number(pr?.regularPrice) * 100);
   const low = Math.round(Number(pr?.lowestPrice?.amount) * 100);
   const price = low > 0 ? low : regular;
@@ -57,8 +73,8 @@ export function mapSsenseProduct(body: any, id: string, url: string): LiveProduc
     type: null,
     gender: n.gender === "women" ? "kadin" : n.gender === "men" ? "erkek" : null,
     colorName: null,
-    country: "CA",
-    currency: "CAD",
+    country: market as LiveProduct["country"],
+    currency: SSENSE_CURRENCY[market],
   };
 }
 
@@ -66,13 +82,14 @@ export async function ssenseUrl(url: string): Promise<LiveProduct | null> {
   const hit = ssenseIdFromUrl(url);
   if (!hit) return null;
   const clean = (() => { const u = new URL(url); u.search = ""; u.hash = ""; return u.toString(); })();
-  const country = countryFor("ssense", "CA");
+  const market = ssenseCountryFromUrl(url);
+  const country = countryFor("ssense", market);
   let body: any = null;
   try {
     const r = await fetch(API, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json", "User-Agent": UA, "x-client-version": "4.6.1" },
-      body: JSON.stringify({ query: QUERY, variables: { country: "CA", first: 1, where: [{ id: { equals: hit.id } }], with: { country: "CA", lang: "en" } } }),
+      body: JSON.stringify({ query: QUERY, variables: { country: market, first: 1, where: [{ id: { equals: hit.id } }], with: { country: market, lang: "en" } } }),
       signal: AbortSignal.timeout(8000),
       cache: "no-store",
       // @ts-expect-error undici's dispatcher is accepted by Node's fetch
@@ -87,5 +104,5 @@ export async function ssenseUrl(url: string): Promise<LiveProduct | null> {
     console.warn(`live-lookup: constellation.ssense.com unreachable — ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
-  return body ? mapSsenseProduct(body, hit.id, clean) : null;
+  return body ? mapSsenseProduct(body, hit.id, clean, market) : null;
 }

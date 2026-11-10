@@ -2,6 +2,8 @@ import type { ProductRecord } from "../types";
 import type { CountryCode } from "../../../../lib/countries";
 import { ALL_SHOPIFY as SHOPIFY_STORES } from "../../../../lib/live-brands/shopify-all";
 import { DTCA_BRANDS } from "./shopify-dtca";
+import { SHOPIFY_US1110 } from "../../../../lib/live-brands/shopify-us1110";
+import { CA1110_OUTLET_BRANDS } from "../../../../lib/live-brands/shopify-ca1110";
 import { listShopify } from "./_shopify";
 
 export { SHOPIFY_STORES };
@@ -20,6 +22,14 @@ const OWN_ENTRY = new Set([
   "reebok", "jdsports", ...DTCA_BRANDS,
   // 2026-10-21: products.json challenged mid-walk; Storefront API (countryroad.ts).
   "countryroad",
+  // 2026-11-10: sale collection through the Storefront API (us1110.ts).
+  ...SHOPIFY_US1110.map((s) => s.brand),
+  // 2026-11-10: Canadian outlets too big for the full walk — read per sale collection (shopify-ca-outlets.ts).
+  ...CA1110_OUTLET_BRANDS,
+  // 2026-11-10: Fenwick walks its sale collections and sets `maker` (fenwick.ts).
+  "fenwick",
+  // 2026-11-10: three Ted Baker storefronts (US Storefront API, UK own, UAE Shopify) — one entry in registry-intl.
+  "tedbaker",
 ]);
 
 export const shopifyStore = (brand: string) => SHOPIFY_STORES.find((s) => s.brand === brand)!;

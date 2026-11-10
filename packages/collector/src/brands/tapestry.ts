@@ -38,7 +38,7 @@ import { getJson, getText } from "../http";
 import { toMinor } from "../normalize";
 import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 
-export type TapestryBrand = "coachoutlet" | "katespadeoutlet";
+export type TapestryBrand = "coachoutlet" | "katespadeoutlet" | "katespade";
 
 interface Market {
   /** XGen collection (the SDK's localeConfig key); absent = the default (US) index. */
@@ -74,6 +74,19 @@ export const TAPESTRY: Record<TapestryBrand, BrandConfig> = {
     context: {},
     defaultGender: "kadin",
     // katespadeoutlet.ca is parked; there is no Canadian outlet store.
+    markets: { US: {} },
+  },
+  // Kate Spade's full-price store, katespade.com (2026-11-10): its own XGen
+  // client (ids from the storefront's page config). Same hit shape; `price` is
+  // the retail price and `sale_price` the marked-down one, shown struck through
+  // on the site's /shop/sale pages. This deployment ignores the "Percent Off"
+  // facet (same totals with and without it), so the terms return the whole
+  // range and the mapper keeps only the reduced colours.
+  katespade: {
+    clientId: "c173037b7db67919c59df6c1d1a926b4",
+    deploymentId: "41ea3f7f-36d6-4210-a8e0-3c5f7dc4ad84",
+    context: {},
+    defaultGender: "kadin",
     markets: { US: {} },
   },
 };

@@ -10,7 +10,16 @@ import { listShowpo } from "./brands/showpo";
 import { listSportsgirl } from "./brands/sportsgirl";
 import { listJdSports } from "./brands/jdsports";
 import { listJdSportsGb } from "./brands/jdsports-gb";
-import { listNext, listReiss } from "./brands/_nextplc";
+import { listNext, listReiss, listFatFace, listJoules, listGapGb } from "./brands/_nextplc";
+import { listFrasers } from "./brands/_frasers";
+import { listMonsoon } from "./brands/monsoon";
+import { listFenwick } from "./brands/fenwick";
+import { listTedBaker } from "./brands/tedbaker";
+import { listSize } from "./brands/size";
+import { listThg } from "./brands/_thg";
+import { listWhiteStuff } from "./brands/whitestuff";
+import { listSuperdry } from "./brands/superdry";
+import { listDune } from "./brands/dune";
 import { listRiverIsland } from "./brands/riverisland";
 import { listKappahl, listVita } from "./brands/_avensia";
 import { listXxl } from "./brands/xxl";
@@ -63,6 +72,9 @@ import { listAdoreMe } from "./brands/adoreme";
 import { listVeja } from "./brands/veja";
 import { listDotSt } from "./brands/globalwork";
 import { listPlatypus } from "./brands/vans";
+import { listUs1110, us1110Adapters } from "./brands/us1110";
+import { listVfUs } from "./brands/vf-us";
+import { listJcpenney } from "./brands/jcpenney";
 
 import { listGinaTricot } from "./brands/ginatricot";
 import { listNakd } from "./brands/nakd";
@@ -208,6 +220,10 @@ import { listSportChek } from "./brands/sportchek";
 import { listMarks } from "./brands/marks";
 import { listSportingLife } from "./brands/sportinglife";
 import { listSsense } from "./brands/ssense";
+import { LUX_BRANDS, listLux } from "./brands/_luxstorefront";
+import { listZalora } from "./brands/zalora";
+import { listMytheresa } from "./brands/mytheresa";
+import { listModaOperandi } from "./brands/modaoperandi";
 import * as topshop from "./brands/topshop";
 import * as newlook from "./brands/newlook";
 import * as asos from "./brands/asos";
@@ -233,6 +249,16 @@ import { listSprinter } from "./brands/sprinter";
 import { listSfera } from "./brands/sfera";
 import { listTous } from "./brands/tous";
 import { listBimbaYLola } from "./brands/bimbaylola";
+import { listHoltRenfrew } from "./brands/holtrenfrew";
+import { listHarryRosen } from "./brands/harryrosen";
+import { listTheLastHunt } from "./brands/thelasthunt";
+import { listVfCa } from "./brands/vf-ca";
+import { listCaOutlet } from "./brands/shopify-ca-outlets";
+// Rest-of-world package (2026-11-10)
+import { listMyer } from "./brands/myer";
+import { listSfraGulf, SFRA_GULF } from "./brands/sfra-gulf";
+import { listLevelShoes } from "./brands/levelshoes";
+import { COLUMBIA_AE, SHOPIFY_ROW } from "../../../lib/live-brands/shopify-row";
 
 type List = (country: CountryCode) => Promise<ProductRecord[]>;
 
@@ -245,7 +271,9 @@ const tr2 = (only: CountryCode, list: () => Promise<ProductRecord[]>): List => (
 
 export const intlAdapters: { brand: string; listProducts: List }[] = [
   // Turkey — Akinon storefronts and multi-brand stores (no proxy).
-  { brand: "gap", listProducts: byMarket(listGapTr, (c) => listGapInc("gap", c)) },
+  // Gap UK (2026-11-10) is run by Next: gap.co.uk through the Next platform's Bloomreach feed.
+  // Gulf GAP (gap.ae / gap.sa / gap.com.kw, Al Tayer) is its own SFCC shop — sfra-gulf.ts (2026-11-10).
+  { brand: "gap", listProducts: byMarket(listGapTr, (c) => (c === "GB" ? listGapGb(c) : SFRA_GULF.gap.markets[c] ? listSfraGulf("gap", c) : listGapInc("gap", c))) },
   // Gap Inc Factory stores (US/CA): same API, brand codes gapfs / brfs.
   { brand: "gapfactory", listProducts: (c) => listGapInc("gapfactory", c) },
   { brand: "brfactory", listProducts: (c) => listGapInc("brfactory", c) },
@@ -274,7 +302,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "michaelkors", listProducts: listMichaelKors },
   // Columbia (US/CA): the site's Unbxd search (Cloudflare walls the site, not this).
   // Turkey: columbia.com.tr is an Inveon Phantom storefront (no proxy).
-  { brand: "columbia", listProducts: byMarket(() => listPhantomBrand("columbia", "TR"), listColumbia) },
+  { brand: "columbia", listProducts: byMarket(() => listPhantomBrand("columbia", "TR"), (c) => (c === "AE" ? listShopify(COLUMBIA_AE, c) : listColumbia(c))) },
   // Tapestry outlets (owner OK 2026-10-12): XGen search; the "was" is the
   // outlet's comparable value, which the sites strike through.
   { brand: "coachoutlet", listProducts: (c) => listTapestry("coachoutlet", c) },
@@ -294,9 +322,10 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   // Vans AU (vans.com.au Magento GraphQL). UGG AU left out 2026-10-22: au.ugg.com
   // is Cloudflare-walled from every non-Australian IP (adapter kept);
   // ugg.com / vans.com are walled for every other market.
-  { brand: "vans", listProducts: byMarket(vansTr.listProducts, (c) => (c === "US" ? listVansUs(c) : listVans(c))) },
-  { brand: "timberland", listProducts: tr(timberland.listProducts) },
-  { brand: "underarmour", listProducts: byMarket(underarmour.listProducts, listUnderArmourNa) },
+  // Canada (2026-11-10): vans.com/en-ca and timberland.com/en-ca are the same VF storefront as the US (vf-ca.ts).
+  { brand: "vans", listProducts: byMarket(vansTr.listProducts, (c) => (c === "US" ? listVansUs(c) : c === "CA" ? listVfCa("vans", c) : listVans(c))) },
+  { brand: "timberland", listProducts: byMarket(timberland.listProducts, (c) => (c === "CA" ? listVfCa("timberland", c) : listVfUs("timberland", c))) },
+  { brand: "underarmour", listProducts: byMarket(underarmour.listProducts, (c) => (SFRA_GULF.underarmour.markets[c] ? listSfraGulf("underarmour", c) : listUnderArmourNa(c))) },
   { brand: "uspoloassn", listProducts: tr(uspoloassn.listProducts) },
   { brand: "cacharel", listProducts: tr(cacharel.listProducts) },
   { brand: "converse", listProducts: byMarket(converse.listProducts, listConverseUs) },
@@ -323,7 +352,7 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "lutvelizade", listProducts: tr(() => lutvelizade.listProducts("TR")) },
   // United States / Canada
   { brand: "oldnavy", listProducts: (c) => listGapInc("oldnavy", c) },
-  { brand: "bananarepublic", listProducts: (c) => listGapInc("bananarepublic", c) },
+  { brand: "bananarepublic", listProducts: (c) => (SFRA_GULF.bananarepublic.markets[c] ? listSfraGulf("bananarepublic", c) : listGapInc("bananarepublic", c)) },
   { brand: "athleta", listProducts: (c) => listGapInc("athleta", c) },
   { brand: "abercrombie", listProducts: (c) => listAnf("abercrombie", c) },
   { brand: "hollister", listProducts: (c) => listAnf("hollister", c) },
@@ -571,6 +600,11 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "clarks", listProducts: (c) => listClarks(c) },
   { brand: "adoreme", listProducts: (c) => listAdoreMe(c) },
   { brand: "veja", listProducts: (c) => listVeja(c) },
+  // ── Canada round (2026-11-10) — runner-verified, no proxy ──
+  { brand: "holtrenfrew", listProducts: (c) => listHoltRenfrew(c) },
+  { brand: "harryrosen", listProducts: (c) => listHarryRosen(c) },
+  { brand: "thelasthunt", listProducts: (c) => listTheLastHunt(c) },
+  ...(["svpsports", "gravitypope", "livestock", "getoutside", "belowthebelt", "melanielyne"] as const).map((b) => ({ brand: b, listProducts: (c: CountryCode) => listCaOutlet(b, c) })),
   // Rest of the world
   { brand: "tezenis", listProducts: (c) => listCalzedoniaGroup("tezenis", c) },
   { brand: "pedrodelhierro", listProducts: (c) => listTendam("pedrodelhierro", c) },
@@ -587,4 +621,44 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "phase-eight", listProducts: (c) => listTfgLondon("phase-eight", c) },
   { brand: "sweatybetty", listProducts: (c) => listSweatyBetty(c) },
   { brand: "spacenk", listProducts: (c) => listSpaceNk(c) },
+  // United States, 2026-11-10 (runner probes 42799363621, 42799467274, 42800469303).
+  ...us1110Adapters,
+  { brand: "jcpenney", listProducts: (c) => listJcpenney(c) },
+  { brand: "thenorthface", listProducts: (c) => (c === "CA" ? listVfCa("thenorthface", c) : listVfUs("thenorthface", c)) },
+  { brand: "katespade", listProducts: (c) => listTapestry("katespade", c) },
+  { brand: "soma", listProducts: (c) => listChicosFas("soma", c) },
+  // ── UK round (2026-11-10) — runner-verified (probe runs 42798407673, 42800582417, 42802608232, 42803687149), no proxy ──
+  // Next Total Platform sites: the same Bloomreach API as Next/Reiss.
+  { brand: "fatface", listProducts: listFatFace },
+  { brand: "joules", listProducts: listJoules },
+  // Frasers Group new-platform stores (Algolia): off-price designer and high-street brands.
+  { brand: "usc", listProducts: (c) => listFrasers("usc", c) },
+  { brand: "cruise", listProducts: (c) => listFrasers("cruise", c) },
+  { brand: "monsoon", listProducts: (c) => listMonsoon("monsoon", c) },
+  { brand: "accessorize", listProducts: (c) => listMonsoon("accessorize", c) },
+  // Fenwick: Shopify sale collections with `maker`. Ted Baker: Storefront API in GB context.
+  { brand: "fenwick", listProducts: (c) => listFenwick(c) },
+  { brand: "tedbaker", listProducts: (c) => (c === "GB" ? listTedBaker(c) : c === "AE" ? listShopify(SHOPIFY_ROW.find((s) => s.brand === "tedbaker")!, c) : listUs1110("tedbaker", c)) },
+  // size?: Bloomreach search (the Shopify feed is challenged).
+  { brand: "size", listProducts: (c) => listSize(c) },
+  // THG beauty (Horizon GraphQL): LOOKFANTASTIC GB + IE, Cult Beauty GB.
+  { brand: "lookfantastic", listProducts: (c) => listThg("lookfantastic", c) },
+  { brand: "cultbeauty", listProducts: (c) => listThg("cultbeauty", c) },
+  // White Stuff (Constructor) and Superdry (SFCC grid): GB plus the euro store Ireland is served from.
+  { brand: "whitestuff", listProducts: (c) => listWhiteStuff(c) },
+  { brand: "superdry", listProducts: (c) => listSuperdry(c) },
+  { brand: "dune", listProducts: (c) => listDune(c) },
+  // 2026-11-10: luxury multi-brand stores on Shopify Markets, one shop for every market (lib/live-brands/lux-sites.ts).
+  { brand: "zalora", listProducts: (c) => listZalora(c) },
+  { brand: "mytheresa", listProducts: (c) => listMytheresa(c) },
+  { brand: "modaoperandi", listProducts: (c) => listModaOperandi(c) },
+  ...LUX_BRANDS.map((b) => ({ brand: b, listProducts: (c: CountryCode) => listLux(b, c) })),
+  // Rest-of-world package, 2026-11-10 (AU, Gulf, Asia, Nordics).
+  { brand: "myer", listProducts: listMyer },
+  { brand: "galerieslafayette", listProducts: (c) => listSfraGulf("galerieslafayette", c) },
+  { brand: "thedealoutlet", listProducts: (c) => listSfraGulf("thedealoutlet", c) },
+  // Level Shoes: rejected 10-11 (no sale), back with a Sale facet on 2026-11-10.
+  { brand: "levelshoes", listProducts: listLevelShoes },
+  ...["marithe", "discoveryexpedition", "nationalgeographic", "roem", "glowny", "ojos", "fila", "rawrow"]
+    .map((b) => ({ brand: b, listProducts: (c: CountryCode) => listMusinsaStore(b, c) })),
 ];

@@ -18,9 +18,14 @@ import type { CountryCode } from "../../../../lib/countries";
 
 const APP = "KIJ46SYMWD";
 const KEY = "4e28949f630787f93a3ee5d8b6ede50e";
-const MARKETS: Partial<Record<CountryCode, { index: string; locale: string; path: string; currency: string }>> = {
+const MARKETS: Partial<Record<CountryCode, { index: string; locale: string; path: string; currency: string; filters?: string }>> = {
   US: { index: "prod_product_us", locale: "en-US", path: "en-us", currency: "USD" },
   CA: { index: "prod_product_ca", locale: "en-CA", path: "en-ca", currency: "CAD" },
+  // 2026-11-10. The UK index also holds ~18,700 non-product records, so it is
+  // asked for `isFullPrice:false` only (306 rows; Ireland 359). A "salepromo"
+  // row is a 3-for-2 shown as "33% OFF" — a basket offer, not a markdown.
+  GB: { index: "prod_product_uk", locale: "en-GB", path: "en-gb", currency: "GBP", filters: "isFullPrice:false" },
+  IE: { index: "prod_product_roi", locale: "en-IE", path: "en-ie", currency: "EUR", filters: "isFullPrice:false" },
 };
 const PER_PAGE = 1000;
 const MAX_PAGES = 5;
@@ -46,6 +51,7 @@ export function mapClarks(h: any, country: CountryCode): ProductRecord | null {
   if (!h?.objectID || !name || !slug || !Number.isInteger(price) || price <= 0 || !Number.isInteger(was) || was <= price) return null;
   if (h.price.currencyCode !== m.currency || (h.wasPrice.currencyCode && h.wasPrice.currencyCode !== m.currency)) return null;
   if (h.price.fractionDigits != null && h.price.fractionDigits !== 2) return null;
+  if (/promo/i.test(String(h.priceType ?? ""))) return null;
   const images = cleanGallery((h.images ?? []).filter((u: unknown) => typeof u === "string"));
   const sub = h[`productSubTypes.${m.locale}`];
   const colour = String(h[`mediumColor.${m.locale}`] ?? "").trim();
@@ -69,7 +75,7 @@ export function mapClarks(h: any, country: CountryCode): ProductRecord | null {
   };
 }
 
-/** Register as `listClarks(country)`. US + CA. */
+/** Register as `listClarks(country)`. US, CA, GB, IE. */
 export async function listClarks(country: CountryCode): Promise<ProductRecord[]> {
   const m = MARKETS[country];
   if (!m) return [];
@@ -81,7 +87,7 @@ export async function listClarks(country: CountryCode): Promise<ProductRecord[]>
       method: "POST",
       country,
       headers: { "X-Algolia-Application-Id": APP, "X-Algolia-API-Key": KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ query: "", page, hitsPerPage: PER_PAGE, attributesToHighlight: [] }),
+      body: JSON.stringify({ query: "", page, hitsPerPage: PER_PAGE, attributesToHighlight: [], ...(m.filters ? { filters: m.filters } : {}) }),
     });
     const hits: any[] = data?.hits;
     if (!Array.isArray(hits)) throw new Error(`clarks/${country}: Algolia page ${page} returned no hits array`);

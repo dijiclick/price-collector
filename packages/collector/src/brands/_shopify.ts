@@ -58,8 +58,9 @@ export function mapShopify(store: ShopifyStore, country: CountryCode, site: stri
     .filter((x) => Number.isFinite(x.price) && x.price > 0 && x.price < MAX_PRICE);
   if (!priced.length) return null;
   const pick = [...priced].sort((a, b) => Number(b.v.available) - Number(a.v.available) || a.price - b.price)[0];
-  const sizeKey = optionKey(p, /beden|size|numara|\bfit\b/i);
-  const colourKey = optionKey(p, /renk|colou?r|shade/i);
+  // Nordic stores name their options in Danish / Swedish / Norwegian / Finnish (2026-11-10).
+  const sizeKey = optionKey(p, /beden|size|numara|\bfit\b|st[øo]rrelse|storlek|koko/i);
+  const colourKey = optionKey(p, /renk|colou?r|shade|farve|f[äa]rg|farge|väri/i);
   const seen = new Set<string>();
   const sizes: SizeVariant[] = [];
   if (sizeKey) {
@@ -73,11 +74,14 @@ export function mapShopify(store: ShopifyStore, country: CountryCode, site: stri
   const colors = colourKey ? [...new Set(vs.map((v) => String(v?.[colourKey] ?? "").trim()).filter(Boolean))] : [];
   const imgs: string[] = (p.images ?? []).map((im: any) => im?.src).filter((u: unknown) => typeof u === "string");
   const type = typeof p.product_type === "string" ? p.product_type.split(">").pop()!.trim() : "";
+  const vendor = typeof p.vendor === "string" ? p.vendor.trim() : "";
+  const title = String(p.title).trim();
   return {
     brand: store.brand,
     country,
     externalId: String(p.id),
-    name: String(p.title).trim(),
+    name: store.vendorInName && vendor && !title.toLowerCase().includes(vendor.toLowerCase()) ? `${vendor} ${title}` : title,
+    ...(store.vendorAsMaker && vendor ? { maker: vendor } : {}),
     url: `${site}/products/${p.handle}`,
     imageUrl: imgs[0] ?? null,
     images: cleanGallery(imgs, imgs[0] ?? null),
@@ -86,6 +90,7 @@ export function mapShopify(store: ShopifyStore, country: CountryCode, site: stri
     currency: COUNTRIES[country].currency,
     inStock: vs.some((v) => v.available === true),
     category: type || null,
+    ...(store.vendorIsMaker && typeof p.vendor === "string" && p.vendor.trim() ? { maker: p.vendor.trim() } : {}),
     gender: genderOf(p, store.defaultGender ?? null),
     variants: sizes.length ? { colors, sizes } : null,
     colorName: colors.length === 1 ? colors[0] : null,
@@ -102,8 +107,14 @@ export const marketHeaders = (country: CountryCode) => ({
   cookie: `localization=${country}; cart_currency=${COUNTRIES[country].currency}`,
 });
 
-async function page(site: string, n: number, country: CountryCode): Promise<any[] | null> {
-  const url = `${site}/products.json?limit=250&page=${n}`;
+/** The feed to walk: one collection when the store names one for this market, else the whole catalogue. */
+export function feedUrl(store: ShopifyStore, site: string, country: CountryCode, n: number): string {
+  const handle = store.collections?.[country];
+  return `${site}${handle ? `/collections/${handle}` : ""}/products.json?limit=${store.pageSize ?? 250}&page=${n}`;
+}
+
+async function page(store: ShopifyStore, site: string, n: number, country: CountryCode): Promise<any[] | null> {
+  const url = feedUrl(store, site, country, n);
   for (let attempt = 0; attempt < 3; attempt++) {
     const data = await getJson<any>(url, { retries: 0, country, headers: marketHeaders(country) }).catch(() => null);
     if (Array.isArray(data?.products)) return data.products;
@@ -119,7 +130,7 @@ export async function listShopify(store: ShopifyStore, country: CountryCode): Pr
   const byId = new Map<string, ProductRecord>();
   for (let n = 1; n <= MAX_PAGES; n++) {
     if (n > 1) await sleep(PAUSE_MS);
-    const rows = await page(site, n, country);
+    const rows = await page(store, site, n, country);
     if (rows === null) {
       if (byId.size === 0 && n === 1) throw new Error(`${store.brand}/${country}: products.json refused`);
       break;
@@ -129,6 +140,9 @@ export async function listShopify(store: ShopifyStore, country: CountryCode): Pr
       const r = mapShopify(store, country, site, p);
       if (r && r.listPrice != null) byId.set(r.externalId, r);
     }
+    if (rows.length < (store.pageSize ?? 250)) break;
+    // A sale collection can be thousands deep: stop once the cap is full of in-stock rows.
+    if (store.collections?.[country] && [...byId.values()].filter((r) => r.inStock).length >= cap) break;
   }
   const all = [...byId.values()];
   return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, cap);

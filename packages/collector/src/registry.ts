@@ -54,13 +54,19 @@ import * as casio from "./brands/casio";
 import * as atasay from "./brands/atasay";
 import * as zenpirlanta from "./brands/zenpirlanta";
 import { shopifyAdapters } from "./brands/shopify-stores";
+import { listShopify } from "./brands/_shopify";
+import { GUESS_AU } from "../../../lib/live-brands/shopify-row";
+import { listSfraGulf } from "./brands/sfra-gulf";
 import { byMarket, intlAdapters } from "./registry-intl";
 import { listSephoraIntl } from "./brands/sephora-intl";
 import { listSephoraAsia } from "./brands/sephora-au";
 import { listSephoraCh } from "./brands/sephora-ch";
 import { listHmGulf } from "./brands/hm-gulf";
 import { listVictoriasSecretNA } from "./brands/victoriassecret-na";
+// Victoria's Secret UK is run by Next (victoriassecret.co.uk, Bloomreach) — 2026-11-10.
+import { listVictoriasSecretGb } from "./brands/_nextplc";
 import { listMarksIntl } from "./brands/marksandspencer-intl";
+import { listMarksAe } from "./brands/marksandspencer-ae";
 import * as victoriassecretIntl from "./brands/victoriassecret-intl";
 import * as modanisaIntl from "./brands/modanisa-intl";
 import * as marksandspencer from "./brands/marksandspencer";
@@ -87,7 +93,7 @@ import * as mudo from "./brands/mudo";
  */
 export const adapters: BrandAdapter[] = [
   { brand: zara.brand, country: "TR", listProducts: zara.listProducts },
-  { brand: guess.brand, country: "TR", listProducts: (c) => (c === "US" ? listGuessUs(c) : c === "CA" ? listGuessCa(c) : guess.listProducts(c)) },
+  { brand: guess.brand, country: "TR", listProducts: (c) => (c === "US" ? listGuessUs(c) : c === "CA" ? listGuessCa(c) : c === "AU" ? listShopify(GUESS_AU, c) : c === "AE" || c === "SA" ? listSfraGulf("guess", c) : guess.listProducts(c)) },
   { brand: penti.brand, country: "TR", listProducts: penti.listProducts },
   // Sephora is a different platform in every region: TR OCAPI, US/CA site API,
   // AU through Sephora Asia's API, CH its own SFCC (2026-10-11).
@@ -122,7 +128,7 @@ export const adapters: BrandAdapter[] = [
   // Twist and Mavi refuse GitHub runners; their Insider recommendation feeds do not (2026-10-11).
   { brand: "twist", country: "TR", listProducts: () => twistV2.listProducts("TR") },
   // Turkey: lacoste.com.tr (Akinon); US: the NA app's guest token + Salesforce Shopper API.
-  { brand: lacoste.brand, country: "TR", listProducts: byMarket(lacoste.listProducts, listLacosteIntl) },
+  { brand: lacoste.brand, country: "TR", listProducts: byMarket(lacoste.listProducts, (c) => (c === "AE" || c === "SA" || c === "QA" ? listSfraGulf("lacoste", c) : listLacosteIntl(c))) },
   { brand: pierrecardin.brand, country: "TR", listProducts: pierrecardin.listProducts },
   { brand: derimod.brand, country: "TR", listProducts: derimod.listProducts },
   // Added 2026-10-18 (owner: jewellery, watches and missing good brands).
@@ -140,8 +146,8 @@ export const adapters: BrandAdapter[] = [
   { brand: casio.brand, country: "TR", listProducts: casio.listProducts },
   { brand: atasay.brand, country: "TR", listProducts: atasay.listProducts },
   { brand: zenpirlanta.brand, country: "TR", listProducts: zenpirlanta.listProducts },
-  { brand: marksandspencer.brand, country: "TR", listProducts: byMarket(marksandspencer.listProducts, listMarksIntl) },
-  { brand: victoriassecret.brand, country: "TR", listProducts: byMarket(victoriassecret.listProducts, (c) => (c === "US" || c === "CA" ? listVictoriasSecretNA(c) : victoriassecretIntl.listProducts(c))) },
+  { brand: marksandspencer.brand, country: "TR", listProducts: byMarket(marksandspencer.listProducts, (c) => (c === "AE" ? listMarksAe(c) : listMarksIntl(c))) },
+  { brand: victoriassecret.brand, country: "TR", listProducts: byMarket(victoriassecret.listProducts, (c) => (c === "US" || c === "CA" ? listVictoriasSecretNA(c) : c === "GB" ? listVictoriasSecretGb(c) : victoriassecretIntl.listProducts(c))) },
   { brand: lcw.brand, country: "TR", listProducts: lcw.listProducts },
   { brand: defacto.brand, country: "TR", listProducts: defacto.listProducts },
   { brand: "mavi", country: "TR", listProducts: () => maviV2.listProducts("TR") },

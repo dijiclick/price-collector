@@ -74,6 +74,8 @@ export const ZALANDO_MARKETS: Partial<Record<CountryCode, { host: string; appDom
   ES: { host: "www.zalando.es", appDomain: 30, lang: "es", women: "mujer" },
   PT: { host: "www.zalando.pt", appDomain: 50, lang: "pt", women: "mulher-roupa" },
   IE: { host: "www.zalando.ie", appDomain: 48, lang: "en", women: "women" },
+  // GB (2026-11-10): shop id 16 from the same config; GBP.
+  GB: { host: "www.zalando.co.uk", appDomain: 16, lang: "en", women: "women" },
   SE: { host: "www.zalando.se", appDomain: 27, lang: "sv", women: "kvinna" },
   DK: { host: "www.zalando.dk", appDomain: 29, lang: "da", women: "damer" },
   FI: { host: "www.zalando.fi", appDomain: 28, lang: "fi", women: "naiset" },

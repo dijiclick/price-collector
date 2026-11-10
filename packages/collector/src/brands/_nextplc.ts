@@ -46,6 +46,31 @@ export const REISS_SITE: NextPlcSite = {
   genders: ["women", "men"], titleCase: false, sizes: false,
 };
 
+/**
+ * More Next Total Platform storefronts (2026-11-10): the same Bloomreach API
+ * with each site's own `accountId`/`domainKey` (in its home page HTML), runner-
+ * verified in probe run 42798407673. Reduced rows of the whole index that day:
+ * FatFace ~3,500 of 5,708 (a live sale), Joules ~850 of 2,868, Victoria's
+ * Secret UK ~950 of 5,668, Gap UK ~1,000 of 4,140. Their product-level `sizes`
+ * is empty, so no sizes. Joules also sells homeware — `next_gender` keeps it out.
+ */
+export const FATFACE_SITE: NextPlcSite = {
+  brand: "fatface", accountId: "7548", domainKey: "fatface", site: "https://www.fatface.com",
+  genders: ["women", "men"], titleCase: false, sizes: false,
+};
+export const JOULES_SITE: NextPlcSite = {
+  brand: "joules", accountId: "7323", domainKey: "joules", site: "https://www.joules.com",
+  genders: ["women", "men"], titleCase: false, sizes: false,
+};
+export const VS_UK_SITE: NextPlcSite = {
+  brand: "victoriassecret", accountId: "6505", domainKey: "victoriassecret_global", site: "https://www.victoriassecret.co.uk",
+  genders: ["women"], titleCase: false, sizes: false,
+};
+export const GAP_UK_SITE: NextPlcSite = {
+  brand: "gap", accountId: "7100", domainKey: "gapglobal", site: "https://www.gap.co.uk",
+  genders: ["women", "men"], titleCase: false, sizes: false,
+};
+
 const API = "https://core.dxpapi.com/api/v1/core/";
 const ROWS = 200;
 const MAX_PAGES = Number(process.env.NEXTPLC_MAX_PAGES ?? 15);
@@ -172,3 +197,7 @@ export async function listNextPlc(s: NextPlcSite, country: CountryCode): Promise
 
 export const listNext = (country: CountryCode) => listNextPlc(NEXT_SITE, country);
 export const listReiss = (country: CountryCode) => listNextPlc(REISS_SITE, country);
+export const listFatFace = (country: CountryCode) => listNextPlc(FATFACE_SITE, country);
+export const listJoules = (country: CountryCode) => listNextPlc(JOULES_SITE, country);
+export const listVictoriasSecretGb = (country: CountryCode) => listNextPlc(VS_UK_SITE, country);
+export const listGapGb = (country: CountryCode) => listNextPlc(GAP_UK_SITE, country);

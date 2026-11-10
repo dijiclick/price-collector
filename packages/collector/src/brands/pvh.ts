@@ -218,7 +218,13 @@ interface SfccSite {
 }
 
 export const PVH_SFCC: Record<PvhBrand, Partial<Record<CountryCode, SfccSite>>> = {
-  calvinklein: { US: { host: "https://www.calvinklein.us", site: "PVHCKUS", locale: "en_US", cgid: "Tier_0000010" } },
+  // Canada (2026-11-10): calvinklein.ca is the same SFRA build (`PVHCKCA`) and
+  // the US sale category id serves its sale grid, priced "$23.40 CAD"; a GitHub
+  // runner gets 200 with 16 tiles a page (probes 42799158188, 42799408876).
+  calvinklein: {
+    US: { host: "https://www.calvinklein.us", site: "PVHCKUS", locale: "en_US", cgid: "Tier_0000010" },
+    CA: { host: "https://www.calvinklein.ca", site: "PVHCKCA", locale: "en_CA", cgid: "Tier_0000010" },
+  },
   // Canada (2026-10-21): ca.tommy.com is the same SFRA build (`PVHTHCA`); the
   // US sale category id serves the Canadian sale grid, priced "$54.50 CAD".
   // Turkish IPs get 403 there; a GitHub runner gets 200 with tiles (probe 39652544828).

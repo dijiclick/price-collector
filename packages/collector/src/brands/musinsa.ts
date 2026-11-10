@@ -151,6 +151,23 @@ export const MUSINSA_STORES: Record<string, string> = {
   andar: "andar",
   matinkim: "matinkim",
   thisisneverthat: "thisisneverthat",
+  // 2026-11-10: more official Musinsa stores. Reduced / all goods across tops,
+  // outer, pants, dresses, bags and shoes: Marithé François Girbaud 1,029/1,288,
+  // Discovery Expedition 1,147/1,448, National Geographic 1,286/1,864, ROEM
+  // 315/386, GLOWNY 194/522, OJOS 74/198, FILA 76/588, RAWROW 124/167.
+  // LOW CLASSIC (25 usable reduced rows), NIEEH and VUNQUE (0: their strikes vary
+  // by option) are left out. Left out because (almost) every
+  // row carries a strike: Lee, KIRSH, MMLG, Andersson Bell, INSILENCE, LMC, Mark
+  // Gonzales, MLB, CITYBREEZE, LOOKAST, FALLETT, Sculptor, SINOON, Yale, 5252 by
+  // O!Oi, MAHAGRID, CODEGRAPHY, PARTIMENTO, TOFFEE, DEPOUND, MARHEN.J, KANGOL.
+  marithe: "marithefrancoisgirbaud",
+  discoveryexpedition: "discoveryexpedition",
+  nationalgeographic: "nationalgeographic",
+  roem: "roem",
+  glowny: "glowny",
+  ojos: "ojos",
+  fila: "fila",
+  rawrow: "rawrow",
 };
 
 /**

@@ -21,7 +21,7 @@ import { getJson } from "../http";
 import { toMinor } from "../normalize";
 import type { CountryCode } from "../../../../lib/countries";
 
-export type ChicosBrand = "chicos" | "whitehouseblackmarket";
+export type ChicosBrand = "chicos" | "whitehouseblackmarket" | "soma";
 
 interface ChicosSite {
   host: string;
@@ -39,6 +39,9 @@ export const CHICOS_SITES: Record<ChicosBrand, ChicosSite> = {
     key: "66576acefa5a819120f76b593743a2a4",
     index: "prod_whbm_products",
   },
+  // Soma (soma.com, lingerie/sleep, same Knitwell storefront) — key and app from
+  // the page payload, index from the app's own index list, 2026-11-10.
+  soma: { host: "https://www.soma.com", appId: "BPE12FH1AB", key: "45cd61c13d9577f871df58913e19b0d5", index: "prod_sma_products" },
 };
 
 const MARKDOWN = "(PRICE_STATUS:M1 OR PRICE_STATUS:M2 OR PRICE_STATUS:ML OR PRICE_STATUS:OS)";

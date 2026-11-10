@@ -53,6 +53,9 @@ export const ON_MARKETS: Partial<Record<CountryCode, { index: string; store: str
   AU: { index: "AU_products_production_v3", store: "au", site: "https://www.on.com/en-au" },
   JP: { index: "JP_products_production_v3", store: "jp", site: "https://www.on.com/ja-jp" },
   HK: { index: "HK_products_production_v3", store: "hk", site: "https://www.on.com/en-hk" },
+  // 2026-11-10: Canada has its own index (570 reduced colourways, CAD); a runner
+  // gets 200 from it (probe 42799158188) and on.com/en-ca answers the product URLs.
+  CA: { index: "CA_products_production_v3", store: "ca", site: "https://www.on.com/en-ca" },
 };
 
 const SLICES = ["womens", "mens", "unisex"];

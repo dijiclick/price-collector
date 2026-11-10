@@ -28,12 +28,30 @@ import type { CountryCode } from "../../../../lib/countries";
 
 export const brand = "altitudesports";
 
-const APP_ID = "I2Q2BWZE3K";
-const API_KEY = "8b62285e596a476fadc22970ed58e04a"; // public search-only key from the storefront bundle
-const INDEX = "PRODUCTS_ALS_en-CA_bestSeller";
-const HOST = `https://${APP_ID}-dsn.algolia.net`;
-const SITE = "https://www.altitude-sports.com";
-const CAP = 1500;
+/**
+ * One storefront of the Altitude Sports group. The Last Hunt (thelasthunt.com,
+ * the group's off-price outlet, added 2026-11-10) is the same Next.js build on
+ * its own Algolia app with the same record shape — see thelasthunt.ts.
+ */
+export interface AltiShop {
+  brand: string;
+  appId: string;
+  /** Public search-only key from the storefront bundle. */
+  apiKey: string;
+  index: string;
+  site: string;
+  cap: number;
+  /** Multi-brand outlet rows carry the real brand in `maker` (lib/maker.ts). */
+  setMaker?: boolean;
+}
+export const ALTITUDE: AltiShop = {
+  brand: "altitudesports",
+  appId: "I2Q2BWZE3K",
+  apiKey: "8b62285e596a476fadc22970ed58e04a",
+  index: "PRODUCTS_ALS_en-CA_bestSeller",
+  site: "https://www.altitude-sports.com",
+  cap: 1500,
+};
 const ATTRS = [
   "objectID",
   "slug",
@@ -71,6 +89,8 @@ export interface Walk {
   label: string;
   filter: string;
   gender: ProductRecord["gender"];
+  /** Read at most this many hits (default: Algolia's 1,000). */
+  limit?: number;
 }
 export const WALKS: Walk[] = [
   { label: "must brands", filter: anyBrand(MUST), gender: null },
@@ -79,18 +99,18 @@ export const WALKS: Walk[] = [
   { label: "men", filter: "attributes.gender:Men", gender: "erkek" },
 ];
 
-export function searchUrl(w: Walk): string {
+export function searchUrl(w: Walk, shop: AltiShop = ALTITUDE, hitsPerPage = 1000): string {
   const p = new URLSearchParams({
     query: "",
-    hitsPerPage: "1000",
+    hitsPerPage: String(w.limit ?? hitsPerPage),
     page: "0",
     filters: `discounted_percent > 0 AND ${SHELVES} AND ${w.filter}`,
     attributesToRetrieve: ATTRS,
     attributesToHighlight: "",
-    "x-algolia-application-id": APP_ID,
-    "x-algolia-api-key": API_KEY,
+    "x-algolia-application-id": shop.appId,
+    "x-algolia-api-key": shop.apiKey,
   });
-  return `${HOST}/1/indexes/${INDEX}?${p}`;
+  return `https://${shop.appId}-dsn.algolia.net/1/indexes/${shop.index}?${p}`;
 }
 
 const cents = (v: unknown): number[] =>
@@ -115,7 +135,8 @@ const sizeKey = (s: string) => {
 };
 
 /** Map one Algolia hit (one style) to its rows. Pure; [] unless genuinely reduced. */
-export function mapAltitude(hit: any, walk: Pick<Walk, "gender">): ProductRecord[] {
+export function mapAltitude(hit: any, walk: Pick<Walk, "gender">, shop: AltiShop = ALTITUDE): ProductRecord[] {
+  const brand = shop.brand;
   const id = String(hit?.objectID ?? "");
   const slug = String(hit?.slug ?? "");
   const title = String(hit?.name ?? "").trim();
@@ -133,12 +154,12 @@ export function mapAltitude(hit: any, walk: Pick<Walk, "gender">): ProductRecord
   const leaf = String(h.lvl2 ?? h.lvl1 ?? h.lvl0 ?? "").split(">").pop()?.trim() ?? "";
   const category = String(attrs.product_type_name ?? "").trim() || leaf || null;
   const inStock = Number(hit?.quantity_left) > 0;
-  const url = `${SITE}/p/${slug}`;
+  const url = `${shop.site}/p/${slug}`;
   const thumbs: any[] = Array.isArray(hit?.thumbnails) ? hit.thumbnails : [];
   const colours = [...new Set(thumbs.map((t) => String(t?.color_name ?? "").trim()).filter(Boolean))];
   const labels = [...new Set(arr(attrs.size).filter((s) => s && s !== "NA"))].sort((a, b) => sizeKey(a) - sizeKey(b));
   const sizes: SizeVariant[] = labels.map((label) => ({ label, availability: "in_stock" }));
-  const base = { brand, country: "CA" as const, name, url, currency: "CAD", inStock, category, gender };
+  const base = { brand, country: "CA" as const, name, url, currency: "CAD", inStock, category, gender, ...(shop.setMaker && make ? { maker: make } : {}) };
 
   const prices = [...new Set(cents(hit?.price?.CAD?.centAmount))];
   if (prices.length === 1) {
@@ -174,33 +195,36 @@ export function mapAltitude(hit: any, walk: Pick<Walk, "gender">): ProductRecord
       price: p[0],
       listPrice: regular,
       variants: { colors: [colour], sizes: [] },
-      groupKey: `altitudesports-${id}`,
+      groupKey: `${brand}-${id}`,
       colorName: colour,
     });
   }
   return out;
 }
 
-export async function listAltitudeSports(country: CountryCode): Promise<ProductRecord[]> {
+/** Walk one shop's sale. `perWalk` caps what each walk may read (Algolia's own limit is 1,000). */
+export async function listAltiShop(shop: AltiShop, walks: Walk[], country: CountryCode, perWalk = 1000): Promise<ProductRecord[]> {
   if (country !== "CA") return [];
   const byId = new Map<string, ProductRecord>();
   let hits = 0;
   const problems: string[] = [];
-  for (const [i, w] of WALKS.entries()) {
+  for (const [i, w] of walks.entries()) {
     if (i > 0) await sleep(600);
-    const data = await getJson<any>(searchUrl(w), { country, retries: 1, timeoutMs: 45_000 }).catch((e) => {
+    const data = await getJson<any>(searchUrl(w, shop, perWalk), { country, retries: 1, timeoutMs: 45_000 }).catch((e) => {
       problems.push(`${w.label}: ${String(e).slice(0, 120)}`);
-      console.warn(`altitudesports: ${w.label} failed: ${String(e).slice(0, 120)}`);
+      console.warn(`${shop.brand}: ${w.label} failed: ${String(e).slice(0, 120)}`);
       return null;
     });
     const list: any[] = Array.isArray(data?.hits) ? data.hits : [];
     hits += list.length;
-    if (Number(data?.nbHits) > 1000) console.warn(`altitudesports: ${w.label} has ${data.nbHits} hits; first 1000 read`);
-    for (const h of list) for (const r of mapAltitude(h, w)) if (!byId.has(r.externalId)) byId.set(r.externalId, r);
+    if (!w.limit && Number(data?.nbHits) > perWalk) console.warn(`${shop.brand}: ${w.label} has ${data.nbHits} hits; first ${perWalk} read`);
+    for (const h of list) for (const r of mapAltitude(h, w, shop)) if (!byId.has(r.externalId)) byId.set(r.externalId, r);
   }
-  if (hits === 0) throw new Error(`altitudesports: every sale walk returned no products (${problems.slice(0, 3).join("; ")})`);
+  if (hits === 0) throw new Error(`${shop.brand}: every sale walk returned no products (${problems.slice(0, 3).join("; ")})`);
   const all = [...byId.values()];
-  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
+  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, shop.cap);
 }
+
+export const listAltitudeSports = (country: CountryCode): Promise<ProductRecord[]> => listAltiShop(ALTITUDE, WALKS, country);
 
 export const listProducts = listAltitudeSports;

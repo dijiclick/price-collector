@@ -1,5 +1,9 @@
 /**
- * SSENSE (ssense.com/en-ca) — luxury multi-brand, Montréal; collected for Canada (CAD).
+ * SSENSE (ssense.com/en-<cc>) — luxury multi-brand, Montréal. Canada (CAD) since
+ * 2026-10-18; since 2026-11-10 every market where `priceByCountry` answers in
+ * the market's own currency (SSENSE_MARKETS: US, GB, AU, JP, HK and the euro
+ * countries). Korea, Singapore, the Gulf, Switzerland and the Nordics are
+ * priced in USD/EUR there, so they stay out.
  *
  * The website and its `.json` listing paths sit behind a Cloudflare challenge
  * that GitHub runners never pass. The Android app (`ssense.android.prod`
@@ -13,6 +17,7 @@
  * price — private-sale tags are deliberately not sent, so no member price
  * leaks in. Prices are whole CAD dollars. A row needs `lowestPrice.source` to
  * be a markdown and below the regular price. `variants[].stock` is per size.
+ * JPY/HKD amounts are whole units too and are stored ×100 like every currency.
  *
  * Women's sale first (~5,100 styles; newest positions first), then men's, 100
  * a page, ≤ 15 requests.
@@ -25,7 +30,15 @@ export const brand = "ssense";
 
 export const API = "https://constellation.ssense.com/graphql";
 export const CLIENT_VERSION = "4.6.1";
-const SITE = "https://www.ssense.com/en-ca";
+const SITE = "https://www.ssense.com";
+/**
+ * Markets whose `priceByCountry` currency is the market's own (measured
+ * 2026-11-10; a row in any other currency is dropped by the mapper anyway).
+ */
+export const SSENSE_MARKETS: Partial<Record<CountryCode, string>> = {
+  CA: "CAD", US: "USD", GB: "GBP", AU: "AUD", JP: "JPY", HK: "HKD",
+  DE: "EUR", FR: "EUR", IT: "EUR", ES: "EUR", NL: "EUR", BE: "EUR", AT: "EUR", IE: "EUR", PT: "EUR", FI: "EUR",
+};
 const PAGE = 100;
 const CAP = 1500;
 const IMG = "c_scale,h_960/f_auto,q_auto";
@@ -55,7 +68,7 @@ export const QUERY = `query getProducts($after: String = "", $country: String!, 
   }
 }`;
 
-export function requestBody(w: Walk, after: string): string {
+export function requestBody(w: Walk, after: string, country: CountryCode = "CA"): string {
   const where = [
     {
       inStock: { equals: "true" },
@@ -63,11 +76,11 @@ export function requestBody(w: Walk, after: string): string {
       channel: { equals: "website" },
       regularPrice: { gt: 0 },
       salePrice: { gt: 0 },
-      listableCountry: { in: ["CA"] },
+      listableCountry: { in: [country] },
       gender: { equals: w.gender },
     },
   ];
-  return JSON.stringify({ query: QUERY, variables: { after, country: "CA", first: PAGE, where, with: { country: "CA", lang: "en" } } });
+  return JSON.stringify({ query: QUERY, variables: { after, country, first: PAGE, where, with: { country, lang: "en" } } });
 }
 
 const slug = (s: string) =>
@@ -83,11 +96,13 @@ const en = (v: any): string => String((v && typeof v === "object" ? v.en : v) ??
 const img = (u: unknown): string | null => (typeof u === "string" && u.startsWith("https://") ? u.replace("__IMAGE_PARAMS__", IMG) : null);
 
 /** Map one product node. Pure; null unless a public markdown below the regular price. */
-export function mapSsense(n: any): ProductRecord | null {
+export function mapSsense(n: any, country: CountryCode = "CA"): ProductRecord | null {
   const id = String(n?.id ?? "").trim();
   const title = en(n?.name);
   if (!id || !title) return null;
-  const pr = (Array.isArray(n?.price) ? n.price : []).find((p: any) => p?.currency === "CAD");
+  const currency = SSENSE_MARKETS[country];
+  if (!currency) return null;
+  const pr = (Array.isArray(n?.price) ? n.price : []).find((p: any) => p?.currency === currency);
   const regular = Math.round(Number(pr?.regularPrice) * 100);
   const low = pr?.lowestPrice;
   const price = Math.round(Number(low?.amount) * 100);
@@ -105,17 +120,18 @@ export function mapSsense(n: any): ProductRecord | null {
 
   return {
     brand,
-    country: "CA",
+    country,
     externalId: id,
     name: make && !title.toLowerCase().startsWith(make.toLowerCase()) ? `${make} ${title}` : title,
-    url: `${SITE}/${section}/product/${brandSlug}/${slug(title)}/${id}`,
+    url: `${SITE}/en-${country.toLowerCase()}/${section}/product/${brandSlug}/${slug(title)}/${id}`,
     imageUrl: photos[0] ?? null,
     images: cleanGallery(photos, photos[0]),
     price,
     listPrice: regular,
-    currency: "CAD",
+    currency,
     inStock: sizes.length ? sizes.some((s) => s.availability !== "out_of_stock") : true,
     category,
+    maker: make || null,
     gender,
     variants: sizes.length ? { colors: [], sizes } : null,
     groupKey: null,
@@ -124,7 +140,7 @@ export function mapSsense(n: any): ProductRecord | null {
 }
 
 export async function listSsense(country: CountryCode): Promise<ProductRecord[]> {
-  if (country !== "CA") return [];
+  if (!SSENSE_MARKETS[country]) return [];
   const byId = new Map<string, ProductRecord>();
   let seen = 0;
   const problems: string[] = [];
@@ -136,7 +152,7 @@ export async function listSsense(country: CountryCode): Promise<ProductRecord[]>
       const data = await getJson<any>(API, {
         country,
         method: "POST",
-        body: requestBody(w, after),
+        body: requestBody(w, after, country),
         headers: { "content-type": "application/json", "x-client-version": CLIENT_VERSION },
         retries: 1,
         timeoutMs: 45_000,
@@ -147,7 +163,7 @@ export async function listSsense(country: CountryCode): Promise<ProductRecord[]>
       const edges: any[] = data?.data?.products?.edges ?? [];
       seen += edges.length;
       for (const e of edges) {
-        const r = mapSsense(e?.node);
+        const r = mapSsense(e?.node, country);
         if (r && !byId.has(r.externalId)) {
           byId.set(r.externalId, r);
           taken++;

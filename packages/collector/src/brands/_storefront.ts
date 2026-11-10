@@ -42,6 +42,11 @@ export interface StorefrontStore {
    * three runs stored 0 products). The reduced rows come first if any exist.
    */
   fullPriceWhenNoSale?: boolean;
+  /**
+   * Multi-brand store: the product's `vendor` is the real brand behind the row
+   * (Lord & Taylor, 2026-11-10). Sets `maker` and leads the name with it.
+   */
+  makerFromVendor?: boolean;
 }
 
 const API_VERSION = "2025-01";
@@ -50,7 +55,7 @@ const MAX_PAGES = Number(process.env.STOREFRONT_MAX_PAGES ?? 24);
 const PAUSE_MS = Number(process.env.STOREFRONT_PAUSE_MS ?? 800);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const NODE = `id handle title productType tags
+const NODE = `id handle title vendor productType tags
   images(first: 6) { nodes { url } }
   options { name }
   variants(first: 100) { nodes { availableForSale price { amount currencyCode } compareAtPrice { amount } selectedOptions { name value } } }`;
@@ -78,6 +83,7 @@ export function toProductsJson(node: any, currency: string): any | null {
     id: numericId(node.id),
     title: node.title,
     handle: node.handle,
+    vendor: node.vendor,
     product_type: node.productType ?? "",
     tags: node.tags ?? [],
     options: optionNames.map((name) => ({ name })),
@@ -95,6 +101,14 @@ export function toProductsJson(node: any, currency: string): any | null {
       return row;
     }),
   };
+}
+
+/** A multi-brand store's row: `maker` from the vendor, and the name led by it. Pure. */
+export function withMaker(store: StorefrontStore, r: ProductRecord | null, p: any): ProductRecord | null {
+  const maker = typeof p?.vendor === "string" ? p.vendor.replace(/\s+/g, " ").trim() : "";
+  if (!r || !store.makerFromVendor || !maker) return r;
+  const name = r.name.toLowerCase().startsWith(maker.toLowerCase()) ? r.name : `${maker} ${r.name}`;
+  return { ...r, maker, name };
 }
 
 /** True when the store marks this node's handle as a retired listing. */
@@ -137,7 +151,7 @@ export async function listStorefront(store: StorefrontStore, country: CountryCod
       for (const node of conn.nodes ?? []) {
         if (isRetired(store, node)) continue;
         const p = toProductsJson(node, currency);
-        const r = p && mapShopify(store, country, site, p);
+        const r = withMaker(store, p && mapShopify(store, country, site, p), p);
         if (r && r.gender == null && store.tagGender) r.gender = store.tagGender(p.tags);
         if (r && r.listPrice != null && byId.size < cap) byId.set(r.externalId, r);
       }
@@ -154,7 +168,7 @@ export async function listStorefront(store: StorefrontStore, country: CountryCod
       for (const node of conn.nodes ?? []) {
         if (isRetired(store, node)) continue;
         const p = toProductsJson(node, currency);
-        const r = p && mapShopify(store, country, site, p);
+        const r = withMaker(store, p && mapShopify(store, country, site, p), p);
         if (r && r.gender == null && store.tagGender) r.gender = store.tagGender(p.tags);
         if (r && byId.size < cap) byId.set(r.externalId, r);
       }

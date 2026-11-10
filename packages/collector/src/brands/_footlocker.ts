@@ -40,6 +40,8 @@ export const FL_SITES: Record<FlBanner, Partial<Record<CountryCode, { site: stri
     // Served whole to a runner (200, 1.9 MB, "All Sale | Foot Locker Canada", probe 39653987560);
     // the embedded listing sits past the probe's 400 KB window, so its shape is assumed = US.
     CA: { site: "https://www.footlocker.ca", base: "/en/category/sale", currency: "CAD" },
+    // 2026-11-10: same storefront build, prices "A$240.00"; whole page to a runner (probe 42802047681).
+    AU: { site: "https://www.footlocker.com.au", base: "/en/category/sale", currency: "AUD" },
   },
   champssports: {
     US: { site: "https://www.champssports.com", base: "/category/sale", currency: "USD" },

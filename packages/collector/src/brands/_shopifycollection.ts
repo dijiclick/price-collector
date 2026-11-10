@@ -35,6 +35,11 @@ export interface CollectionShop {
    */
   gender?: ProductRecord["gender"];
   maxProducts?: number;
+  /** Multi-brand retailers: see ShopifySite (`vendor` → `maker`, vendor prefixed to bare titles). */
+  vendorAsMaker?: boolean;
+  vendorInName?: boolean;
+  /** Read at most this many pages of the collection (default: the module's MAX_PAGES). */
+  maxPages?: number;
 }
 
 const MAX_PAGES = Number(process.env.SHOPIFY_COLLECTION_MAX_PAGES ?? 30);
@@ -47,7 +52,10 @@ export function collectionPageUrl(shop: CollectionShop, page: number): string {
 
 /** Map one products.json row: reduced rows only, `gender` override applied. Pure. */
 export function mapCollectionRow(shop: CollectionShop, country: CountryCode, p: any): ProductRecord | null {
-  const store = { brand: shop.brand, sites: { [country]: shop.site }, defaultGender: shop.defaultGender ?? null };
+  const store = {
+    brand: shop.brand, sites: { [country]: shop.site }, defaultGender: shop.defaultGender ?? null,
+    vendorAsMaker: shop.vendorAsMaker, vendorInName: shop.vendorInName,
+  };
   const m = mapShopify(store, country, shop.site, p);
   if (!m || m.listPrice == null) return null;
   return shop.gender !== undefined ? { ...m, gender: shop.gender } : m;
@@ -57,7 +65,8 @@ export async function listShopifyCollection(shop: CollectionShop, country: Count
   const cap = shop.maxProducts ?? 1500;
   const byId = new Map<string, ProductRecord>();
   let inStock = 0;
-  for (let n = 1; n <= MAX_PAGES && inStock < cap; n++) {
+  const maxPages = Math.min(MAX_PAGES, shop.maxPages ?? MAX_PAGES);
+  for (let n = 1; n <= maxPages && inStock < cap; n++) {
     if (n > 1) await sleep(PAUSE_MS);
     const d = await getJson<any>(collectionPageUrl(shop, n), {
       country,
