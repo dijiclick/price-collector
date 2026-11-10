@@ -38,6 +38,8 @@ export interface ShopifySite {
   vendorIsMaker?: boolean;
   /** Products per call (default 250) — smaller for stores whose rows are huge (WEGO: ~40 KB a product). */
   pageSize?: number;
+  /** A multi-brand shop: the product's `vendor` is the real brand (`maker`). */
+  makerFromVendor?: boolean;
 }
 
 export const SHOPIFY_STORES: ShopifySite[] = [

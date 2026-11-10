@@ -77,7 +77,6 @@ export const SHOPIFY_ROW: ShopifySite[] = [
   // `localization` cookie, so Sweden/Denmark/Norway would get the wrong currency.
   { brand: "stayhard", sites: { SE: "https://stayhard.com" }, collections: { SE: "sale" }, vendorIsMaker: true, defaultGender: "erkek" },
   { brand: "sportamore", sites: { SE: "https://sportamore.com" }, collections: { SE: "final-sale-women" }, vendorIsMaker: true, defaultGender: "kadin" },
-  { brand: "hope-sthlm", sites: { SE: "https://hope-sthlm.com" }, collections: { SE: "archive-sale" } },
   { brand: "message", sites: { DK: "https://message.dk" }, collections: { DK: "alt-sale" }, vendorIsMaker: true },
   { brand: "nuenotes", sites: { DK: "https://www.nuenotes.com" }, collections: { DK: "sale" }, defaultGender: "kadin" },
   { brand: "makia", sites: { FI: "https://makia.com" }, collections: { FI: "outlet" } },

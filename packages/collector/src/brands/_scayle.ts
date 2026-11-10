@@ -23,7 +23,7 @@ import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
 import type { CountryCode } from "../../../../lib/countries";
 
-export type ScayleSlug = "soliver" | "tomtailor";
+export type ScayleSlug = "soliver" | "tomtailor" | "comma";
 
 export interface ScayleShop {
   slug: ScayleSlug;
@@ -48,6 +48,14 @@ export interface ScayleShop {
   colorKeys: string[];
   /** Turn an image URL from the API into one the app should load. */
   image?: (url: string) => string;
+  /**
+   * How the storefront's RPC bridge takes a read: older storefronts POST
+   * `{ payload }`, newer ones (comma, 2026-11) GET `?payload=<json>` and answer
+   * a POST with a redirect page.
+   */
+  rpc?: "post" | "get";
+  /** Appended to product URLs (comma's canonical ends in a slash). */
+  urlSuffix?: string;
 }
 
 export const SCAYLE_SHOPS: Record<ScayleSlug, Partial<Record<CountryCode, ScayleShop>>> = {
@@ -87,7 +95,37 @@ export const SCAYLE_SHOPS: Record<ScayleSlug, Partial<Record<CountryCode, Scayle
       colorKeys: ["color", "suchFarbeTTShopFarbname"],
     },
   },
+  comma: {},
 };
+
+/**
+ * comma (s.Oliver Group, women only), added 2026-11-10. A newer storefront
+ * build on the same SCAYLE tenant family: the RPC is a GET with the payload in
+ * the query string, the shop id header is required, and the whole sale is one
+ * tree (/sale, id 2700 — 1,122 products in DE, 1,127 AT, 1,107 CH that day).
+ * Runner: probe run 42799416687 (DE 200 EUR, CH 200 CHF).
+ */
+const COMMA: [CountryCode, string, number][] = [
+  ["DE", "https://www.comma-store.de", 10028],
+  ["AT", "https://www.comma-store.at", 10029],
+  ["CH", "https://www.comma-store.ch", 10030],
+];
+for (const [cc, origin, shopId] of COMMA) {
+  SCAYLE_SHOPS.comma[cc] = {
+    slug: "comma",
+    origin,
+    pagePrefix: "",
+    urlKey: "id",
+    shopId,
+    sale: [{ id: 2700, gender: "kadin", pages: 14 }],
+    attributes: ["name", "brand", "classDigiCore20", "mainClassDigiCore20", "colorBase"],
+    typeKeys: ["classDigiCore20", "mainClassDigiCore20"],
+    colorKeys: ["colorBase"],
+    image: (u) => (u.includes("media.soliver.com") && !u.includes("?") ? `${u}?w=800&fmt=jpg` : u),
+    rpc: "get",
+    urlSuffix: "/",
+  };
+}
 
 /**
  * The same two storefronts in other countries (2026-10-21). Each country is
@@ -211,7 +249,7 @@ export function mapScayle(shop: ScayleShop, country: CountryCode, p: any, gender
     country,
     externalId: String(p.id),
     name,
-    url: `${shop.origin}${shop.pagePrefix}/p/${slugify(name) || "p"}-${key}`,
+    url: `${shop.origin}${shop.pagePrefix}/p/${slugify(name) || "p"}-${key}${shop.urlSuffix ?? ""}`,
     imageUrl: lead,
     images: cleanGallery(imgs, lead),
     price,
@@ -238,14 +276,23 @@ export async function listScayle(slug: ScayleSlug, country: CountryCode): Promis
       if (calls++) await sleep(PAUSE_MS);
       let data: any;
       try {
-        data = await getJson<any>(url, {
-          country,
-          method: "POST",
-          headers: { "content-type": "application/json", "x-shop-id": String(shop.shopId) },
-          body: rpcBody(shop, cat.id, page),
-          retries: 2,
-          timeoutMs: 45_000,
-        });
+        const body = rpcBody(shop, cat.id, page);
+        data =
+          shop.rpc === "get"
+            ? await getJson<any>(`${url}?payload=${encodeURIComponent(JSON.stringify(JSON.parse(body).payload))}`, {
+                country,
+                headers: { "x-shop-id": String(shop.shopId) },
+                retries: 2,
+                timeoutMs: 45_000,
+              })
+            : await getJson<any>(url, {
+                country,
+                method: "POST",
+                headers: { "content-type": "application/json", "x-shop-id": String(shop.shopId) },
+                body,
+                retries: 2,
+                timeoutMs: 45_000,
+              });
       } catch (err) {
         // The first page of the first tree failing means the route is down: throw
         // (the stored rows stay). A later page failing just ends that tree.

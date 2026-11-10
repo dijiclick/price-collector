@@ -19,6 +19,7 @@ import { SHOPIFY_US1110 } from "./shopify-us1110";
 import { SHOPIFY_CA1110, SHOPIFY_CA1110_OUTLETS } from "./shopify-ca1110";
 import { SHOPIFY_GB } from "./shopify-gb";
 import { SHOPIFY_ROW } from "./shopify-row";
+import { SHOPIFY_EU2 } from "./shopify-eu2";
 
 /** Markets added to stores already in the base list (each runner-verified 2026-10-21). */
 const EXTRA_SITES: ShopifySite[] = [
@@ -39,5 +40,5 @@ function merge(lists: ShopifySite[][]): ShopifySite[] {
 
 export const ALL_SHOPIFY: ShopifySite[] = merge([
   SHOPIFY_STORES, SHOPIFY_BEAUTY as ShopifySite[], SHOPIFY_CANADA, SHOPIFY_DTCB, SHOPIFY_DTCC,
-  SHOPIFY_OTHER, SHOPIFY_STORES_PKG, SHOPIFY_W4, SHOPIFY_W7, SHOPIFY_W1, SHOPIFY_US1110, SHOPIFY_CA1110, SHOPIFY_CA1110_OUTLETS, SHOPIFY_GB, SHOPIFY_ROW, EXTRA_SITES,
+  SHOPIFY_OTHER, SHOPIFY_STORES_PKG, SHOPIFY_W4, SHOPIFY_W7, SHOPIFY_W1, SHOPIFY_US1110, SHOPIFY_CA1110, SHOPIFY_CA1110_OUTLETS, SHOPIFY_GB, SHOPIFY_ROW, SHOPIFY_EU2, EXTRA_SITES,
 ]);

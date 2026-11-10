@@ -30,9 +30,9 @@ const fold = (s: string) =>
 export function genderOf(p: any, fallback: ProductRecord["gender"] = null): ProductRecord["gender"] {
   const tags: string[] = Array.isArray(p?.tags) ? p.tags.map(String) : typeof p?.tags === "string" ? p.tags.split(",") : [];
   const t = fold([...tags, p?.product_type ?? "", p?.title ?? ""].join(" | "));
-  if (/\b(kids?|girls?|boys?|baby|toddler|cocuk|bebek|junior)\b/.test(t)) return "cocuk";
-  if (/\b(wom[ae]n'?s?|ladies|female|kadin|feed-gender-female)\b/.test(t)) return "kadin";
-  if (/\b(m[ae]n'?s?|male|erkek|feed-gender-male)\b/.test(t)) return "erkek";
+  if (/\b(kids?|girls?|boys?|baby|toddler|cocuk|bebek|junior|kinder|enfants?)\b/.test(t)) return "cocuk";
+  if (/\b(wom[ae]n'?s?|ladies|female|kadin|feed-gender-female|damen|femmes?)\b/.test(t)) return "kadin";
+  if (/\b(m[ae]n'?s?|male|erkek|feed-gender-male|herren|hommes?)\b/.test(t)) return "erkek";
   return fallback;
 }
 
@@ -91,6 +91,7 @@ export function mapShopify(store: ShopifyStore, country: CountryCode, site: stri
     inStock: vs.some((v) => v.available === true),
     category: type || null,
     ...(store.vendorIsMaker && typeof p.vendor === "string" && p.vendor.trim() ? { maker: p.vendor.trim() } : {}),
+    ...(store.makerFromVendor && typeof p.vendor === "string" && p.vendor.trim() ? { maker: p.vendor.trim() } : {}),
     gender: genderOf(p, store.defaultGender ?? null),
     variants: sizes.length ? { colors, sizes } : null,
     colorName: colors.length === 1 ? colors[0] : null,

@@ -612,7 +612,6 @@ export const BRANDS: BrandInfo[] = [
   { slug: "galerieslafayette", label: "Galeries Lafayette", category: "Mağaza", logo: "/brands/galerieslafayette.svg", countries: ["AE"] },
   { slug: "stayhard", label: "Stayhard", category: "Çok markalı", logo: "/brands/stayhard.svg", countries: ["SE"] },
   { slug: "sportamore", label: "Sportamore", category: "Spor", logo: "/brands/sportamore.svg", countries: ["SE"] },
-  { slug: "hope-sthlm", label: "HOPE", category: "Giyim", logo: "/brands/hope-sthlm.svg", countries: ["SE"] },
   { slug: "message", label: "MESSAGE", category: "Çok markalı", logo: "/brands/message.svg", countries: ["DK"] },
   { slug: "nuenotes", label: "Nué Notes", category: "Giyim", logo: "/brands/nuenotes.svg", countries: ["DK"] },
   { slug: "makia", label: "MAKIA", category: "Giyim", logo: "/brands/makia.svg", countries: ["FI"] },
@@ -633,6 +632,43 @@ export const BRANDS: BrandInfo[] = [
   { slug: "club21", label: "Club 21", category: "Çok markalı", logo: "/brands/club21.svg", countries: ["SG"] },
   { slug: "wego", label: "WEGO", category: "Giyim", logo: "/brands/wego.svg", countries: ["JP"] },
   // end 2026-11-10 rest-of-world
+  // Added 2026-11-10 — Germany first (department stores, off-price, famous German
+  // brands), then France / Italy / Netherlands nationals. Every route answered a
+  // GitHub runner without a proxy; countries = the markets verified that day.
+  // Outletcity, Otrium and BazarChic are off-price outlets: every row is struck
+  // against the maker's original price by design (like Coach Outlet).
+  { slug: "comma", label: "comma", category: "Giyim", logo: "/brands/comma.svg", countries: ["DE", "AT", "CH"] },
+  { slug: "engelhorn", label: "engelhorn", category: "Çok markalı", logo: "/brands/engelhorn.svg", countries: ["DE"] },
+  { slug: "ludwigbeck", label: "LUDWIG BECK", category: "Çok markalı", logo: "/brands/ludwigbeck.svg", countries: ["DE"] },
+  { slug: "tamaris", label: "Tamaris", category: "Ayakkabı", logo: "/brands/tamaris.svg", countries: ["DE", "AT", "CH"] },
+  { slug: "outletcity", label: "OUTLETCITY", category: "Çok markalı", logo: "/brands/outletcity.svg", countries: ["DE", "AT", "CH"] },
+  { slug: "peekcloppenburg", label: "Peek & Cloppenburg", category: "Çok markalı", logo: "/brands/peekcloppenburg.svg", countries: ["DE", "AT", "NL"] },
+  { slug: "otto", label: "OTTO", category: "Çok markalı", logo: "/brands/otto.svg", countries: ["DE"] },
+  { slug: "sportscheck", label: "SportScheck", category: "Spor", logo: "/brands/sportscheck.svg", countries: ["DE", "AT", "CH"] },
+  { slug: "christ", label: "CHRIST", category: "Takı", logo: "/brands/christ.svg", countries: ["DE", "AT"] },
+  { slug: "thomassabo", label: "THOMAS SABO", category: "Takı", logo: "/brands/thomassabo.svg", countries: ["DE", "AT", "CH", "FR", "NL", "BE", "IT", "ES", "PT"] },
+  { slug: "parfumdreams", label: "parfumdreams", category: "Kozmetik", logo: "/brands/parfumdreams.svg", countries: ["DE"] },
+  { slug: "lascana", label: "LASCANA", category: "İç giyim", logo: "/brands/lascana.svg", countries: ["DE", "AT", "CH"] },
+  { slug: "heine", label: "heine", category: "Giyim", logo: "/brands/heine.svg", countries: ["DE", "AT", "CH"] },
+  { slug: "sheego", label: "sheego", category: "Giyim", logo: "/brands/sheego.svg", countries: ["DE"] },
+  { slug: "goertz", label: "GÖRTZ", category: "Ayakkabı", logo: "/brands/goertz.svg", countries: ["DE"] },
+  { slug: "jackwolfskin", label: "Jack Wolfskin", category: "Spor", logo: "/brands/jackwolfskin.svg", countries: ["DE"] },
+  { slug: "snocks", label: "SNOCKS", category: "Giyim", logo: "/brands/snocks.svg", countries: ["DE"] },
+  { slug: "purelei", label: "PURELEI", category: "Takı", logo: "/brands/purelei.svg", countries: ["DE"] },
+  { slug: "paulvalentine", label: "PAUL VALENTINE", category: "Takı", logo: "/brands/paulvalentine.svg", countries: ["DE"] },
+  { slug: "otrium", label: "Otrium", category: "Çok markalı", logo: "/brands/otrium.svg", countries: ["NL", "DE", "FR", "BE", "IT", "ES"] },
+  { slug: "omoda", label: "Omoda", category: "Ayakkabı", logo: "/brands/omoda.svg", countries: ["NL"] },
+  { slug: "americatoday", label: "America Today", category: "Giyim", logo: "/brands/americatoday.svg", countries: ["NL", "BE", "DE"] },
+  { slug: "liujo", label: "LIU JO", category: "Giyim", logo: "/brands/liujo.svg", countries: ["IT", "ES", "FR", "BE", "DE", "AT", "NL", "PT"] },
+  { slug: "geox", label: "GEOX", category: "Ayakkabı", logo: "/brands/geox.svg", countries: ["IT", "ES", "PT", "DE", "AT", "FR", "BE", "NL", "CH"] },
+  { slug: "furla", label: "FURLA", category: "Çanta", logo: "/brands/furla.svg", countries: ["IT", "DE", "AT", "FR", "BE", "ES", "NL", "PT"] },
+  { slug: "sarenza", label: "Sarenza", category: "Ayakkabı", logo: "/brands/sarenza.svg", countries: ["FR", "BE", "CH", "DE", "IT", "ES", "NL"] },
+  { slug: "bazarchic", label: "BazarChic", category: "Çok markalı", logo: "/brands/bazarchic.svg", countries: ["FR"] },
+  { slug: "thekooples", label: "The Kooples", category: "Giyim", logo: "/brands/thekooples.svg", countries: ["FR", "DE", "ES", "PT"] },
+  { slug: "eram", label: "Eram", category: "Ayakkabı", logo: "/brands/eram.svg", countries: ["FR"] },
+  { slug: "bocage", label: "Bocage", category: "Ayakkabı", logo: "/brands/bocage.svg", countries: ["FR"] },
+  { slug: "lecoqsportif", label: "Le Coq Sportif", category: "Spor", logo: "/brands/lecoqsportif.svg", countries: ["FR"] },
+  { slug: "andre", label: "André", category: "Ayakkabı", logo: "/brands/andre.svg", countries: ["FR"] },
 ];
 
 export const BRAND_SLUGS = BRANDS.map((b) => b.slug);

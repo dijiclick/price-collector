@@ -24,6 +24,9 @@ import {
 } from "./db";
 import { setSizedLoader } from "./sizes";
 
+/** Postgres `integer`: what a stored price must fit in. */
+export const fitsInt = (n: number): boolean => Number.isFinite(n) && Math.abs(n) <= 2_147_483_647;
+
 export interface BrandResult {
   brand: string;
   /** The market this result is for — the log line reads `zara/AE`. */
@@ -203,7 +206,12 @@ async function collectBrand(
     // Stamp the adapter's market onto every record. Adapters that already set
     // their own country (once tasks 4–9 land) are left alone; the rest are
     // Turkish, which is what they are collecting.
-    const products = raw.map((r) => (r.country ? r : { ...r, country }));
+    // Prices are stored as 32-bit integers of minor units. A luxury piece in
+    // won (₩26.9M = 2,691,232,000) overflows and fails the whole brand's write
+    // (THE OUTNET KR, 2026-11-10), so such rows are dropped here, for every store.
+    const products = raw
+      .map((r) => (r.country ? r : { ...r, country }))
+      .filter((r) => fitsInt(r.price) && (r.listPrice == null || fitsInt(r.listPrice)));
     res.inStock = products.filter((p) => p.inStock).length;
     res.discounted = products.filter((p) => p.listPrice != null && p.listPrice > p.price).length;
     if (products.length === 0) {

@@ -260,6 +260,30 @@ import { listSfraGulf, SFRA_GULF } from "./brands/sfra-gulf";
 import { listLevelShoes } from "./brands/levelshoes";
 import { COLUMBIA_AE, SHOPIFY_ROW } from "../../../lib/live-brands/shopify-row";
 
+// Germany / France / Italy / Netherlands round (2026-11-10)
+import { listEngelhorn } from "./brands/engelhorn";
+import { listLudwigBeck } from "./brands/ludwigbeck";
+import { listTamaris } from "./brands/tamaris";
+import { listOutletcity } from "./brands/outletcity";
+import { listPeekCloppenburg } from "./brands/peekcloppenburg";
+import { listOtto } from "./brands/otto";
+import { listSportScheck } from "./brands/sportscheck";
+import { listChrist } from "./brands/christ";
+import { listThomasSabo } from "./brands/thomassabo";
+import { listParfumdreams } from "./brands/parfumdreams";
+import { listLascana } from "./brands/lascana";
+import { listWitt } from "./brands/heine";
+import { listOtrium } from "./brands/otrium";
+import { listOmoda } from "./brands/omoda";
+import { listAmericaToday } from "./brands/americatoday";
+import { listLiujo } from "./brands/liujo";
+import { listGeox } from "./brands/geox";
+import { listFurla } from "./brands/furla";
+import { listSarenza } from "./brands/sarenza";
+import { listBazarchic } from "./brands/bazarchic";
+import { listTheKooples } from "./brands/thekooples";
+import { listEramGroup } from "./brands/eramgroup";
+
 type List = (country: CountryCode) => Promise<ProductRecord[]>;
 
 /** Turkey's long-standing adapter at home, the new one everywhere else. */
@@ -661,4 +685,33 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "levelshoes", listProducts: listLevelShoes },
   ...["marithe", "discoveryexpedition", "nationalgeographic", "roem", "glowny", "ojos", "fila", "rawrow"]
     .map((b) => ({ brand: b, listProducts: (c: CountryCode) => listMusinsaStore(b, c) })),
+  // Germany / France / Italy / Netherlands round (2026-11-10). Which markets each
+  // runs in comes from lib/brands.ts. The Shopify stores of this round (Görtz,
+  // Jack Wolfskin, Snocks, Purelei, Paul Valentine, Le Coq Sportif, André) ride
+  // the generic list (lib/live-brands/shopify-eu2.ts).
+  { brand: "comma", listProducts: (c) => listScayle("comma", c) },
+  { brand: "engelhorn", listProducts: (c) => listEngelhorn(c) },
+  { brand: "ludwigbeck", listProducts: (c) => listLudwigBeck(c) },
+  { brand: "tamaris", listProducts: (c) => listTamaris(c) },
+  { brand: "outletcity", listProducts: (c) => listOutletcity(c) },
+  { brand: "peekcloppenburg", listProducts: (c) => listPeekCloppenburg(c) },
+  { brand: "otto", listProducts: (c) => listOtto(c) },
+  { brand: "sportscheck", listProducts: (c) => listSportScheck(c) },
+  { brand: "christ", listProducts: (c) => listChrist(c) },
+  { brand: "thomassabo", listProducts: (c) => listThomasSabo(c) },
+  { brand: "parfumdreams", listProducts: (c) => listParfumdreams(c) },
+  { brand: "lascana", listProducts: (c) => listLascana(c) },
+  { brand: "heine", listProducts: (c) => listWitt("heine", c) },
+  { brand: "sheego", listProducts: (c) => listWitt("sheego", c) },
+  { brand: "otrium", listProducts: (c) => listOtrium(c) },
+  { brand: "omoda", listProducts: (c) => listOmoda(c) },
+  { brand: "americatoday", listProducts: (c) => listAmericaToday(c) },
+  { brand: "liujo", listProducts: (c) => listLiujo(c) },
+  { brand: "geox", listProducts: (c) => listGeox(c) },
+  { brand: "furla", listProducts: (c) => listFurla(c) },
+  { brand: "sarenza", listProducts: (c) => listSarenza(c) },
+  { brand: "bazarchic", listProducts: (c) => listBazarchic(c) },
+  { brand: "thekooples", listProducts: (c) => listTheKooples(c) },
+  { brand: "eram", listProducts: (c) => listEramGroup("eram", c) },
+  { brand: "bocage", listProducts: (c) => listEramGroup("bocage", c) },
 ];
