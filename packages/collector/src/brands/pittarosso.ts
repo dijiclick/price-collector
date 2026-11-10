@@ -36,7 +36,15 @@ const NOT_COMPLIANT = "omnibus-label-omnibus-not-compliant";
 const TS_PAGE = 250;
 const SF_BATCH = 100;
 const CAP = 1500;
-const MAX_REQUESTS = 40;
+/**
+ * 2026-11-10: the sale reached ~3,000 in-stock products (Typesense found
+ * DONNA 1188, UOMO 913, UNISEX 193, BAMBINA 263, BAMBINO 262, RAGAZZA 111,
+ * RAGAZZO 94) = 16 search pages + 33 Storefront batches = 49 calls, and the
+ * old budget of 40 failed five runs in a row. 60 is the playbook's ceiling;
+ * if the sale outgrows even that, a walk that already holds CAP rows is kept.
+ */
+const MAX_REQUESTS = 60;
+class BudgetSpent extends Error {}
 const PAUSE_MS = 250;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -150,35 +158,40 @@ export async function listPittaRosso(country: CountryCode): Promise<ProductRecor
   if (country !== "IT") return [];
   let requests = 0;
   const tick = async () => {
-    if (++requests > MAX_REQUESTS) throw new Error(`pittarosso/${country}: request budget (${MAX_REQUESTS}) spent`);
+    if (++requests > MAX_REQUESTS) throw new BudgetSpent(`pittarosso/${country}: request budget (${MAX_REQUESTS}) spent`);
     if (requests > 1) await sleep(PAUSE_MS);
   };
   const rows = new Map<string, ProductRecord>();
-  for (const [g, gender] of GENDERS) {
-    const docs: any[] = [];
-    for (let page = 1; ; page++) {
-      await tick();
-      const q = new URLSearchParams({ q: "*", filter_by: baseFilters(g), per_page: String(TS_PAGE), page: String(page), include_fields: "id,title,handle,image,vendor,product_type,named_tags,collections" });
-      const d = await getJson<any>(`${TS_HOST}/collections/${TS_COLLECTION}/documents/search?${q}`, { country, timeoutMs: 30_000, headers: { "X-TYPESENSE-API-KEY": TS_KEY } });
-      if (!Array.isArray(d?.hits)) throw new Error(`pittarosso/${country}: bad Typesense answer for ${g}`);
-      docs.push(...d.hits.map((h: any) => h?.document).filter((x: any) => x?.id));
-      if (d.hits.length < TS_PAGE || page * TS_PAGE >= Number(d.found ?? 0)) break;
+  try {
+    for (const [g, gender] of GENDERS) {
+      const docs: any[] = [];
+      for (let page = 1; ; page++) {
+        await tick();
+        const q = new URLSearchParams({ q: "*", filter_by: baseFilters(g), per_page: String(TS_PAGE), page: String(page), include_fields: "id,title,handle,image,vendor,product_type,named_tags,collections" });
+        const d = await getJson<any>(`${TS_HOST}/collections/${TS_COLLECTION}/documents/search?${q}`, { country, timeoutMs: 30_000, headers: { "X-TYPESENSE-API-KEY": TS_KEY } });
+        if (!Array.isArray(d?.hits)) throw new Error(`pittarosso/${country}: bad Typesense answer for ${g}`);
+        docs.push(...d.hits.map((h: any) => h?.document).filter((x: any) => x?.id));
+        if (d.hits.length < TS_PAGE || page * TS_PAGE >= Number(d.found ?? 0)) break;
+      }
+      for (let i = 0; i < docs.length; i += SF_BATCH) {
+        await tick();
+        const batch = docs.slice(i, i + SF_BATCH);
+        const d = await getJson<any>(SF_URL, {
+          method: "POST",
+          country,
+          timeoutMs: 30_000,
+          headers: { "Content-Type": "application/json", "X-Shopify-Storefront-Access-Token": SF_TOKEN },
+          body: JSON.stringify({ query: SF_QUERY, variables: { ids: batch.map((x) => `gid://shopify/Product/${x.id}`) } }),
+        });
+        const nodes: any[] = d?.data?.nodes;
+        if (!Array.isArray(nodes)) throw new Error(`pittarosso/${country}: bad Storefront answer (${JSON.stringify(d?.errors ?? d).slice(0, 120)})`);
+        const hits = batch.flatMap((doc, k) => toVariantHits(doc, nodes[k]));
+        for (const r of mapPittaRosso(hits, gender, country)) if (!rows.has(r.externalId)) rows.set(r.externalId, r);
+      }
     }
-    for (let i = 0; i < docs.length; i += SF_BATCH) {
-      await tick();
-      const batch = docs.slice(i, i + SF_BATCH);
-      const d = await getJson<any>(SF_URL, {
-        method: "POST",
-        country,
-        timeoutMs: 30_000,
-        headers: { "Content-Type": "application/json", "X-Shopify-Storefront-Access-Token": SF_TOKEN },
-        body: JSON.stringify({ query: SF_QUERY, variables: { ids: batch.map((x) => `gid://shopify/Product/${x.id}`) } }),
-      });
-      const nodes: any[] = d?.data?.nodes;
-      if (!Array.isArray(nodes)) throw new Error(`pittarosso/${country}: bad Storefront answer (${JSON.stringify(d?.errors ?? d).slice(0, 120)})`);
-      const hits = batch.flatMap((doc, k) => toVariantHits(doc, nodes[k]));
-      for (const r of mapPittaRosso(hits, gender, country)) if (!rows.has(r.externalId)) rows.set(r.externalId, r);
-    }
+  } catch (err) {
+    if (!(err instanceof BudgetSpent) || rows.size < CAP) throw err;
+    console.log(`pittarosso/${country}: ${err.message}; keeping ${rows.size} deals already read`);
   }
   if (!rows.size) throw new Error(`pittarosso/${country}: no reduced in-stock products`);
   const all = [...rows.values()];
