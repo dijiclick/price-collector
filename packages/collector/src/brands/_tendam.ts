@@ -24,7 +24,10 @@
  * run reads the brand's homepage navigation and keeps the women's/men's links
  * under `promociones/`, `rebajas/` or `precios-especiales` — minus multi-buy
  * campaigns ("3 por 2", "2ª unidad al 50%", "2x30"), whose discount only
- * exists in the basket. Kids, teen and home shelves are left out.
+ * exists in the basket. Black Friday shelves too (`mujer/pre-black-friday`,
+ * PT `mulher/pre-black-friday-pt`): from 2026-11-09 they were Pedro del
+ * Hierro's only sale links and both markets failed "no sale listing"; their
+ * tiles carry the usual struck basePrice (119 → 47 €). Kids, teen and home shelves are left out.
  *
  * A tile is one style in its selected colour. `basePrice` is the struck
  * "Inicial" price (the tile's price-history tooltip states the discount is
@@ -74,7 +77,7 @@ export function euros(s: string | undefined | null): number {
 
 // 2026-11-05: Pedro del Hierro and Cortefiel moved their shelves to
 // "/mujer/venta-especial" (guest brands "-mp") and PT "/mulher/promocoes-inverno".
-const SALE = /\/(?:[a-z-]+\/)*(?:promociones|rebajas)\/[a-z0-9-]+(?:\/[a-z0-9-]+)*|\/(?:mujer|hombre)\/(?:precios-especiales(?:-marcas)?|venta-especial(?:-mp|-marcas)?)(?=\/|$)/;
+const SALE = /\/(?:[a-z-]+\/)*(?:promociones|rebajas)\/[a-z0-9-]+(?:\/[a-z0-9-]+)*|\/(?:mujer|hombre)\/(?:precios-especiales(?:-marcas)?|venta-especial(?:-mp|-marcas)?|(?:pre-)?black-friday(?:-mp|-marcas)?)(?=\/|$)/;
 const MULTIBUY = /\d+-por-\d+|\d+x\d+|unidad-al|de-dos-en-dos|packs?-/;
 const NOT_ADULT = /\/(?:ninos?|ninas?|nino|nina|teen|hogar|home|deporte-ninos)(?:\/|-|$)|-(?:nino|nina|ninos|ninas|teen|hogar)(?:\/|$)/;
 /**
@@ -83,7 +86,7 @@ const NOT_ADULT = /\/(?:ninos?|ninas?|nino|nina|teen|hogar|home|deporte-ninos)(?
  * "preco-especial/2x25" and "2a-unidade-a-50" are multi-buy; "criancas",
  * "kids-5-14-anos/menin[ao]" and "casa" are kids/home.
  */
-const SALE_PT = /\/(?:[a-z0-9-]+\/)*(?:promocoes|promotions?)\/[a-z0-9-]+(?:\/[a-z0-9-]+)*|\/(?:mulher|homem)\/(?:precos-especiais(?:-[a-z]+)*|promocoes-inverno(?:-mp|-marcas)?(?=\/|$))/;
+const SALE_PT = /\/(?:[a-z0-9-]+\/)*(?:promocoes|promotions?)\/[a-z0-9-]+(?:\/[a-z0-9-]+)*|\/(?:mulher|homem)\/(?:precos-especiais(?:-[a-z]+)*|promocoes-inverno(?:-mp|-marcas)?(?=\/|$)|(?:pre-)?black-friday(?:-mp|-pt|-marcas)?(?=\/|$))/;
 const MULTIBUY_PT = /\d+-por-\d+|\d+x\d+|unidade-a|packs?-/;
 const NOT_ADULT_PT = /\/(?:criancas?|menin[ao]s?|kids[a-z0-9-]*|teen|casa|home)(?:\/|-|$)|-(?:menin[ao]s?|criancas?|casa|teen)(?:\/|$)/;
 const RULES: Record<string, { sale: RegExp; multibuy: RegExp; notAdult: RegExp; bare: RegExp }> = {

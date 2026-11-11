@@ -73,8 +73,13 @@ export function mapBlivakkerCard(card: string, country: CountryCode = "NO"): Pro
   const brand = decode(card.match(/<span class="heading[^"]*">([^<]*)<\/span>/)?.[1] ?? "");
   const pname = decode(card.match(/<span class="product-name[^"]*">([^<]*)<\/span>/)?.[1] ?? "");
   if (!pname) return null;
-  const final = card.match(/<strong class="price-text price-final">([^<]+)<\/strong>/)?.[1];
-  const before = card.match(/<span class="price-discount">([^<]+)<\/span>/)?.[1];
+  // 2026-11 the price tags gained a class (`price-final white-space-no-wrap`):
+  // match the class token, not the whole attribute — and still drop a member
+  // price (`price-final text-loyalty`), which the old exact match skipped.
+  const finalTag = card.match(/<strong class="([^"]*\bprice-final\b[^"]*)">([^<]+)<\/strong>/);
+  if (finalTag && /\btext-loyalty\b/.test(finalTag[1])) return null;
+  const final = finalTag?.[2];
+  const before = card.match(/<span class="[^"]*\bprice-discount\b[^"]*">([^<]+)<\/span>/)?.[1];
   const price = parseKr(final);
   const list = parseKr(before);
   if (!Number.isFinite(price) || price <= 0) return null;

@@ -129,6 +129,7 @@ export async function listShopify(store: ShopifyStore, country: CountryCode): Pr
   if (!site) return [];
   const cap = store.maxProducts ?? 1500;
   const byId = new Map<string, ProductRecord>();
+  const seen = new Set<string>();
   for (let n = 1; n <= MAX_PAGES; n++) {
     if (n > 1) await sleep(PAUSE_MS);
     const rows = await page(store, site, n, country);
@@ -137,11 +138,18 @@ export async function listShopify(store: ShopifyStore, country: CountryCode): Pr
       break;
     }
     if (rows.length === 0) break;
+    let fresh = 0;
     for (const p of rows) {
+      if (p?.id != null && !seen.has(String(p.id))) { seen.add(String(p.id)); fresh++; }
       const r = mapShopify(store, country, site, p);
       if (r && r.listPrice != null) byId.set(r.externalId, r);
     }
-    if (rows.length < (store.pageSize ?? 250)) break;
+    // A short page is not always the last: Shopify drops products hidden from
+    // the channel AFTER paging, so a full page can come back 249 of 250
+    // (Tuckernuck 2026-11-11: page 1 had 249, the catalogue 3,499, the walk
+    // stopped there with 0 deals). Only a page well under the limit, or one
+    // that repeats what was already read, ends the walk.
+    if (rows.length < (store.pageSize ?? 250) * 0.9 || fresh === 0) break;
     // A sale collection can be thousands deep: stop once the cap is full of in-stock rows.
     if (store.collections?.[country] && [...byId.values()].filter((r) => r.inStock).length >= cap) break;
   }

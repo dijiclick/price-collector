@@ -13,7 +13,7 @@ import { basketPercent, basketPrice } from "../../../../lib/live-brands/nisantas
  * paused and a 429 is backed off as for QUZU.
  *
  * PRICES. No product has a compare-at price; the shop's reductions are basket
- * discounts driven by tags (`indirimNN`, else 20 % (since 2026-11-05) for the `KIŞK` season — see
+ * discounts driven by tags (`indirimNN`, else 30 % (since 2026-11-11) for the `KIŞK` season — see
  * lib/live-brands/nisantasishoes.ts, measured on 37 product pages). The basket
  * price is the price, the shelf price the list price, like DeFacto / LCW /
  * Altınbaş. 2026-10-23: 336 `indirimNN` rows (138 at 50 %, 133 at 20 %) and

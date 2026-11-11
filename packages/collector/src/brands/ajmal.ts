@@ -8,13 +8,18 @@
  *   (sizes such as 50GM / 100ML with their own `stock_status`).
  * - KSA (sa.ajmal.com): a Shopify store (`/meta.json` currency SAR). The
  *   `/en` market path gives English titles (the bare host is Arabic), so the
- *   shared Shopify walker runs on `https://sa.ajmal.com/en`.
+ *   shared Shopify mapper runs on `https://sa.ajmal.com/en`.
+ *   Between sales (2026-11-11: 416 products, the only reduced ones the
+ *   staff-only `-employee` listings) the run is topped up with in-stock
+ *   full-price perfumes (listPrice null), as Gullfunn/COS do: collecting
+ *   nothing tripped the zero-rows alarm for 8 runs and left last sale's rows
+ *   live at their old prices.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
 import { toMinor } from "../normalize";
 import type { CountryCode } from "../../../../lib/countries";
-import { listShopify } from "./_shopify";
+import { mapShopify, marketHeaders } from "./_shopify";
 
 const AE_SITE = "https://en-ae.ajmal.com";
 const SA_STORE = { brand: "ajmal", sites: { SA: "https://sa.ajmal.com/en" } };
@@ -95,7 +100,26 @@ export const brand = "ajmal";
 
 export async function listProducts(country: CountryCode): Promise<ProductRecord[]> {
   if (country === "AE") return listAE();
-  // Staff-only listings ("…-employee", flat 20%) are not public deals (2026-10-21).
-  if (country === "SA") return (await listShopify(SA_STORE, "SA")).filter((r) => !/-employee(?:[/?#]|$)/i.test(r.url));
+  if (country === "SA") return listSA();
   return [];
+}
+
+/** KSA: the whole Shopify catalogue, reduced rows first, then in-stock full price (see the header). */
+export async function listSA(): Promise<ProductRecord[]> {
+  const site = SA_STORE.sites.SA;
+  const rows: ProductRecord[] = [];
+  for (let n = 1; n <= MAX_PAGES; n++) {
+    const d = await getJson<any>(`${site}/products.json?limit=250&page=${n}`, { country: "SA", headers: marketHeaders("SA") });
+    if (!Array.isArray(d?.products)) throw new Error("ajmal/SA: bad products.json answer");
+    for (const p of d.products) {
+      // Staff-only listings ("…-employee", flat 20%) are not public deals (2026-10-21).
+      if (/-employee$/i.test(String(p?.handle ?? ""))) continue;
+      const r = mapShopify(SA_STORE, "SA", site, p);
+      if (r && (r.listPrice != null || r.inStock)) rows.push(r);
+    }
+    if (d.products.length < 250) break;
+  }
+  const deals = rows.filter((r) => r.listPrice != null);
+  const full = rows.filter((r) => r.listPrice == null);
+  return [...deals.filter((r) => r.inStock), ...deals.filter((r) => !r.inStock), ...full];
 }
