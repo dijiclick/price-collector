@@ -47,6 +47,12 @@ export interface AkinonShop {
   categoryAttrs: string[];
   /** Attributes tried, in order, for the section (Kadın / Erkek / Çocuk). */
   genderAttrs: string[];
+  /**
+   * Full-catalogue walk only: a facet that partitions the listing (each row
+   * has one value), walked value by value when the listing is past two result
+   * windows and has no price bands. U.S. Polo Assn.: `filterable_gender`.
+   */
+  splitFacet?: string;
 }
 
 /** Tunables, overridable per run for live tests. */
@@ -323,6 +329,22 @@ export function priceBands(first: any, path: string): { value: string; quantity:
 }
 
 /**
+ * The choices of the facet named `key` (its `key` or `search_key`), keyed by
+ * the query parameter the listing filters on — or null when unnamed, already
+ * filtered on, or empty.
+ */
+export function facetParts(first: any, path: string, key?: string): { key: string; choices: { value: string; quantity: number }[] } | null {
+  if (!key) return null;
+  const f = (first?.facets ?? []).find((x: any) => x?.key === key || x?.search_key === key);
+  const param = String(f?.search_key ?? "");
+  if (!param || new RegExp(`[?&]${param}=`).test(path)) return null;
+  const choices = (f?.data?.choices ?? [])
+    .map((c: any) => ({ value: String(c?.value ?? ""), quantity: Number(c?.quantity ?? 0) || 0 }))
+    .filter((c: { value: string }) => c.value);
+  return choices.length > 1 ? { key: param, choices } : null;
+}
+
+/**
  * Every row of one Akinon listing (`path` may carry filters), 250 per page.
  *
  * Fails loudly rather than returning part of the listing: a page that still
@@ -333,7 +355,7 @@ export function priceBands(first: any, path: string): { value: string; quantity:
 export async function walkAkinonListing(
   site: string,
   path: string,
-  opts: { maxPages: number; concurrency?: number },
+  opts: { maxPages: number; concurrency?: number; splitFacet?: string },
 ): Promise<AkinonWalk> {
   const concurrency = opts.concurrency ?? CONCURRENCY;
   let requests = 0;
@@ -379,6 +401,24 @@ export async function walkAkinonListing(
     for (const b of bands) {
       if (b.quantity <= 0) continue;
       const w = await walkAkinonListing(site, withQuery(path, `price=${encodeURIComponent(b.value)}`), { ...opts, maxPages: budget });
+      requests += w.requests;
+      budget -= w.requests;
+      rows.push(...w.rows);
+    }
+    return { rows, first, requests };
+  }
+  const parts = bands ? null : facetParts(first, path, opts.splitFacet);
+  if (total > 2 * RESULT_WINDOW - 2 * FULL_PAGE_SIZE && parts) {
+    // Too big for two sorted halves and no price bands to split on (U.S. Polo
+    // Assn. TR /list/ 22,549 rows on 2026-11-12, an empty price facet): walk
+    // each value of the shop's named partition facet (gender) on its own.
+    const sum = parts.choices.reduce((a, b) => a + b.quantity, 0);
+    if (sum < total) throw new Error(`akinon: ${site}${path} ${parts.key} values hold ${sum} of ${total} rows`);
+    const rows: any[] = [];
+    let budget = opts.maxPages;
+    for (const c of parts.choices) {
+      if (c.quantity <= 0) continue;
+      const w = await walkAkinonListing(site, withQuery(path, `${parts.key}=${encodeURIComponent(c.value)}`), { ...opts, splitFacet: undefined, maxPages: budget });
       requests += w.requests;
       budget -= w.requests;
       rows.push(...w.rows);
@@ -458,7 +498,7 @@ export function akinonRecords(rows: any[], map: (p: any) => ProductRecord | null
  */
 export async function listAkinonCatalogue(shop: AkinonShop, limits: AkinonCatalogueLimits): Promise<ProductRecord[]> {
   const started = Date.now();
-  const walk = await walkAkinonListing(shop.site, shop.listPath, { maxPages: limits.maxPages, concurrency: limits.concurrency });
+  const walk = await walkAkinonListing(shop.site, shop.listPath, { maxPages: limits.maxPages, concurrency: limits.concurrency, splitFacet: shop.splitFacet });
   const records = akinonRecords(walk.rows, (p) => mapAkinonProduct(shop, p));
   if (records.length > limits.maxProducts) {
     throw new Error(`akinon: ${shop.brand} catalogue has ${records.length} products, over the cap of ${limits.maxProducts}`);

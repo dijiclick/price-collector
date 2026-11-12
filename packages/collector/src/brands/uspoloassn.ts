@@ -20,10 +20,14 @@ export const SHOP: AkinonShop = {
   colorNameAttrs: ["filterable_detail_color", "filterable_color"],
   categoryAttrs: ["filterable_product_base_type", "filterable_product_type"],
   genderAttrs: ["filterable_gender"],
+  // 2026-11-12: /list/ grew to 22,549 rows (past two result windows) and the
+  // price facet came back empty, so the walk failed 12 runs. The gender facet
+  // partitions it into pieces under 10,000 (Erkek 9,677, Kadın 7,073, …).
+  splitFacet: "filterable_gender",
 };
 
 export const brand = SHOP.brand;
 
 export async function listProducts(): Promise<ProductRecord[]> {
-  return listAkinonCatalogue(SHOP, limitsFromEnv("USPOLOASSN", { maxProducts: 20_000, maxPages: 82, detailLimit: 15 }));
+  return listAkinonCatalogue(SHOP, limitsFromEnv("USPOLOASSN", { maxProducts: 30_000, maxPages: 110, detailLimit: 15 }));
 }

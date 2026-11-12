@@ -41,16 +41,22 @@ export function gemoGender(text: string): ProductRecord["gender"] {
   return null;
 }
 
-/** Parse one list page. Pure. Only tiles with a struck "ancien prix" are kept. */
-export function parseGemoList(html: string, country: CountryCode = "FR"): ProductRecord[] {
+/**
+ * Parse one list page. Pure. Only tiles with a struck "ancien prix" are kept,
+ * unless `fullPrice` — then unstruck tiles come back too, with `listPrice: null`.
+ */
+export function parseGemoList(html: string, country: CountryCode = "FR", opts: { fullPrice?: boolean } = {}): ProductRecord[] {
   const out: ProductRecord[] = [];
   for (const raw of html.split('class="productTile" data-product-list-tile').slice(1)) {
     const block = raw.replace(/\s+/g, " ");
     const link = block.match(/<a [^>]*href="(https:\/\/www\.gemo\.fr\/produit\/[^"]+\/GEMO_(\d+))"[^>]*class="[^"]*productTile-linkCover[^"]*">([^<]+)<\/a>/);
     if (!link) continue;
-    const paid = euros(block.match(/productPrice-value--main">([^<]+)</)?.[1]);
+    // 2026-11-12 the unstruck tile reads `price-value productPrice-value mx-1`.
+    const paid = euros((block.match(/productPrice-value--main">([^<]+)</) ?? block.match(/class="[^"]*\bproductPrice-value\b[^"]*">([^<]+)</))?.[1]);
     const was = euros(block.match(/<s class="price-old-value[^"]*"[^>]*>([^<]+)<\/s>/)?.[1]);
-    if (!(paid > 0) || !(was > paid)) continue;
+    if (!(paid > 0)) continue;
+    const struck = was > paid;
+    if (!struck && !opts.fullPrice) continue;
     // Largest rendition from the srcset (e.g. 618/744), then the plain src.
     const srcset = block.match(/<img [^>]*srcset="([^"]+)"/)?.[1] ?? "";
     const sizes = srcset.split(",").map((x) => x.trim().split(/\s+/)[0]).filter((u) => u.startsWith("https://"));
@@ -66,7 +72,7 @@ export function parseGemoList(html: string, country: CountryCode = "FR"): Produc
       imageUrl: lead,
       images: cleanGallery(lead ? [lead] : [], lead),
       price: toMinor(paid),
-      listPrice: toMinor(was),
+      listPrice: struck ? toMinor(was) : null,
       currency: "EUR",
       inStock: true,
       category: null,
@@ -87,11 +93,15 @@ export async function listGemo(country: CountryCode): Promise<ProductRecord[]> {
     const html = await getText(gemoListUrl(page), { country, timeoutMs: 30000, headers: { "Accept-Language": "fr-FR,fr;q=0.9" } });
     const before = byId.size;
     const tiles = html.split('class="productTile" data-product-list-tile').length - 1;
-    for (const r of parseGemoList(html, country)) byId.set(r.externalId, r);
+    for (const r of parseGemoList(html, country, { fullPrice: true })) byId.set(r.externalId, r);
     // A page past the end repeats nothing new (or is empty).
     if (tiles < PER_PAGE || byId.size === before) break;
   }
-  return [...byId.values()];
+  const all = [...byId.values()];
+  const deals = all.filter((r) => r.listPrice != null);
+  // Between promotions (2026-11-12: 46 tiles, none struck) the hub lists
+  // full-price products; keep them so the brand page is not emptied.
+  return deals.length ? deals : all;
 }
 
 export const listProducts = listGemo;

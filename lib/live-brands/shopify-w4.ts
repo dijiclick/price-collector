@@ -9,4 +9,4 @@
  */
 import type { ShopifySite } from "./shopify-sites";
 
-export const SHOPIFY_W4: ShopifySite[] = [{ brand: "scalpers", sites: { PT: "https://pt.scalperscompany.com" } }];
+export const SHOPIFY_W4: ShopifySite[] = [{ brand: "scalpers", sites: { PT: "https://pt.scalperscompany.com" }, fullPriceTopUp: true }];

@@ -81,6 +81,7 @@ import { listNakd } from "./brands/nakd";
 import { listEllos } from "./brands/ellos";
 import { listFredrikOgLouisa } from "./brands/fredrikoglouisa";
 import { listGullfunn } from "./brands/gullfunn";
+import { listVineyardVines } from "./brands/vineyardvines";
 import { listCanda } from "./brands/c-and-a";
 import { listManor } from "./brands/manor";
 import { listAboutYou } from "./brands/aboutyou";
@@ -598,7 +599,8 @@ export const intlAdapters: { brand: string; listProducts: List }[] = [
   { brand: "merrell", listProducts: (c) => listMerrell(c) },
   { brand: "vuori", listProducts: (c) => listVuori(c) },
   { brand: "shoecarnival", listProducts: (c) => listAlgoliaUsca("shoecarnival", c) },
-  { brand: "vineyardvines", listProducts: (c) => listAlgoliaUsca("vineyardvines", c) },
+  // 2026-11-12: Algolia app blocked; Shopper Search through the PWA's SLAS guest token.
+  { brand: "vineyardvines", listProducts: listVineyardVines },
   { brand: "heydude", listProducts: (c) => listAlgoliaUsca("heydude", c) },
   ...(["ariat", "hottopic", "ragandbone", "saucony", "bootbarn", "talbots", "sallybeauty"] as const).map((b) => ({ brand: b, listProducts: (c: CountryCode) => listGridUsca(b, c) })),
   { brand: "michaelhill", listProducts: (c) => listSearchUsca("michaelhill", c) },

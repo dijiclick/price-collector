@@ -40,6 +40,14 @@ export interface ShopifySite {
   pageSize?: number;
   /** A multi-brand shop: the product's `vendor` is the real brand (`maker`). */
   makerFromVendor?: boolean;
+  /**
+   * Between sales, fill the run up to the cap with in-stock full-price rows
+   * (collector only; deals always come first). Without it a store whose sale
+   * ended collects a handful of rows, the sweep guard keeps the old sale rows,
+   * and the brand page shows products the shop has already removed (Scalpers
+   * ES/PT 2026-11-12: 22 deals collected, 5/5 sampled links 404).
+   */
+  fullPriceTopUp?: boolean;
 }
 
 export const SHOPIFY_STORES: ShopifySite[] = [
@@ -52,7 +60,7 @@ export const SHOPIFY_STORES: ShopifySite[] = [
   { brand: "gymshark", sites: { US: "https://us.shop.gymshark.com", CA: "https://ca.shop.gymshark.com", AU: "https://au.shop.gymshark.com", CH: "https://ch.shop.gymshark.com",
     DE: "https://de.shop.gymshark.com", FR: "https://fr.shop.gymshark.com", NL: "https://nl.shop.gymshark.com", SE: "https://se.shop.gymshark.com", DK: "https://dk.shop.gymshark.com",
     IE: "https://eu.shop.gymshark.com", ES: "https://eu.shop.gymshark.com", IT: "https://eu.shop.gymshark.com", BE: "https://eu.shop.gymshark.com", AT: "https://eu.shop.gymshark.com", PT: "https://eu.shop.gymshark.com", FI: "https://eu.shop.gymshark.com" } },
-  { brand: "scalpers", sites: { ES: "https://scalperscompany.com" } },
+  { brand: "scalpers", sites: { ES: "https://scalperscompany.com" }, fullPriceTopUp: true },
   { brand: "whitefox", sites: { US: "https://www.whitefoxboutique.com", GB: "https://www.whitefoxboutique.co.uk", AU: "https://www.whitefoxboutique.com.au" }, defaultGender: "kadin" },
   { brand: "dolcevita", sites: { US: "https://www.dolcevita.com", CA: "https://www.dolcevita.ca" }, defaultGender: "kadin" },
   { brand: "psychobunny", sites: { US: "https://www.psychobunny.com", CA: "https://www.psychobunny.ca" }, defaultGender: "erkek" },

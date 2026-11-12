@@ -93,6 +93,9 @@ export const SCAYLE_SHOPS: Record<ScayleSlug, Partial<Record<CountryCode, Scayle
       attributes: ["name", "brand", "subGroupNameMappedGenericArticle", "produktgruppe", "suchFarbeTTShopFarbname", "color"],
       typeKeys: ["subGroupNameMappedGenericArticle", "produktgruppe"],
       colorKeys: ["color", "suchFarbeTTShopFarbname"],
+      // 2026-11-12: the storefront moved to the newer build — POST now answers
+      // 404 on runners (302 elsewhere); GET ?payload= returns the products.
+      rpc: "get",
     },
   },
   comma: {},

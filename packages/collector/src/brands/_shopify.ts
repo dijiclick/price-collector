@@ -129,6 +129,7 @@ export async function listShopify(store: ShopifyStore, country: CountryCode): Pr
   if (!site) return [];
   const cap = store.maxProducts ?? 1500;
   const byId = new Map<string, ProductRecord>();
+  const full = new Map<string, ProductRecord>();
   const seen = new Set<string>();
   for (let n = 1; n <= MAX_PAGES; n++) {
     if (n > 1) await sleep(PAUSE_MS);
@@ -143,6 +144,7 @@ export async function listShopify(store: ShopifyStore, country: CountryCode): Pr
       if (p?.id != null && !seen.has(String(p.id))) { seen.add(String(p.id)); fresh++; }
       const r = mapShopify(store, country, site, p);
       if (r && r.listPrice != null) byId.set(r.externalId, r);
+      else if (r && store.fullPriceTopUp && r.inStock && full.size < cap) full.set(r.externalId, r);
     }
     // A short page is not always the last: Shopify drops products hidden from
     // the channel AFTER paging, so a full page can come back 249 of 250
@@ -154,5 +156,8 @@ export async function listShopify(store: ShopifyStore, country: CountryCode): Pr
     if (store.collections?.[country] && [...byId.values()].filter((r) => r.inStock).length >= cap) break;
   }
   const all = [...byId.values()];
-  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, cap);
+  const deals = [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, cap);
+  if (!store.fullPriceTopUp || deals.length >= cap) return deals;
+  // Between sales: deals first, then in-stock full-price rows up to the cap.
+  return [...deals, ...[...full.values()].filter((r) => !byId.has(r.externalId)).slice(0, cap - deals.length)];
 }
