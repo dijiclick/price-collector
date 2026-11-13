@@ -104,8 +104,14 @@ async function token(m: PandoraMarket, country: CountryCode): Promise<string> {
   return res.access_token as string;
 }
 
-/** A clearance markdown (the "last chance" pricebook), never a bundle or gift-set value. */
-const CLEARANCE = /last[\s_-]*chance/i;
+/**
+ * A clearance markdown (the "last chance" pricebook), never a bundle or gift-set value.
+ * From 2026-11-13 the same last-chance items carry their cut as a seasonal event
+ * promotion instead ("11.2026 BLACK FRIDAY FE", every hit in US and CA, per-item
+ * figures like 98 → 68), and the last-chance pricebook id is gone. Seasonal events
+ * count too; they are still read only inside the sale category.
+ */
+const CLEARANCE = /last[\s_-]*chance|black[\s_-]*friday|cyber[\s_-]*(monday|week)/i;
 const NOT_A_MARKDOWN = /gift|set\b|bundle|bab|buy|bonus|free/i;
 
 /**

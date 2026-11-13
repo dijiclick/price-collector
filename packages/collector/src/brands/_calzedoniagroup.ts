@@ -110,7 +110,9 @@ export const GROUP: Record<string, GroupBrand> = {
       // catalogue is walked too (~1.2k colours, ~13 pages).
       // Turkey returns the whole range (full price too) — see FULL CATALOGUE above.
       TR: { siteId: "falconeri-tr", locale: "tr-TR", path: "tr", saleCgids: ["FAL_Sale_TR", "FAL_Women_Sale_TR", "FAL_Women", "FAL_Men"], fullCatalogue: true },
-      CH: { siteId: "falconeri-ch", locale: "de-CH", path: "ch", saleCgids: ["FAL_Sale_CH", "FAL_Women_Sale_CH", "FAL_Women", "FAL_Men"] },
+      // CH's cashmere promotion ended 2026-11-12 (0 strike prices, 2 failed runs):
+      // between promotions it tops up with full-price Women + Men rows.
+      CH: { siteId: "falconeri-ch", locale: "de-CH", path: "ch", saleCgids: ["FAL_Sale_CH", "FAL_Women_Sale_CH", "FAL_Women", "FAL_Men"], topUpCgids: ["FAL_Women", "FAL_Men"] },
       // EU (2026-10-21): the same deals-only walk; see falconeriEu().
       ...falconeriEu(),
     },
