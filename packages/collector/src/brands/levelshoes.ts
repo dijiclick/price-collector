@@ -17,6 +17,14 @@
  * another currency than the market's fails the run. `brandName` is the maker;
  * `action.url` is the product page on the market's own host
  * (en-saudi.levelshoes.com, en-kuwait…). The listing has no per-size stock.
+ *
+ * BETWEEN SALES (2026-11-14: `sale=sale` answers 0 products on every listing,
+ * the facet is gone, `/sale` redirects to an empty `women/outlet.html`, and
+ * 0 of 96 shoes carry a struck price) each section is topped up to its cap
+ * with in-stock FULL-PRICE rows from the same listing without the filter
+ * (`listPrice: null`), as Gullfunn and the Landmark shops do. Collecting
+ * nothing would leave last sale's rows live at old prices and fail every run;
+ * a full-price row that is later reduced is then a real drop.
  */
 import { cleanGallery, type ProductRecord } from "../types";
 import { getJson } from "../http";
@@ -39,19 +47,24 @@ export const LEVEL_SECTIONS: { path: string; genderType: string; gender: Product
   { path: "men/shoes.html", genderType: "men", gender: "erkek", cap: 350 },
 ];
 
-export function levelUrl(country: CountryCode, path: string, genderType: string, page: number): string {
+export function levelUrl(country: CountryCode, path: string, genderType: string, page: number, sale = true): string {
   const cc = LEVEL_MARKETS[country];
-  return `${API}/${cc}/en/products/urlPath/v1?urlPath=${path}&groupID=&museTier=&page=${page}&count=${PAGE}&genderType=${genderType}&sale=sale`;
+  return `${API}/${cc}/en/products/urlPath/v1?urlPath=${path}&groupID=&museTier=&page=${page}&count=${PAGE}&genderType=${genderType}${sale ? "&sale=sale" : ""}`;
 }
 
-/** Map one listing product. Pure; null unless it is reduced. */
-export function mapLevel(p: any, country: CountryCode, gender: ProductRecord["gender"]): ProductRecord | null {
+/**
+ * Map one listing product. Pure; null unless it is reduced — or, with
+ * `fullPrice`, an in-stock row at its shelf price (`listPrice: null`).
+ */
+export function mapLevel(p: any, country: CountryCode, gender: ProductRecord["gender"], fullPrice = false): ProductRecord | null {
   const url = p?.action?.url;
   const name = String(p?.name ?? "").replace(/\s+/g, " ").trim();
   const price = Number(p?.rawSalePrice);
   const list = Number(p?.rawOriginalPrice);
   if (!p?.id || !name || typeof url !== "string" || !/^https:\/\/[a-z0-9-]+\.levelshoes\.com\//.test(url)) return null;
-  if (!(price > 0) || !(list > price) || p.isNonPurchasable === true) return null;
+  if (!(price > 0) || p.isNonPurchasable === true) return null;
+  const reduced = list > price;
+  if (!reduced && (!fullPrice || p.isInStock === false)) return null;
   const imgs: string[] = (Array.isArray(p.imagePreviewGallery) ? p.imagePreviewGallery : [p.image])
     .map((i: any) => i?.url)
     .filter((u: unknown): u is string => typeof u === "string");
@@ -67,7 +80,7 @@ export function mapLevel(p: any, country: CountryCode, gender: ProductRecord["ge
     imageUrl: imgs[0] ?? null,
     images: cleanGallery(imgs, imgs[0] ?? null),
     price: toMinor(price),
-    listPrice: toMinor(list),
+    listPrice: reduced ? toMinor(list) : null,
     currency: COUNTRIES[country].currency,
     inStock: p.isInStock !== false,
     category: [a.category3, a.category2, a.category1].find((c) => typeof c === "string" && c.trim()) ?? null,
@@ -85,30 +98,39 @@ export async function listLevelShoes(country: CountryCode): Promise<ProductRecor
   const byId = new Map<string, ProductRecord>();
   let requests = 0;
   let seen = 0;
-  for (const s of LEVEL_SECTIONS) {
+  /** Walk one section until `cap` new rows are kept; returns how many were kept. */
+  const walk = async (s: (typeof LEVEL_SECTIONS)[number], sale: boolean, cap: number): Promise<number> => {
     let kept = 0;
-    const pages = Math.ceil(s.cap / PAGE) + 1;
-    for (let page = 0; page < pages && kept < s.cap; page++) {
+    const pages = Math.ceil(cap / PAGE) + 1;
+    for (let page = 0; page < pages && kept < cap; page++) {
       if (requests++ > 0) await sleep(PAUSE_MS);
-      const d = await getJson<any>(levelUrl(country, s.path, s.genderType, page), {
+      const d = await getJson<any>(levelUrl(country, s.path, s.genderType, page, sale), {
         country, retries: 2, timeoutMs: 40_000, headers: { "x-level-platform": "Web", Accept: "application/json" },
       });
       const rows: any[] = Array.isArray(d?.products) ? d.products : [];
       if (rows.length && d.currency !== currency) throw new Error(`levelshoes/${country}: listing priced in ${d.currency}, not ${currency}`);
       seen += rows.length;
       for (const p of rows) {
-        if (kept >= s.cap) break;
-        const r = mapLevel(p, country, s.gender);
+        if (kept >= cap) break;
+        const r = mapLevel(p, country, s.gender, !sale);
         if (!r || byId.has(r.externalId)) continue;
         byId.set(r.externalId, r);
         kept++;
       }
       if (rows.length < PAGE) break;
     }
+    return kept;
+  };
+  for (const s of LEVEL_SECTIONS) {
+    const kept = await walk(s, true, s.cap);
+    // Between sales: top the section up with full-price rows (see the header).
+    if (kept < s.cap) await walk(s, false, s.cap - kept);
   }
-  if (!seen) throw new Error(`levelshoes/${country}: the sale listings returned no products`);
+  if (!seen) throw new Error(`levelshoes/${country}: the listings returned no products`);
   const all = [...byId.values()];
-  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)];
+  const sale = all.filter((r) => r.listPrice != null);
+  const full = all.filter((r) => r.listPrice == null);
+  return [...sale.filter((r) => r.inStock), ...full, ...sale.filter((r) => !r.inStock)];
 }
 
 export const listProducts = listLevelShoes;

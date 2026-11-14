@@ -23,9 +23,12 @@ import { COUNTRIES, type CountryCode } from "../../../../lib/countries";
 export const brand = "sephora";
 
 const API = "https://api.sephora.sg/api/v2.6/products";
+// Accept must be JSON:API's own type (or absent / */*): since ~2026-11-11 a bare
+// `application/json` is answered 500 "HttpMediaTypeNotAcceptableException" for
+// every market (AU, SG, HK failed 8 runs in a row); vnd.api+json → 200.
 export const SEPHORA_ASIA_HEADERS = (country: CountryCode): Record<string, string> => ({
   "User-Agent": "okhttp/4.12.0",
-  Accept: "application/json",
+  Accept: "application/vnd.api+json",
   "Accept-Language": `en-${country}`,
   "X-Site-Country": country,
 });

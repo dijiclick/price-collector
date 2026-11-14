@@ -20,6 +20,10 @@
  * 2026-11-11: the winter season is 30 % (re-measured on 40 pages across every
  * tag group: plain KIŞK and indirim5 + KIŞK show "Sepette %30"; indirim20 +
  * KIŞK still shows %20, indirim10–50 elsewhere unchanged).
+ * 2026-11-14: the winter season is 10 % (re-measured on 43 pages: plain KIŞK
+ * and indirim5 + KIŞK show "Sepette %10"; indirim10–50 unchanged). The theme
+ * only knows the tags 5/10/20/25/30/40/50: `indirim35` + KIŞK (Herbert, 3,980
+ * → 3,582.00) shows the season's %10, so an unknown NN is ignored.
  * The basket price is the shelf price × (100 − NN) / 100, rounded half-up to
  * the kuruş (1.469,90 at 25 % → 1.102,43). As with DeFacto / LCW / Altınbaş,
  * the basket price is stored as the price and the shelf price as the list price.
@@ -33,16 +37,18 @@ const SITE = "https://www.nisantasishoes.com";
 const STORE: ShopifySite = { brand: "nisantasishoes", sites: { TR: SITE }, defaultGender: "kadin" };
 
 /** The basket discount (whole percent) the theme shows for these tags, or 0. Pure. */
-export const WINTER_PERCENT = 30;
+export const WINTER_PERCENT = 10;
+/** The `indirimNN` values the theme renders; any other NN is ignored by the shop. */
+const THEME_PERCENTS = new Set([5, 10, 20, 25, 30, 40, 50]);
 
 export function basketPercent(tags: unknown): number {
   const list: string[] = Array.isArray(tags) ? tags.map(String) : typeof tags === "string" ? tags.split(",") : [];
   const winter = list.some((t) => t.trim() === "KIŞK");
   for (const t of list) {
     const m = t.trim().match(/^indirim(\d{1,2})$/i);
-    if (m && Number(m[1]) > 0) {
+    if (m && THEME_PERCENTS.has(Number(m[1]))) {
       const pct = Number(m[1]);
-      // Measured: indirim5 + KIŞK → the season's rate (30 % since 2026-11-11), indirim10 + KIŞK → 10 %.
+      // Measured: indirim5 + KIŞK → the season's rate (10 % since 2026-11-14), indirim10 + KIŞK → 10 %.
       return winter && pct < 10 ? Math.max(pct, WINTER_PERCENT) : pct;
     }
   }
