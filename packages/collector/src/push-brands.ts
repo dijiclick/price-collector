@@ -13,7 +13,9 @@
  *     new products on an established brand,
  *   - else the deepest cut among those brands,
  *   - else a pick from the market's household names (Zara, Mango, H&M…), so someone who
- *     tracks nothing hears from us too: 75 of 163 devices heard nothing in 14 days.
+ *     tracks nothing hears from us too: 75 of 163 devices heard nothing in 14 days —
+ *     but not for a device with a remembered search or alarm (2026-11-15): her own
+ *     interests speak for her (stilist-alarms.ts), and a quiet day stays quiet.
  *
  * The price rule (owner + Codex, 2026-11-08): at least 20% off, not fine jewellery
  * or anything but clothes, shoes and bags, and small: at or under the market's median price for such a product, up to its 75th
@@ -220,6 +222,8 @@ interface Row {
   /** Products pushed to this device lately, as nudges or alerts. */
   seen: (number | string)[] | null;
   recent_brands: string[] | null;
+  /** Remembered searches and saved alarms (stilist_alarms): her own interests. */
+  interests: number;
 }
 
 const asDate = (v: Date | string | null) => (v == null ? null : v instanceof Date ? v : new Date(v));
@@ -243,7 +247,8 @@ export async function pushBrands(db: Db, opts: { now?: Date; send?: NewsSend } =
             (SELECT array_agg(DISTINCT l.product_id) FROM push_log l WHERE l.token = d.token AND l.product_id IS NOT NULL
                AND l.sent_at > $1::timestamptz - interval '${REPEAT_DAYS} days') AS seen,
             (SELECT array_agg(DISTINCT split_part(l.key, ':', 3)) FROM push_log l WHERE l.token = d.token AND l.kind = 'brand'
-               AND l.sent_at > $1::timestamptz - interval '48 hours') AS recent_brands
+               AND l.sent_at > $1::timestamptz - interval '48 hours') AS recent_brands,
+            (SELECT count(*)::int FROM stilist_alarms a WHERE a.token = d.token) AS interests
        FROM push_devices d`,
     [now.toISOString()],
   );
@@ -288,6 +293,10 @@ export async function pushBrands(db: Db, opts: { now?: Date; send?: NewsSend } =
       hero = chooseHero(list, seed);
       if (hero) why = "followed";
     }
+    // Someone who told us what she wants hears about that (stilist-alarms.ts runs
+    // first and takes the day's slot), not a stranger's pick (owner, 2026-11-15:
+    // "notifications from her own interests"; the pick opened 3%, searches 9%).
+    if (!hero && r.interests > 0) continue;
     if (!hero) {
       const names = new Set(householdNames(country as CountryCode));
       const list = [...deals.entries()]

@@ -18,7 +18,7 @@
  * Matching runs on catalogue_items (lib/feed-cache.ts) — compact, in memory,
  * every live product of the launched markets — joined to the run's events.
  */
-import { logPushes, nudgeAllowed } from "./push-log";
+import { logPushes, nudgeAllowed, NUDGE_GAP_MS } from "./push-log";
 import type { Db } from "./db";
 import { devicePrefs, inQuietHours } from "./push";
 import { classifyToken, hasCoinChannel, loadCreds, sendApns, sendFcm, type PushContent } from "./push-transport";
@@ -32,11 +32,20 @@ export type AlarmSend = (token: string, c: PushContent) => Promise<Outcome>;
 const COOLDOWN_MS = 6 * 3600_000;
 /**
  * Remembered searches (lib/interests.ts) are the app reaching out unasked, so
- * they are rationed: one push per DEVICE per 48 h across all of them, new
- * products only, and the search is forgotten after 14 days.
+ * they are rationed: one push per DEVICE a day across all of them (the shared
+ * nudge gap, push-log.ts), and the search is forgotten after 30 days.
+ *
+ * 2026-11-15 (owner: "notifications from her own interests"): a remembered
+ * search — typed, a photo, or a Pinterest pin — now also hears about a real new
+ * discount on what she looked for, not only new arrivals: at least
+ * INTEREST_DEAL_PCT off, and lower than any drop of that product in 30 days (a
+ * price flipping between crawls is not news). It was 48 h and new products
+ * only; the search push opened 9% of the time against 3% for the daily pick
+ * (push_log, 14 days to 11-15), so it now takes the day's one slot first.
  */
-const IMPLICIT_COOLDOWN_MS = 48 * 3600_000;
-const IMPLICIT_TTL_MS = 14 * 24 * 3600_000;
+const IMPLICIT_COOLDOWN_MS = NUDGE_GAP_MS;
+const IMPLICIT_TTL_MS = 30 * 24 * 3600_000;
+export const INTEREST_DEAL_PCT = 20;
 /** An alarm older than this many days of silence still only looks back this far. */
 const MAX_LOOKBACK_H = 48;
 const FOLD = (col: string) => `lower(translate(${col}, 'ÇĞİÖŞÜIÂÎÛçğıöşüâîû', 'cgiosuiaiucgiosuaiu'))`;
@@ -75,8 +84,18 @@ interface AlarmRow {
 const foldWord = (w: string) =>
   w.toLocaleLowerCase("tr-TR").replace(/[çğıöşüâîû]/g, (c) => ({ ç: "c", ğ: "g", ı: "i", ö: "o", ş: "s", ü: "u", â: "a", î: "i", û: "u" })[c] ?? c).replace(/[^a-z0-9]/g, "");
 
+/**
+ * A remembered search's news since `$2`: a new product, or a real new discount
+ * (see INTEREST_DEAL_PCT). `c` is the catalogue row.
+ */
+const interestDeal = `EXISTS (SELECT 1 FROM events d WHERE d.product_id = c.id AND d.type = 'price_drop' AND d.ts > $2::timestamptz
+    AND abs(d.pct) >= ${INTEREST_DEAL_PCT} AND c.pct >= ${INTEREST_DEAL_PCT}
+    AND NOT EXISTS (SELECT 1 FROM events prev WHERE prev.product_id = d.product_id AND prev.type = 'price_drop'
+                    AND prev.id <> d.id AND prev.ts < d.ts AND prev.ts > d.ts - interval '30 days' AND prev.new_price <= d.new_price))`;
+export const INTEREST_DEAL_SQL = interestDeal;
+
 /** WHERE clause + params for one alarm's filters on catalogue_items `c`. Exported for tests. */
-export function alarmWhere(f: AlarmFilters, country: string, since: string, newOnly = false): { sql: string; params: unknown[] } {
+export function alarmWhere(f: AlarmFilters, country: string, since: string, interest = false): { sql: string; params: unknown[] } {
   const params: unknown[] = [country, since];
   let sql = `c.country = $1 AND c.in_stock`;
   const add = (clause: (i: number) => string, v: unknown) => {
@@ -106,8 +125,10 @@ export function alarmWhere(f: AlarmFilters, country: string, since: string, newO
     add((i) => `${FOLD("c.name")} ~ $${i}`, `\\y${w}`);
   }
   // Only what changed since the alarm was last checked.
-  sql += ` AND c.id IN (SELECT e.product_id FROM events e WHERE e.ts > $2::timestamptz
-                         AND e.type IN (${newOnly ? "'new_product'" : "'new_product', 'price_drop', 'back_in_stock'"}))`;
+  sql += interest
+    ? ` AND (c.id IN (SELECT e.product_id FROM events e WHERE e.ts > $2::timestamptz AND e.type = 'new_product') OR ${interestDeal})`
+    : ` AND c.id IN (SELECT e.product_id FROM events e WHERE e.ts > $2::timestamptz
+                         AND e.type IN ('new_product', 'price_drop', 'back_in_stock'))`;
   return { sql, params };
 }
 
@@ -115,6 +136,15 @@ export function alarmMessage(lang: string | null, summary: string | null, n: num
   const item = `${BRAND_LABELS[top.brand] ?? top.brand} ${top.name} ${money(top.price, top.currency)}`;
   const c = serverCopy(lang).stilist;
   return { title: summary ? c.alarmFor(summary) : c.alarmTitle(n), body: item };
+}
+
+/** "For your search: X" — a new discount on it, the old and the new price. */
+export function interestDealMessage(lang: string | null, summary: string | null, top: { brand: string; name: string; price: number; was: number | null; currency: string | null }): { title: string; body: string } {
+  const copy = serverCopy(lang);
+  const brand = BRAND_LABELS[top.brand] ?? top.brand;
+  const now = money(top.price, top.currency);
+  const line = top.was != null && top.was > top.price ? copy.alert.line(money(top.was, top.currency), now) : `${now}.`;
+  return { title: summary ? copy.stilist.alarmFor(summary) : copy.daily.onSale(brand), body: `${brand} ${top.name}: ${line}` };
 }
 
 /** "You searched for X: N new products" — the brand of the best one named. */
@@ -159,10 +189,10 @@ export async function pushStilistAlarms(db: Db, opts: { now?: Date; send?: Alarm
     return 0;
   }
   let sent = 0;
-  // Remembered searches are nudges (push-log.ts): inside the shared 48 h budget.
+  // Remembered searches are nudges (push-log.ts): inside the shared one-a-day budget.
   // Saved alarms are personal — the shopper asked for them — and are not.
   const allowed = await nudgeAllowed(db, [...new Set(alarms.filter((a) => a.implicit).map((a) => a.token))], now);
-  // The newest implicit push each device has had — the 48 h ration is per
+  // The newest implicit push each device has had — the daily ration is per
   // device, across all its remembered searches.
   const lastImplicit = new Map<string, number>();
   for (const a of alarms) {
@@ -190,17 +220,21 @@ export async function pushStilistAlarms(db: Db, opts: { now?: Date; send?: Alarm
       const since = (checked > floor ? checked : floor).toISOString();
       const f = (typeof a.filters === "string" ? JSON.parse(a.filters) : a.filters) as AlarmFilters;
       const { sql, params } = alarmWhere(f, a.country, since, !!a.implicit);
-      const rows = await db.query<{ n: number; brand: string; name: string; price: number; currency: string | null; id: number }>(
-        `SELECT count(*) OVER ()::int AS n, c.id, c.brand, c.name, c.current_price AS price, c.currency
+      // A remembered search: a real new discount first, then the newest arrival.
+      const deal = a.implicit ? interestDeal : "false";
+      const rows = await db.query<{ n: number; brand: string; name: string; price: number; was: number | null; currency: string | null; id: number; deal: boolean }>(
+        `SELECT count(*) OVER ()::int AS n, c.id, c.brand, c.name, c.current_price AS price, c.current_list_price AS was, c.currency, ${deal} AS deal
            FROM catalogue_items c WHERE ${sql}
-          ORDER BY c.pct DESC, c.current_price ASC LIMIT 1`,
+          ORDER BY ${a.implicit ? "deal DESC, " : ""}c.pct DESC, c.current_price ASC LIMIT 1`,
         params,
       );
       if (!rows.length) {
         await db.query(`UPDATE stilist_alarms SET checked_at = $2 WHERE id = $1`, [a.id, now.toISOString()]);
         continue;
       }
-      const msg = a.implicit ? interestMessage(a.lang, a.summary, rows[0].n, rows[0]) : alarmMessage(a.lang, a.summary, rows[0].n, rows[0]);
+      const msg = !a.implicit ? alarmMessage(a.lang, a.summary, rows[0].n, rows[0])
+        : rows[0].deal ? interestDealMessage(a.lang, a.summary, rows[0])
+        : interestMessage(a.lang, a.summary, rows[0].n, rows[0]);
       const outcome = await send(a.token, { title: msg.title, body: msg.body, kind: "news", href: `/product/${rows[0].id}`, sound: "coin", coinChannel: hasCoinChannel(a.prefs) });
       if (outcome === "dead") {
         await db.query(`DELETE FROM stilist_alarms WHERE token = $1`, [a.token]);
