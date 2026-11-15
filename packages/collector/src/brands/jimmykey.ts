@@ -44,6 +44,9 @@ const CAP = Number(process.env.JIMMYKEY_MAX_PRODUCTS ?? 6000);
 const PAUSE_MS = Number(process.env.JIMMYKEY_PAUSE_MS ?? 600);
 /** Rows the walk may fall short of the facet count (stock moving mid-walk). */
 const SHORTFALL = 0.01;
+/** Extra asks for page 1 when its answer carries no usable ColorID facet. */
+const FACET_RETRIES = 2;
+const FACET_RETRY_MS = Number(process.env.JIMMYKEY_FACET_RETRY_MS ?? 3000);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const brand = "jimmykey";
@@ -59,6 +62,12 @@ export function colorFacet(d: any): { values: [string, number][]; count: number 
   if (!f || typeof f.values !== "object") return null;
   return { values: Object.entries(f.values).map(([k, v]) => [k, Number(v)]), count: Number(f.count) };
 }
+
+/** A facet whose colour counts add up to its own total (PersonaClick caps long lists). */
+const usableFacet = (f: ReturnType<typeof colorFacet>) => {
+  const sum = f?.values.reduce((a, [, n]) => a + n, 0) ?? 0;
+  return !!f && sum > 0 && sum === f.count;
+};
 
 const param = (p: any, key: string): string[] =>
   ((p?.params ?? []).find((x: any) => x?.key === key)?.values ?? []).map(String);
@@ -135,18 +144,42 @@ export async function listProducts(country: CountryCode = "TR"): Promise<Product
     }
     return d;
   };
-  const facet = colorFacet(await get(1));
-  const sum = facet?.values.reduce((a, [, n]) => a + n, 0) ?? 0;
-  // A facet list cut short (PersonaClick caps long ones) would hide whole colours.
-  if (!facet || !sum || sum !== facet.count) throw new Error(`jimmykey: ColorID facet unusable (${sum} of ${facet?.count})`);
-  for (const [colorId] of facet.values) {
+  const walkColour = async (colorId: string) => {
     for (let page = 1; ; page++) {
       const d = await get(page, colorId);
       if (d.products.length < PAGE_SIZE) break;
     }
+  };
+  // GitHub runners have been answered without the facet (2026-11-15: "0 of
+  // undefined" for 6 runs while every request from elsewhere carried it), so
+  // ask again before falling back.
+  let first = await get(1);
+  for (let i = 0; i < FACET_RETRIES && !usableFacet(colorFacet(first)) && !process.env.JIMMYKEY_NO_FACET; i++) {
+    await sleep(FACET_RETRY_MS * (i + 1));
+    first = await get(1);
   }
-  if (byId.size < facet.count * (1 - SHORTFALL)) throw new Error(`jimmykey: ${byId.size} of ${facet.count} colourways — partial walk refused`);
-  if (process.env.JIMMYKEY_DEBUG) console.error(`jimmykey: ${requests} requests, ${byId.size} of ${facet.count} colourways`);
+  const facet = process.env.JIMMYKEY_NO_FACET ? null : colorFacet(first);
+  if (usableFacet(facet)) {
+    for (const [colorId] of facet!.values) await walkColour(colorId);
+    if (byId.size < facet!.count * (1 - SHORTFALL)) throw new Error(`jimmykey: ${byId.size} of ${facet!.count} colourways — partial walk refused`);
+  } else {
+    // No facet: the plain walk returns every MODEL once (products_total) in
+    // some colourway, and each row names its ColorID — walk those colours.
+    const total = Number(first.products_total);
+    if (!Number.isFinite(total) || total <= 0) throw new Error(`jimmykey: no facet and no products_total (filters: ${Object.keys(first?.filters ?? {}).join(",") || "none"})`);
+    const colours = new Set<string>();
+    const note = (d: any) => { for (const p of d.products) for (const c of param(p, "ColorID")) colours.add(c); };
+    note(first);
+    for (let page = 2, d = first; d.products.length >= PAGE_SIZE; page++) {
+      d = await get(page);
+      note(d);
+    }
+    const models = new Set([...byId.values()].map((r) => r.groupKey ?? r.externalId));
+    if (models.size < total * (1 - SHORTFALL)) throw new Error(`jimmykey: no facet, plain walk saw ${models.size} of ${total} models — partial walk refused`);
+    for (const c of colours) await walkColour(c);
+    console.error(`jimmykey: ColorID facet missing (filters: ${Object.keys(first?.filters ?? {}).join(",") || "none"}) — walked ${colours.size} colours seen on ${total} models`);
+  }
+  if (process.env.JIMMYKEY_DEBUG) console.error(`jimmykey: ${requests} requests, ${byId.size} of ${facet?.count ?? "?"} colourways`);
   const all = [...byId.values()];
   // A cap that cut rows would let the delist sweep mark them sold out: refuse instead.
   if (all.length > CAP) throw new Error(`jimmykey: ${all.length} products, over the cap of ${CAP}`);

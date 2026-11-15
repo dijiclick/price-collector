@@ -98,6 +98,10 @@ export async function getJson<T = any>(url: string, opts: FetchOpts = {}): Promi
           ...opts.headers,
         },
         body: opts.body,
+        // Per attempt. 23 callers passed timeoutMs and it was never applied, so
+        // one hung request held a brand until the run's 5-minute cut-off
+        // (Mytheresa AU/DE/IE/CA/PT, 2026-11-15).
+        signal: opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined,
         // @ts-expect-error undici dispatcher is accepted by Node's fetch
         dispatcher,
       });

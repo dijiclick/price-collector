@@ -32,6 +32,8 @@ export const brand = "puma";
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = Number(process.env.PUMA_INTL_MAX_PAGES ?? 16); // 1,600 colourways
+const PAGE_ATTEMPTS = 3;
+const RETRY_MS = Number(process.env.PUMA_RETRY_MS ?? 2000);
 const DETAIL_BATCH = 10; // root-field limit is between 10 and 20
 const DETAIL_REQUESTS = Number(process.env.PUMA_INTL_DETAIL_REQUESTS ?? 25); // 250 styles a run
 const CAP = 1500;
@@ -214,12 +216,20 @@ export async function listPumaIntl(country: CountryCode): Promise<ProductRecord[
 
   // Page 0 gives the total; the rest go out four at a time (eu.puma.com takes
   // up to ~10 s a page, so a serial walk of the Swiss sale ran past 3 minutes).
+  // A page can come back 200 with a GraphQL error naming a failed SCAPI request
+  // (runner 2026-11-15: CH/PT/ES/DK "request to …/product-search … failed"),
+  // which getJson does not retry — so ask again here before giving up on it.
   const listPage = async (page: number): Promise<any[] | null> => {
-    const data = await post(
-      { operationName: "CategoryPLP", query: LISTING_QUERY, variables: { url: "/sale", offset: page * PAGE_SIZE, limit: PAGE_SIZE } },
-      token,
-    ).catch(() => null);
-    const products = data?.data?.categoryByUrl?.products;
+    let data: any = null;
+    let products: any = null;
+    for (let attempt = 0; attempt < PAGE_ATTEMPTS && !products; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, RETRY_MS * attempt));
+      data = await post(
+        { operationName: "CategoryPLP", query: LISTING_QUERY, variables: { url: "/sale", offset: page * PAGE_SIZE, limit: PAGE_SIZE } },
+        token,
+      ).catch(() => null);
+      products = data?.data?.categoryByUrl?.products;
+    }
     if (!products && page === 0) throw new Error(`puma/${country}: ${JSON.stringify(data?.errors ?? data).slice(0, 200)}`);
     if (page === 0) total = Number(products.totalCount ?? 0);
     return products?.nodes ?? null; // a later page failing keeps what the others collected
