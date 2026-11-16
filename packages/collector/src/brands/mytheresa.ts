@@ -24,6 +24,13 @@
  * three back-to-back calls), so every call in the process waits its turn
  * (GAP_MS apart) and a limited answer is retried once after a longer wait.
  * ≤ 12 requests per market.
+ *
+ * On runners those back-offs add up: DE took 247 s and IE/PT crossed the
+ * collector's 300 s cut-off (2026-11-15/16), which throws the whole market
+ * away. So the walk has a time budget (BUDGET_MS, counted after the start
+ * stagger): women may use the first WOMEN_SHARE of it, men the rest, no page
+ * is asked once its walk's deadline has passed, and a back-off never sleeps
+ * past it. What was read by then is returned — fewer rows beats none.
  */
 import { cleanGallery, type ProductRecord, type SizeVariant } from "../types";
 import { getJson } from "../http";
@@ -37,6 +44,9 @@ const PAGE = 120;
 const CAP = 1300;
 const GAP_MS = Number(process.env.MYTHERESA_GAP_MS ?? 2600);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Whole walk, after the stagger; the collector cuts a brand at 300 s. */
+const BUDGET_MS = Number(process.env.MYTHERESA_BUDGET_MS ?? 200_000);
+const WOMEN_SHARE = 0.7;
 
 /** Market → Mytheresa store (X-Store, also the url's first path segment) and its currency. */
 export const MYTHERESA_MARKETS: Partial<Record<CountryCode, { store: string; currency: string }>> = {
@@ -153,9 +163,15 @@ export async function listMytheresa(country: CountryCode): Promise<ProductRecord
   const byId = new Map<string, ProductRecord>();
   const problems: string[] = [];
   let seen = 0;
+  const t0 = Date.now();
   for (const w of WALKS) {
     let taken = 0;
+    const deadline = t0 + (w.section === "women" ? BUDGET_MS * WOMEN_SHARE : BUDGET_MS);
     for (let page = 1; taken < w.max && byId.size < CAP; page++) {
+      if (Date.now() >= deadline) {
+        problems.push(`${w.section}: time budget spent before page ${page}`);
+        break;
+      }
       const call = () =>
         inTurn(() =>
           getJson<any>(API, { country, method: "POST", body: requestBody(page), headers: requestHeaders(country, w.section), retries: 1, timeoutMs: 45_000 }),
@@ -165,7 +181,9 @@ export async function listMytheresa(country: CountryCode): Promise<ProductRecord
       // API limits them together (DE got nothing on 2026-11-10): back off 15,
       // 30, then 45 s before giving a page up.
       for (let i = 1; i <= 3 && limited(d); i++) {
-        await sleep(15_000 * i);
+        const wait = Math.min(15_000 * i, deadline - Date.now());
+        if (wait <= 0) break;
+        await sleep(wait);
         d = await call();
       }
       const plp = d?.data?.xProductListingPageV2;

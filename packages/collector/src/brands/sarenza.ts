@@ -32,6 +32,12 @@
  * each market answers the runner in its own currency. ≤ 28 search pages + 2
  * token calls a market (the hook leaves no lighter route).
  *
+ * Time budget (2026-11-16): on runners a page takes ~8 s, not 1.5 s — DE
+ * needed 225 s and FR crossed the collector's 300 s cut-off, which throws the
+ * whole market away. So no page is asked after BUDGET_MS (women may use the
+ * first WOMEN_SHARE of it, men the rest) and each request is cut at 40 s; the
+ * rows read by then are returned.
+ *
  * Unverified: the product-page URL (`/<cc>/<lang>/<c_seoUrl>`) could not be
  * opened from here or a runner (site wall); it is the app's share-link shape.
  */
@@ -66,6 +72,8 @@ const WALKS: { genderRefine: string; target: number; pages: number }[] = [
 const PAGE = 50;
 const CAP = 1600;
 const PAUSE_MS = Number(process.env.SARENZA_PAUSE_MS ?? 400);
+const BUDGET_MS = Number(process.env.SARENZA_BUDGET_MS ?? 200_000);
+const WOMEN_SHARE = 0.75;
 const EXPAND = "expand=promotions,variations,prices,availability,custom_properties&perPricebook=true&allVariationProperties=true";
 
 export interface SarenzaHit {
@@ -193,15 +201,22 @@ export async function listSarenza(
   const search =
     deps.search ??
     ((url: string, token: string) =>
-      getJson<SearchResp>(url, { country, retries: 2, headers: { Authorization: `Bearer ${token}`, "Accept-Language": mk.locale } }));
+      getJson<SearchResp>(url, { country, retries: 2, timeoutMs: 40_000, headers: { Authorization: `Bearer ${token}`, "Accept-Language": mk.locale } }));
   const token = await getToken(mk.site);
   const byId = new Map<string, ProductRecord>();
   let calls = 0;
-  for (const walk of WALKS) {
+  let outOfTime = false;
+  const t0 = Date.now();
+  for (const [i, walk] of WALKS.entries()) {
     let got = 0;
     let pages = 0;
+    const deadline = t0 + (i === 0 ? BUDGET_MS * WOMEN_SHARE : BUDGET_MS);
     for (const cgid of SALE_CATEGORIES) {
       for (let offset = 0; got < walk.target && pages < walk.pages; offset += PAGE) {
+        if (calls && Date.now() >= deadline) {
+          outOfTime = true;
+          break;
+        }
         if (calls++) await sleep(PAUSE_MS);
         pages++;
         let j: SearchResp;
@@ -220,11 +235,11 @@ export async function listSarenza(
         }
         if (hits.length < PAGE || offset + PAGE >= (j.total ?? 0)) break;
       }
-      if (got >= walk.target || pages >= walk.pages) break;
+      if (got >= walk.target || pages >= walk.pages || Date.now() >= deadline) break;
     }
   }
   const all = [...byId.values()];
   const out = [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
-  console.log(`sarenza/${country}: ${calls} search pages, ${all.length} reduced, kept ${out.length}`);
+  console.log(`sarenza/${country}: ${calls} search pages, ${all.length} reduced, kept ${out.length}${outOfTime ? " (time budget spent)" : ""}`);
   return out;
 }
