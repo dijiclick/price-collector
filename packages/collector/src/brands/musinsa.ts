@@ -34,7 +34,11 @@ import type { CountryCode } from "../../../../lib/countries";
 
 export const brand = "musinsa";
 
-const API = "https://api.musinsa.com/api2/dp/v1/plp/goods";
+// 2026-11-17: v1 now answers SUCCESS with an empty list for every query (all
+// Musinsa brands failed 9 runs in a row). v2 returns the same rows, but page 2+
+// must carry the hmacId the previous page hands back in pagination.nextPageUrl
+// (built by hand, page 2 is a 403) — see nextPage().
+const API = "https://api.musinsa.com/api2/dp/v2/plp/goods";
 const CAP = 1500;
 const PAUSE_MS = Number(process.env.MUSINSA_PAUSE_MS ?? 350);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -121,6 +125,13 @@ export const MUSINSA_LEAVES: [string, string, number][] = [
   ["104015", "Lipstick", 15],
   ["104016", "Eye Makeup", 10],
 ];
+
+/** The signed url of the next page, only when it is a v2 url on Musinsa's own API host. */
+export function nextPage(data: any): string | null {
+  const p = data?.data?.pagination;
+  if (!p?.hasNext || typeof p.nextPageUrl !== "string") return null;
+  return p.nextPageUrl.startsWith(`${API}?`) ? p.nextPageUrl : null;
+}
 
 export function listUrl(code: string, size: number, page = 1, brandSlug?: string, sale = true): string {
   const b = brandSlug ? `&brand=${encodeURIComponent(brandSlug)}` : "";
@@ -275,10 +286,11 @@ export async function listMusinsaStore(ourSlug: string, country: CountryCode): P
   const byId = new Map<string, ProductRecord>();
   let calls = 0;
   for (const [code, label] of MUSINSA_BRAND_LEAVES) {
-    for (let page = 1; ; page++) {
+    let url: string | null = listUrl(code, BRAND_PAGE, 1, slug);
+    for (let page = 1; url; page++) {
       if (page > BRAND_MAX_PAGES) break;
       if (calls++ > 0) await sleep(PAUSE_MS);
-      const data = await getJson<any>(listUrl(code, BRAND_PAGE, page, slug), { country, retries: 2, headers: { Referer: "https://www.musinsa.com/" } });
+      const data = await getJson<any>(url, { country, retries: 2, headers: { Referer: "https://www.musinsa.com/" } });
       if (data?.meta?.result !== "SUCCESS" || !Array.isArray(data?.data?.list)) {
         throw new Error(`musinsa/${ourSlug}: category ${code} answered ${JSON.stringify(data?.meta ?? null)}`);
       }
@@ -288,7 +300,7 @@ export async function listMusinsaStore(ourSlug: string, country: CountryCode): P
         const r = mapMusinsaGoods(g, label || null, country, ourSlug);
         if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
       }
-      if (!data.data.pagination?.hasNext) break;
+      url = nextPage(data);
     }
   }
   const all = [...byId.values()];

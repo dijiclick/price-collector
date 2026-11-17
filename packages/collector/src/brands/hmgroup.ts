@@ -115,6 +115,10 @@ export const HMGROUP: Record<HmGroupSlug, Brand> = {
     // "/promotions/new-to-sale" is the live markdown page; "/sale" is where the
     // seasonal sale lands (0 rows outside it). & Other Stories is womenswear.
     pages: [["/promotions/new-to-sale", "kadin"], ["/sale", "kadin"]],
+    // 2026-11-17: the sale ended in every market — both sale pages answer 0
+    // rows (and the run failed 6 times) while /clothing lists 890 in DE. Out of
+    // season, track the whole catalogue at full price, as Weekday and COS do.
+    full: [["/clothing", "kadin"], ["/shoes", "kadin"], ["/bags", "kadin"], ["/accessories", "kadin"], ["/beauty", "kadin"]],
     pageSize: 200,
   },
   weekday: {
@@ -237,7 +241,7 @@ export function bffUrl(slug: "stories" | "weekday", mk: string, ref: string, ski
     : `https://api.weekday.com/products/v1/${mk}/products?${p}`;
 }
 
-export function mapStories(country: CountryCode, p: any, gender: Gender): ProductRecord | null {
+export function mapStories(country: CountryCode, p: any, gender: Gender, keepFull = false): ProductRecord | null {
   const m = HMGROUP.stories.markets[country]!;
   const imgs: string[] = (p?.images ?? []).map((x: any) => x?.url);
   const hero = (p?.images ?? []).find((x: any) => /StillLife/.test(x?.assetType ?? ""))?.url ?? imgs[0] ?? null;
@@ -259,7 +263,7 @@ export function mapStories(country: CountryCode, p: any, gender: Gender): Produc
     variants: sizes.length ? { colors: p?.variantName ? [p.variantName] : [], sizes } : null,
     groupKey: p?.sku ? `stories:${String(p.sku).slice(0, 7)}` : null,
     colorName: p?.variantName ?? null,
-  });
+  }, keepFull);
 }
 
 export function mapWeekday(country: CountryCode, p: any, gender: Gender, keepFull = false): ProductRecord | null {
@@ -403,7 +407,7 @@ export async function listHmGroup(slug: HmGroupSlug, country: CountryCode): Prom
               assertCurrency(slug, country, slug === "stories" ? r0?.price?.currency : r0?.pricing?.price);
               checked = true;
             }
-            for (const p of rows) add(slug === "stories" ? mapStories(country, p, gender) : mapWeekday(country, p, gender, keepFull));
+            for (const p of rows) add(slug === "stories" ? mapStories(country, p, gender, keepFull) : mapWeekday(country, p, gender, keepFull));
             if (!rows.length || skip + b.pageSize >= (d?.data?.pagination?.totalProducts ?? 0)) break;
           }
         }

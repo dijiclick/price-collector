@@ -39,7 +39,18 @@ import type { CountryCode } from "../../../../lib/countries";
 const ENDPOINT = "https://recommendationv2.api.useinsider.com/v2";
 const CLIENT_ID = "g0uSLhenGOKvzAtz";
 const SIZE = 100;
-const MAX_REQUESTS = 80;
+const MAX_REQUESTS = 120;
+/**
+ * Starting price bands (EUR) for the NL split. Bisecting 0–1000 spent most of
+ * its requests on the near-empty top: on 2026-11-17 the promo set had grown to
+ * 642 rows and the walk needed 84 requests, over the old cap of 80, so every
+ * run failed (9 runs). Nearly every markdown costs under €16, so start with
+ * narrow bands there and one wide band above; each band still splits when full.
+ * Edges overlap by 0.001 because the filter is strict (> lo, < hi).
+ */
+export const NL_BANDS: [number, number][] = [
+  [0, 4], [3.999, 6], [5.999, 7], [6.999, 8], [7.999, 10], [9.999, 11], [10.999, 12], [11.999, 16], [15.999, 32], [31.999, 1000],
+];
 const CAP = 1500;
 const PAUSE_MS = Number(process.env.KRUIDVAT_PAUSE_MS ?? 250);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -144,7 +155,7 @@ export async function listKruidvat(country: CountryCode): Promise<ProductRecord[
     const base = "[discount.EUR][>][0]*[product_attributes.item_on_promo][=][true]";
     for (const strategy of NL_STRATEGIES) {
       for (const section of SECTIONS) {
-        const queue: [number, number][] = [[0, 1000]];
+        const queue: [number, number][] = NL_BANDS.map(([lo, hi]) => [lo, hi]);
         while (queue.length) {
           const [lo, hi] = queue.shift()!;
           const rows = await fetchRows(strategy, `${base}*[category][~][${section}]*[price.EUR][>][${lo}]*[price.EUR][<][${hi}]`);
