@@ -100,6 +100,10 @@ export const HMGROUP: Record<HmGroupSlug, Brand> = {
       IE: EU("EU"), BE: EU("EU"), PT: EU("EU"), FI: EU("EU"),
     },
     pages: [["/sale/women", "kadin"], ["/sale/men", "erkek"], ["/sale/children", "cocuk"]],
+    // 2026-11-18: the sale ended — all three sale pages answer 0 hits in every
+    // market (8 failed runs) while /women lists 1,410, /men 1,093 and /children
+    // 602 in DE. Out of season, track the department pages at full price.
+    full: [["/women", "kadin"], ["/men", "erkek"], ["/children", "cocuk"]],
     pageSize: 200,
   },
   stories: {
@@ -314,7 +318,7 @@ export function arketUrl(mk: string, ref: string, skip: number, limit: number, l
 }
 
 /** One Elevate product = one colour; its `variants` are the sizes. */
-export function mapArket(country: CountryCode, p: any, gender: Gender): ProductRecord | null {
+export function mapArket(country: CountryCode, p: any, gender: Gender, keepFull = false): ProductRecord | null {
   const m = HMGROUP.arket.markets[country]!;
   const imgs: string[] = (p?.imageInfo?.images ?? []).map((im: any) => im?.sources?.[0]?.url);
   const sizes: SizeVariant[] = (p?.variants ?? [])
@@ -335,7 +339,7 @@ export function mapArket(country: CountryCode, p: any, gender: Gender): ProductR
     variants: sizes.length ? { colors: [], sizes } : null,
     groupKey: p?.key ? `arket:${String(p.key).slice(0, 7)}` : null,
     colorName: null,
-  });
+  }, keepFull);
 }
 
 // ---------- crawl ----------
@@ -397,7 +401,7 @@ export async function listHmGroup(slug: HmGroupSlug, country: CountryCode): Prom
           if (slug === "arket") {
             const d = await fetchJson(arketUrl(m.mk, ref, skip, b.pageSize, m.locale), { method: "POST", body: "{}" });
             const groups: any[] = d?.primaryList?.productGroups ?? [];
-            for (const g of groups) for (const p of g?.products ?? []) add(mapArket(country, p, gender));
+            for (const g of groups) for (const p of g?.products ?? []) add(mapArket(country, p, gender, keepFull));
             if (!groups.length || skip + b.pageSize >= (d?.primaryList?.totalHits ?? 0)) break;
           } else {
             const d = await fetchJson(bffUrl(slug, m.mk, ref, skip, b.pageSize, m.locale));

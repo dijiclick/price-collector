@@ -69,6 +69,26 @@ export function tousShelves(home: string, prefix: string, root = "precios-especi
   return [...leaves.sort(), ...top];
 }
 
+/**
+ * 2026-11-18: for Black Friday the nav stopped linking the markdown root —
+ * it links "/black-friday/c/3935" (in presales mode: prices hidden, 4 teaser
+ * tiles) — so no shelf was found and ES/PT collected 0 for 3 runs, while
+ * "/es-es/precios-especiales/c/5533" still lists the struck-price tiles. The
+ * root is now always read, and the campaign's shelves too once they price.
+ */
+export const TOUS_ROOT_ID = 5533;
+export const TOUS_CAMPAIGN_ROOTS = ["black-friday"];
+
+/** Every shelf to walk, with the root it hangs from. Pure. */
+export function tousPlan(home: string, prefix: string, root: string): [path: string, root: string][] {
+  const out = new Map<string, string>();
+  for (const p of tousShelves(home, prefix, root)) out.set(p, root);
+  const fixed = `${prefix}/${root}/c/${TOUS_ROOT_ID}`;
+  if (!out.has(fixed)) out.set(fixed, root);
+  for (const r of TOUS_CAMPAIGN_ROOTS) for (const p of tousShelves(home, prefix, r)) if (!out.has(p)) out.set(p, r);
+  return [...out];
+}
+
 /** "/es-es/precios-especiales/joyeria/anillos/c/5538" → "anillos"; the root → null. Pure. */
 export function tousShelf(path: string, root = "precios-especiales"): string | null {
   const seg = path.replace(/\/c\/\d+$/, "").split("/").pop() ?? "";
@@ -147,8 +167,9 @@ export async function listTous(country: CountryCode): Promise<ProductRecord[]> {
   if (!home.ok) throw new Error(`HTTP ${home.status} for ${homeUrl}`);
   const cookie = cookieHeader(home.headers.getSetCookie?.() ?? []);
   const opts = { country, timeoutMs: 45_000, headers: { ...headers, ...(cookie ? { Cookie: cookie } : {}) } };
-  const shelves = tousShelves(await home.text(), prefix, root);
-  if (!shelves.length) return []; // no markdown running
+  const plan = tousPlan(await home.text(), prefix, root);
+  const rootOf = new Map(plan);
+  const shelves = plan.map(([p]) => p);
   const byId = new Map<string, ProductRecord>();
   const next = new Map<string, number>(shelves.map((s) => [s, 0]));
   let requests = 1;
@@ -162,7 +183,7 @@ export async function listTous(country: CountryCode): Promise<ProductRecord[]> {
         throw new Error(`tous: ${path} rendered all ${tiles.length} tiles without a price — session cookie not honoured`);
       }
       for (const t of tiles) {
-        const r = mapTous(t, tousShelf(path, root), country);
+        const r = mapTous(t, tousShelf(path, rootOf.get(path) ?? root), country);
         if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
       }
       if (tiles.length < PAGE) next.delete(path);

@@ -105,7 +105,9 @@ export function saleListings(homeHtml: string, prefix: string): string[] {
   const rules = RULES[prefix.split("/")[2] ?? "es"] ?? RULES.es;
   const out = new Set<string>();
   for (const m of homeHtml.matchAll(/href="(?:https:\/\/[a-z.]+)?(\/[a-z]{2}\/[a-z]{2}\/[^"?#]+)"/g)) {
-    const path = m[1].replace(/\/+$/, "");
+    // 2026-11-18: PT's Black Friday links carry a trailing space inside the
+    // href (".../black-friday-marcas/mulher "), which 404s when requested as is.
+    const path = m[1].trim().replace(/\/+$/, "");
     if (!path.startsWith(prefix + "/")) continue;
     const rest = path.slice(prefix.length);
     if (!rules.sale.test(rest) || rules.multibuy.test(rest) || rules.notAdult.test(rest)) continue;

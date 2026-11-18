@@ -201,6 +201,20 @@ export function wallCodes(page: any): string[] {
   return out;
 }
 
+/**
+ * The thread feed refuses `anchor` above 1,000 with 400 VALUE_TOO_LARGE
+ * (measured 2026-11-18: Black Friday took TR to 4,612 discounted ACTIVE threads,
+ * and the walk died asking for anchor=1050 — 5 runs, 0 products). The deals
+ * walk stops at the last page the feed will serve; the wall walk below picks up
+ * every deal past it. Pure: should the deals walk ask for the page after `page`?
+ */
+export const ANCHOR_MAX = 1000;
+export function dealsWalkContinues(page: number, data: any, pageSize = PAGE): boolean {
+  const objects: any[] = data?.objects ?? [];
+  if (objects.length < pageSize || !data?.pages?.next) return false;
+  return (page + 1) * pageSize <= ANCHOR_MAX;
+}
+
 async function listNikeTrFull(): Promise<ProductRecord[]> {
   const byId = new Map<string, ProductRecord>();
   // 1. The deals walk, unchanged (sold-out ACTIVE deals included, as before).
@@ -210,7 +224,7 @@ async function listNikeTrFull(): Promise<ProductRecord[]> {
     const data = await getJson<any>(threadsUrl(dealFilters, page * PAGE, PAGE, "TR"), { proxy: true, retries: 2 });
     const objects: any[] = data?.objects ?? [];
     for (const t of objects) for (const r of mapThread(t, "TR")) byId.set(r.externalId, r);
-    if (objects.length < PAGE || !data?.pages?.next) break;
+    if (!dealsWalkContinues(page, data)) break;
   }
   // 2. Every colour code on the site's own wall.
   const codes = new Set<string>();

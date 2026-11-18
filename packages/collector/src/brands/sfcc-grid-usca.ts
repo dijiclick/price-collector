@@ -308,7 +308,11 @@ export const GRID_USCA: Record<GridUscaBrand, GridSite> = {
       },
     },
     pageSize: 24,
-    maxCalls: 60,
+    // 2026-11-18: clearance grew to ~1,790 tiles (start=1680 still full, 1800
+    // empty) and 60 pages of 24 no longer reached the 1,500 cap — 2 runs
+    // failed "request budget (60) spent". 80 pages cover the whole grid
+    // (~0.4 s a page + the pause, ~90 s).
+    maxCalls: 80,
     cap: 1500,
     tileStart: /<div class="product-tile-container js-product-tile\b/,
     parse: parseAriatTile,
