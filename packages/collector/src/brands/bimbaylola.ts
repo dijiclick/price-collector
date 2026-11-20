@@ -28,10 +28,28 @@ const MARKETS: Partial<Record<CountryCode, string>> = { ES: "/es_es", PT: "/pt_p
  * "…-saldos(-3)" / "malas-sale"; France only runs the legal "soldes" periods
  * (nothing linked on 2026-10-21, so FR returns [] until a soldes shelf appears).
  */
-const SALE_WORD: Partial<Record<CountryCode, RegExp>> = { PT: /saldos|-sale$/, FR: /soldes/ };
+const SALE_WORD: Partial<Record<CountryCode, RegExp>> = { PT: /saldos|-sale$|black-friday/, FR: /soldes|black-friday/ };
+/**
+ * Black Friday (2026-11-20): the rebajas/saldos shelves are gone from every
+ * market's menu and "/xx_xx/top-black-friday" took their place — struck
+ * prices, ~90% of its rows reduced. With no sale word matching, the run read
+ * nothing and failed 4 runs at 0 rows; the shelf is a sale shelf like any other.
+ */
+const ES_SALE = /rebajas|black-friday/;
+/**
+ * That shelf is a curated ~210 rows, while the reductions run across the whole
+ * catalogue (28 of the first 48 bags reduced on ES, 2026-11-20). So while a
+ * Black Friday shelf is linked, the department pages are read too; only rows
+ * with a struck price count, as everywhere here.
+ */
+const BF_DEPARTMENTS: Partial<Record<CountryCode, string[]>> = {
+  ES: ["bolsos", "ropa-mujer", "zapatos-mujer", "bisuteria", "accesorios-y-complementos-mujer"],
+  PT: ["malas-mulher", "roupa-mulher", "sapatos-mulher", "bijuteria-mulher", "acessorios-mulher"],
+  FR: ["sacs-et-sac-a-mains", "vetement-femme-fashion-en-ligne", "chaussures-en-ligne-femme", "bijoux-femme", "accessoires-mode-femme"],
+};
 const LANGS: Partial<Record<CountryCode, string>> = { PT: "pt-PT,pt;q=0.9", FR: "fr-FR,fr;q=0.9" };
 const PAGE = 48;
-const MAX_REQUESTS = 30;
+const MAX_REQUESTS = 45;
 const CAP = 1500;
 const PAUSE_MS = Number(process.env.BYL_PAUSE_MS ?? 500);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -46,6 +64,14 @@ export function bylSaleListings(home: string, prefix: string, sale: RegExp = /re
   return [...out].sort();
 }
 
+/** The sale shelves plus, during Black Friday, the department pages the menu links. Pure. */
+export function bylListings(home: string, prefix: string, sale: RegExp, departments: string[] = []): string[] {
+  const shelves = bylSaleListings(home, prefix, sale);
+  if (!shelves.some((p) => /black-friday/.test(p))) return shelves;
+  const linked = new Set(bylSaleListings(home, prefix, /./));
+  return [...shelves, ...departments.map((d) => `${prefix}/${d}`).filter((p) => linked.has(p))];
+}
+
 /** "/es_es/prenda-exterior-rebajas-3" → "prenda exterior"; the generic shelf → null. Pure. */
 export function shelfOf(path: string): string | null {
   const slug = path.split("/").pop() ?? "";
@@ -53,6 +79,7 @@ export function shelfOf(path: string): string | null {
     .replace(/-?rebajas(-\d+)?$/, "")
     .replace(/^rebajas-?/, "")
     .replace(/-?(?:saldos|soldes)(-\d+)?$|-sale$/, "")
+    .replace(/^(?:top-)?black-friday$/, "")
     .replace(/-/g, " ")
     .trim();
   return s && s !== "top productos" ? s : null;
@@ -116,7 +143,7 @@ export async function listBimbaYLola(country: CountryCode): Promise<ProductRecor
   const prefix = MARKETS[country];
   if (!prefix) return [];
   const opts = { country, timeoutMs: 60_000, headers: { "Accept-Language": LANGS[country] ?? "es-ES,es;q=0.9" } };
-  const listings = bylSaleListings(await getText(`${ORIGIN}${prefix}/`, opts), prefix, SALE_WORD[country]);
+  const listings = bylListings(await getText(`${ORIGIN}${prefix}/`, opts), prefix, SALE_WORD[country] ?? ES_SALE, BF_DEPARTMENTS[country]);
   if (!listings.length) return []; // no sale running
   const byId = new Map<string, ProductRecord>();
   const next = new Map<string, number>(listings.map((l) => [l, 0]));

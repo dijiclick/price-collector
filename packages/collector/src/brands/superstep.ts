@@ -30,8 +30,10 @@ import { akinonRecords, walkAkinonListing } from "./_akinon";
  */
 const SITE = "https://www.superstep.com.tr";
 const LIST_PATH = "/list/";
-const MAX_PAGES = Number(process.env.SUPERSTEP_MAX_PAGES ?? 130); // price bands: ~90 pages at 20k rows
-const MAX_PRODUCTS = Number(process.env.SUPERSTEP_MAX_PRODUCTS ?? 25000);
+const MAX_PAGES = Number(process.env.SUPERSTEP_MAX_PAGES ?? 180); // price bands: ~90 pages at 20k rows
+// Black Friday 2026-11 took /list/ to 25,804 colours and the old 25,000 cap
+// failed 11 runs in a row. The cap is a sanity bound, not a budget.
+export const MAX_PRODUCTS = Number(process.env.SUPERSTEP_MAX_PRODUCTS ?? 40000);
 
 const kw = (p: any, key: string): string | null => {
   const v = p?.attributes_kwargs?.[key]?.label ?? p?.attributes?.[key];

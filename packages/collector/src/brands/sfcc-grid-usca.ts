@@ -364,7 +364,7 @@ export const GRID_USCA: Record<GridUscaBrand, GridSite> = {
       },
       CA: {
         host: "https://www.saucony.com",
-        sections: [{ url: (s) => `https://www.saucony.com/CA/en_CA/saucony-sale/?prefn1=isOnSale&prefv1=true&start=${s}&sz=48&format=ajax`, gender: null, label: null, max: 1500 }],
+        sections: [{ url: (s) => `https://www.saucony.com/CA/en_CA/sale/?prefn1=isOnSale&prefv1=true&start=${s}&sz=48&format=ajax`, gender: null, label: null, max: 1500 }],
       },
     },
     pageSize: 48,

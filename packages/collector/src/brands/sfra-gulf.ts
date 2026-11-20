@@ -171,10 +171,11 @@ export const SFRA_GULF: Record<SfraGulfBrand, Site> = {
       SA: { origin: "https://www.gap.sa", site: "Sites-GAP_SA-Site", locale: "en_SA" },
       KW: { origin: "https://www.gap.com.kw", site: "Sites-GAP_KW-Site", locale: "en_KW" },
     },
-    sections: [
-      { query: "cgid=sale-women", gender: "kadin", max: 900 },
-      { query: "cgid=sale-men", gender: "erkek", max: 500 },
-    ],
+    // 2026-11-20: gap.ae dropped the sale-women / sale-men categories (empty
+    // grid, 4 runs at 0). The menu's one "Sale" category, cgid=sale, holds women,
+    // men and kids on all three shops (AE 425, SA 299, KW 332 rows vs 113/112
+    // before); the tile's item_category gives the gender.
+    sections: [{ query: "cgid=sale", gender: null, max: 1400 }],
     parse: parseGap,
   },
   // Banana Republic UAE: the same Al Tayer storefront template as GAP (no SA shop; the KW site has no sale grid).
@@ -245,7 +246,14 @@ export const SFRA_GULF: Record<SfraGulfBrand, Site> = {
       AE: { origin: "https://www.underarmour.ae", site: "Sites-UnderArmour_AE-Site", locale: "en_AE" },
       SA: { origin: "https://www.underarmour.sa", site: "Sites-UnderArmour_SA-Site", locale: "en_SA" },
     },
-    sections: [{ query: "cgid=outlet", gender: null, max: 1200 }],
+    // 2026-11-20: the outlet shelf stopped striking prices on SA (24 of 25 tiles
+    // list == sale) and shrank on AE (350 rows vs 1,200). The markdowns now sit
+    // in the menu's "Sale" category, cgid=ua_sale (1,500+ struck rows on both);
+    // outlet stays as the second shelf for when that sale ends.
+    sections: [
+      { query: "cgid=ua_sale", gender: null, max: 1200 },
+      { query: "cgid=outlet", gender: null, max: 1200 },
+    ],
     parse: parseUa,
   },
 };
