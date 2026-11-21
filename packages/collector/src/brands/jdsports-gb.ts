@@ -117,6 +117,26 @@ export function mapJdGb(h: any, country: CountryCode, site: string = SITE): Prod
   };
 }
 
+/**
+ * The Algolia key is one per app, shared by every JD shop. When the pinned one
+ * is retired, read it off the shop's own home page and, if that host 403s the
+ * runner (PT/ES/DE/FR/IE/FI/SE/DK did on 2026-11-21 while IT/NL/AT/BE/GB
+ * answered), off the other JD home pages in turn.
+ */
+export function homePagesFor(site: string): string[] {
+  const all = [site, SITE, ...Object.values(JD_EU_MARKETS).map((m) => m!.site)];
+  return [...new Set(all)];
+}
+
+async function keyFromHomePages(site: string, country: CountryCode): Promise<{ appId: string; key: string } | null> {
+  for (const host of homePagesFor(site)) {
+    const html = await getText(`${host}/`, { country, retries: 0, headers: { Accept: "text/html" } }).catch(() => "");
+    const cfg = algoliaConfigOf(html);
+    if (cfg) return cfg;
+  }
+  return null;
+}
+
 /** The UK, or an EU shop from JD_EU_MARKETS (the registry's `jdsports` entry calls this for every market). */
 export async function listJdSportsGb(country: CountryCode): Promise<ProductRecord[]> {
   const eu = JD_EU_MARKETS[country];
@@ -131,15 +151,17 @@ export async function listJdSportsGb(country: CountryCode): Promise<ProductRecor
   // retired. docs/collector-unblock-playbook.md.
   let cfg: { appId: string; key: string } | null = {
     appId: process.env.JDSPORTS_GB_ALGOLIA_APP ?? "YPTJLWZE3Q",
-    key: process.env.JDSPORTS_GB_ALGOLIA_KEY ?? "406e0fd2fca1bb457ec819dbcd962294",
+    // Rotated 2026-11-21 (the 406e0fd2… key began answering "Invalid
+    // Application-ID or API key"; same app, every market).
+    key: process.env.JDSPORTS_GB_ALGOLIA_KEY ?? "1ff9820f321f1dae59d82ded030fb887",
   };
   const probe = await getJson<any>(`https://${cfg.appId}-dsn.algolia.net/1/indexes/${index}/query`, {
     method: "POST", country, retries: 0,
     headers: { "X-Algolia-Application-Id": cfg.appId, "X-Algolia-API-Key": cfg.key, "Content-Type": "application/json" },
     body: JSON.stringify({ params: "hitsPerPage=0" }),
   }).catch(() => null);
-  if (!probe) cfg = algoliaConfigOf(await getText(`${site}/`, { country, headers: { Accept: "text/html" } }));
-  if (!cfg) throw new Error(`jdsports/${country}: pinned Algolia key refused and no algoliaConfig on the home page`);
+  if (!probe) cfg = await keyFromHomePages(site, country);
+  if (!cfg) throw new Error(`jdsports/${country}: pinned Algolia key refused and no algoliaConfig on any JD home page`);
   const byId = new Map<string, ProductRecord>();
   for (let page = 0; page < 3 && byId.size < CAP; page++) {
     await sleep(PAUSE_MS);

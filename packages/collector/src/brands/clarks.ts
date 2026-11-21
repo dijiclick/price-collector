@@ -51,7 +51,23 @@ export function mapClarks(h: any, country: CountryCode): ProductRecord | null {
   if (!h?.objectID || !name || !slug || !Number.isInteger(price) || price <= 0 || !Number.isInteger(was) || was <= price) return null;
   if (h.price.currencyCode !== m.currency || (h.wasPrice.currencyCode && h.wasPrice.currencyCode !== m.currency)) return null;
   if (h.price.fractionDigits != null && h.price.fractionDigits !== 2) return null;
-  if (/promo/i.test(String(h.priceType ?? ""))) return null;
+  // Black Friday 2026-11-21: sale items carry an extra promotion on top
+  // ("salepromo" + `promotion.pricesStrikethrough`, e.g. USBF20OFF / UKFP_BF26_10)
+  // that the site shows struck through — the markdown is real and the promo
+  // price is what the shop displays. Dropping them cut US to 61 of 144 rows and
+  // the UK to 2 of ~220. A "salepromo" without a struck-price promotion (the
+  // 3-for-2 multibuys of 2026-11-10) and every "promotional" row (price ==
+  // was; the offer is applied in the basket) stay out.
+  const promo = h.promotion;
+  const struck = promo?.pricesStrikethrough === true;
+  if (/promo/i.test(String(h.priceType ?? "")) && !(/^salepromo$/i.test(String(h.priceType)) && struck)) return null;
+  const pMin = Number(promo?.priceRange?.minPrice);
+  const pMax = Number(promo?.priceRange?.maxPrice);
+  const now =
+    struck && Number.isInteger(pMin) && pMin === pMax && pMin > 0 && pMin < price &&
+    (promo?.priceRange?.currencyCode ?? m.currency) === m.currency
+      ? pMin
+      : price;
   const images = cleanGallery((h.images ?? []).filter((u: unknown) => typeof u === "string"));
   const sub = h[`productSubTypes.${m.locale}`];
   const colour = String(h[`mediumColor.${m.locale}`] ?? "").trim();
@@ -63,7 +79,7 @@ export function mapClarks(h: any, country: CountryCode): ProductRecord | null {
     url: `https://www.clarks.com/${m.path}/${slug}/${h.objectID}-p`,
     imageUrl: images?.[0] ?? null,
     images,
-    price,
+    price: now,
     listPrice: was,
     currency: m.currency,
     inStock: h.inStock !== false,

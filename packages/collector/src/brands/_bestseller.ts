@@ -95,11 +95,16 @@ export function bestsellerGender(p: any): ProductRecord["gender"] {
   return null;
 }
 
-/** Map one `/products` item. Pure. Only reduced items (sales < list) are returned. */
+/**
+ * Map one `/products` item. Pure. Only reduced items (sales < list) are
+ * returned, unless `keepFull` (out of season): then a full-price item is kept
+ * with `listPrice: null`.
+ */
 export function mapBestseller(
   brand: BestsellerBrand,
   country: CountryCode,
   p: any,
+  keepFull = false,
 ): ProductRecord | null {
   const site = BESTSELLER_SITES[brand];
   const id = typeof p?.id === "string" ? p.id : "";
@@ -107,7 +112,8 @@ export function mapBestseller(
   const price = Number(p?.price?.salesPrice?.amount);
   const list = Number(p?.price?.listPrice?.amount);
   if (!id || !name || !Number.isFinite(price) || price <= 0) return null;
-  if (!Number.isFinite(list) || list <= price) return null;
+  const reduced = Number.isFinite(list) && list > price;
+  if (!reduced && !keepFull) return null;
   const cur = String(p?.price?.salesPrice?.currency ?? "");
   if (cur && cur !== COUNTRIES[country].currency) return null;
 
@@ -129,7 +135,7 @@ export function mapBestseller(
     imageUrl: front,
     images: cleanGallery(gallery, front),
     price: toMinor(price),
-    listPrice: toMinor(list),
+    listPrice: reduced ? toMinor(list) : null,
     currency: COUNTRIES[country].currency,
     inStock,
     barcodes: eans.length ? eans : null,
@@ -141,6 +147,11 @@ export function mapBestseller(
   };
 }
 
+/** The markdown search answered, and answered nothing: the sale is over. Pure. */
+export function isEmptySale(data: any): boolean {
+  return Array.isArray(data?.results) && data.results.length === 0 && Number(data?.totalResults ?? 0) === 0;
+}
+
 export async function listBestseller(brand: BestsellerBrand, country: CountryCode): Promise<ProductRecord[]> {
   const site = BESTSELLER_SITES[brand];
   const catalog = site.catalogs[country];
@@ -148,16 +159,28 @@ export async function listBestseller(brand: BestsellerBrand, country: CountryCod
   const cap = Number(process.env.BESTSELLER_MAX ?? 1500);
 
   // 1) The markdown ids, search order (the API returns in-stock items only).
-  const ids: string[] = [];
-  const seen = new Set<string>();
-  for (let from = 0; ids.length < cap; from += SEARCH_PAGE) {
-    if (from > 0) await sleep(PAUSE_MS);
-    const data = await getJson<any>(`${site.origin}/api/catalog/${catalog}/search?useNewIndex=true`, {
+  //    Out of season the markdown tag is empty (VERO MODA IT, 2026-11-21: 0
+  //    items, and the catalogue's "highest discount" sort tops out at 0%), so
+  //    the whole catalogue is read at full price instead, as COS/ARKET do: old
+  //    markdowns reprice and the next sale shows up as price drops.
+  const search = (from: number, full: boolean) =>
+    getJson<any>(`${site.origin}/api/catalog/${catalog}/search?useNewIndex=true`, {
       method: "POST",
       headers: { "Content-Type": "application/json-patch+json", Accept: "application/json" },
-      body: JSON.stringify({ from, size: SEARCH_PAGE, tags: [["markdown"]] }),
+      body: JSON.stringify(full ? { from, size: SEARCH_PAGE } : { from, size: SEARCH_PAGE, tags: [["markdown"]] }),
       country,
     });
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  let full = false;
+  for (let from = 0; ids.length < cap; from += SEARCH_PAGE) {
+    if (from > 0) await sleep(PAUSE_MS);
+    let data = await search(from, full);
+    if (from === 0 && !full && isEmptySale(data)) {
+      full = true;
+      await sleep(PAUSE_MS);
+      data = await search(from, full);
+    }
     const rows: any[] = Array.isArray(data?.results) ? data.results : [];
     for (const r of rows) {
       if (typeof r?.id === "string" && !seen.has(r.id)) {
@@ -176,7 +199,7 @@ export async function listBestseller(brand: BestsellerBrand, country: CountryCod
     const q = ids.slice(i, i + DETAIL_BATCH).map((id) => `productIds=${encodeURIComponent(id)}`).join("&");
     const items = await getJson<any[]>(`${site.origin}/api/catalog/${catalog}/products?${q}`, { country }).catch(() => []);
     for (const p of Array.isArray(items) ? items : []) {
-      const r = mapBestseller(brand, country, p);
+      const r = mapBestseller(brand, country, p, full);
       if (r) out.push(r);
     }
   }

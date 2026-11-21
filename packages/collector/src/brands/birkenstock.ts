@@ -2,7 +2,7 @@
  * Birkenstock US (birkenstock.com/us) — SFCC SFRA behind Cloudflare/Akamai.
  *
  * Route: the storefront's own `Search-UpdateGrid` on the sale category
- * (`last-chance`, ~600 styles). It answers a GitHub runner with a browser UA
+ * (`sale`; `last-chance` until 2026-11-21). It answers a GitHub runner with a browser UA
  * and with the app UA alike (probe runs 39134394432 / 39135501893,
  * 2026-10-18); the app UA is used for consistency with the other SFCC grids
  * (`_okgrid.ts`). No lighter feed exists — no search provider, OCAPI wants a
@@ -22,7 +22,13 @@ import { dollars, okGrid, sleep, splitTiles } from "./_okgrid";
 
 export const brand = "birkenstock";
 const HOST = "https://www.birkenstock.com";
-const CGID = "last-chance";
+/**
+ * 2026-11-21: `last-chance` filled up with full-price styles (US 1,604 tiles,
+ * 3 of the first 24 reduced), so the 30-call budget read only ~220 markdowns
+ * (6 runs flagged as a drop). The menu's Sale category `sale` is markdowns
+ * only (US 671, CA 505 styles; every tile sampled had a strike price).
+ */
+const CGID = "sale";
 const PAGE = 24; // server-side cap; asking for more still returns 24
 const MAX_CALLS = 30;
 const CAP = Number(process.env.BIRKENSTOCK_MAX_PRODUCTS ?? 1500);
