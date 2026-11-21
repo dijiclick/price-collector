@@ -99,7 +99,8 @@ jobs:
           # adidas: collected by the Hetzner box (modadrop-adidas.timer) — Akamai
           # refuses GitHub's runner IPs (2026-10-12).
           # beymen, fashfed: full catalogues (2026-10-19) too big for a runner's
-          # per-brand slot; the Hetzner box collects them (modadrop-tr-full.timer).
+          # per-brand slot; collect-tr.yml runs them in their own job (moved off
+          # the Hetzner box 2026-11-21).
           SKIP_BRANDS: sephora,adidas,beymen,fashfed
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SEPHORA_CLIENT_ID: ${{ secrets.SEPHORA_CLIENT_ID }}

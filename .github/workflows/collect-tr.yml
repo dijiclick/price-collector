@@ -1,0 +1,51 @@
+name: collect-tr
+
+# Beymen + FashFed full Turkish catalogues (ONLY_BRANDS=beymen,fashfed,
+# COUNTRIES=TR, SWEEP_ONLY=1). Until 2026-11-21 the Hetzner box ran this every
+# 3 h (modadrop-tr-full.timer). Moved here on the owner's order: shop traffic
+# must not leave the Hetzner box, because Cloudflare files "HTTP DDoS" abuse
+# reports against its IPs for every request a shop's bot protection refuses.
+# Own job (not collect.yml's per-brand slot), so the full catalogues fit:
+# ~10 min of fetching each, 60 min of headroom.
+#
+# THE COLLECTOR REPOSITORY IS PUBLIC — same trigger rules as collect.yml:
+# schedule and workflow_dispatch only. Never pull_request_target or workflow_run.
+on:
+  schedule:
+    - cron: "51 1,4,7,10,13,16,19,22 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: collect-tr
+  cancel-in-progress: false
+
+jobs:
+  collect-tr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --omit=dev --ignore-scripts
+      - name: Collect Beymen + FashFed (TR)
+        env:
+          ONLY_BRANDS: beymen,fashfed
+          COUNTRIES: TR
+          SWEEP_ONLY: "1"
+          BRAND_TIMEOUT_MS: "1800000"
+          NODE_OPTIONS: --max-old-space-size=4096
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+          APNS_KEY: ${{ secrets.APNS_KEY }}
+          APNS_KEY_ID: ${{ secrets.APNS_KEY_ID }}
+          FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
+        run: npm run collect
