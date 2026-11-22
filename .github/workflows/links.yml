@@ -1,18 +1,21 @@
 name: links
 
-# The dead-link guard (packages/collector/src/host/links.ts) for the shops the
-# main Hetzner box cannot reach. The box runs the same job every 2 h for every
-# shop that answers it (modadrop-links.timer); Boyner and Rossmann refuse its
-# IP but answer a GitHub runner with real 404s for removed products (probe run
-# 39469012937, 2026-10-20). Inditex answers both with a 2 KB shell for ANY url,
-# so its links cannot be judged over HTTP at all and are left alone.
+# The dead-link guard (packages/collector/src/host/links.ts). Since 2026-11-21
+# it runs ONLY here: the Hetzner box's modadrop-links.timer (every 2 h, every
+# shop) is disabled on the owner's order, because Cloudflare files "HTTP DDoS"
+# abuse reports against the box for every request a shop refuses. `all` takes
+# over what the box did (same budget and per-shop cap, same 2 h rhythm);
+# `tr-walled` keeps the original job for Boyner and Rossmann, which refuse
+# datacenter IPs in general but answer a runner with real 404s (probe run
+# 39469012937, 2026-10-20). Inditex answers with a 2 KB shell for ANY url, so
+# its links cannot be judged over HTTP at all and are left alone.
 #
 # THE COLLECTOR REPOSITORY IS PUBLIC — same trigger rules as collect.yml:
 # schedule and workflow_dispatch only. Never pull_request_target or workflow_run.
 # It sends nothing to anyone, so it does not share collect.yml's group.
 on:
   schedule:
-    - cron: "41 1,7,13,19 * * *"
+    - cron: "47 0,2,4,6,8,10,12,14,16,18,20,22 * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -23,7 +26,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  links:
+  all:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --omit=dev --ignore-scripts
+      - name: Re-check product links (every shop)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LINK_MOVED_COUNTRIES: TR
+          LINK_BUDGET: "3000"
+          LINK_PER_HOST: "150"
+          MODADROP_STATE_DIR: ${{ runner.temp }}/modadrop
+        run: npx tsx packages/collector/src/host/links.ts
+  tr-walled:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
