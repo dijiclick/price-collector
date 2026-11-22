@@ -10,10 +10,7 @@ name: embed
 # this repo, checked against the sha256 below before anything runs.
 # Model: Marqo FashionSigLIP (Apache-2.0), image tower, ONNX int8.
 #
-# Daily keep-up at 03:23 UTC (4 shards, 120 min) since 2026-11-21, when the
-# Hetzner box's own backfill was switched off (EMBED_BACKFILL=0): it downloaded
-# ~150 shop photos a minute and Cloudflare filed abuse reports against the box.
-# Manual runs still take the inputs below. THE COLLECTOR REPOSITORY IS PUBLIC — same trigger rules as
+# Manual only. THE COLLECTOR REPOSITORY IS PUBLIC — same trigger rules as
 # collect.yml: never pull_request_target or workflow_run. Each runner holds
 # ONE database connection.
 #
@@ -21,8 +18,6 @@ name: embed
 # account): collect-intl runs 10 markets at once every 4 h at :52. Keep
 # shards + 10 under 20 across those windows, or accept that intl waits.
 on:
-  schedule:
-    - cron: "23 3 * * *"
   workflow_dispatch:
     inputs:
       shards:
@@ -51,8 +46,8 @@ jobs:
     steps:
       - id: p
         env:
-          SHARDS: ${{ inputs.shards || '4' }}
-          ONLY: ${{ inputs.only || '' }}
+          SHARDS: ${{ inputs.shards }}
+          ONLY: ${{ inputs.only }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os
@@ -95,7 +90,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           EMBED_MODEL_DIR: model
-          SHARDS: ${{ inputs.shards || '4' }}
+          SHARDS: ${{ inputs.shards }}
           SHARD: ${{ matrix.shard }}
-          MINUTES: ${{ inputs.minutes || '120' }}
+          MINUTES: ${{ inputs.minutes }}
         run: python3 scripts/embed/embed_batch.py --shards "$SHARDS" --shard "$SHARD" --minutes "$MINUTES"

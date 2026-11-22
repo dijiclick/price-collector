@@ -24,6 +24,11 @@
  * and indirim5 + KIŞK show "Sepette %10"; indirim10–50 unchanged). The theme
  * only knows the tags 5/10/20/25/30/40/50: `indirim35` + KIŞK (Herbert, 3,980
  * → 3,582.00) shows the season's %10, so an unknown NN is ignored.
+ * 2026-11-22: the winter season is 30 % again (re-measured on 24 pages: plain
+ * KIŞK shows "Sepette %30"; indirim20 + KIŞK still %20, indirim30–50 unchanged).
+ * The season rate has moved five times in three weeks, so the collector now
+ * reads it off one plain-KIŞK product page each run (`seasonPercentFromHtml`)
+ * and this constant is only the fallback.
  * The basket price is the shelf price × (100 − NN) / 100, rounded half-up to
  * the kuruş (1.469,90 at 25 % → 1.102,43). As with DeFacto / LCW / Altınbaş,
  * the basket price is stored as the price and the shelf price as the list price.
@@ -37,22 +42,32 @@ const SITE = "https://www.nisantasishoes.com";
 const STORE: ShopifySite = { brand: "nisantasishoes", sites: { TR: SITE }, defaultGender: "kadin" };
 
 /** The basket discount (whole percent) the theme shows for these tags, or 0. Pure. */
-export const WINTER_PERCENT = 10;
+export const WINTER_PERCENT = 30;
 /** The `indirimNN` values the theme renders; any other NN is ignored by the shop. */
 const THEME_PERCENTS = new Set([5, 10, 20, 25, 30, 40, 50]);
 
-export function basketPercent(tags: unknown): number {
+export function basketPercent(tags: unknown, winterPercent: number = WINTER_PERCENT): number {
   const list: string[] = Array.isArray(tags) ? tags.map(String) : typeof tags === "string" ? tags.split(",") : [];
   const winter = list.some((t) => t.trim() === "KIŞK");
   for (const t of list) {
     const m = t.trim().match(/^indirim(\d{1,2})$/i);
     if (m && THEME_PERCENTS.has(Number(m[1]))) {
       const pct = Number(m[1]);
-      // Measured: indirim5 + KIŞK → the season's rate (10 % since 2026-11-14), indirim10 + KIŞK → 10 %.
-      return winter && pct < 10 ? Math.max(pct, WINTER_PERCENT) : pct;
+      // Measured: indirim5 + KIŞK → the season's rate, indirim10 + KIŞK → 10 %.
+      return winter && pct < 10 ? Math.max(pct, winterPercent) : pct;
     }
   }
-  return winter ? WINTER_PERCENT : 0;
+  return winter ? winterPercent : 0;
+}
+
+/**
+ * The basket percent a product page prints ("Sepette %30 İndirim"), or null.
+ * Read off a plain-KIŞK page it is the season's rate. Pure.
+ */
+export function seasonPercentFromHtml(html: string): number | null {
+  const m = html.match(/Sepette\s*%\s*(\d{1,2})\s*İndirim/i);
+  const n = m ? Number(m[1]) : NaN;
+  return n >= 1 && n <= 70 ? n : null;
 }
 
 /** Shelf price (kuruş) → basket price (kuruş), half-up like the shop's own label. Pure. */

@@ -85,10 +85,13 @@ export const SCAYLE_SHOPS: Record<ScayleSlug, Partial<Record<CountryCode, Scayle
       pagePrefix: "/de",
       urlKey: "referenceKey",
       shopId: 1501,
-      // /de/c/damen/sale/10 ~1.2k, /de/c/herren/sale/1809.
+      // /de/c/damen/sale/10 ~1.2k, /de/c/herren/sale/1809. Black Friday
+      // 2026-11-22: 1,617 and 1,216 products (17 and 13 pages) in AT/NL — the
+      // old 10/6 page caps cut both trees and halved the rows for 7 runs.
+      // The walk stops at the tree's own last page, so these are ceilings.
       sale: [
-        { id: 10, gender: "kadin", pages: 10 },
-        { id: 1809, gender: "erkek", pages: 6 },
+        { id: 10, gender: "kadin", pages: 30 },
+        { id: 1809, gender: "erkek", pages: 24 },
       ],
       attributes: ["name", "brand", "subGroupNameMappedGenericArticle", "produktgruppe", "suchFarbeTTShopFarbname", "color"],
       typeKeys: ["subGroupNameMappedGenericArticle", "produktgruppe"],

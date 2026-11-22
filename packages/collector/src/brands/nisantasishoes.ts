@@ -1,7 +1,7 @@
 import type { ProductRecord } from "../types";
-import { getJson } from "../http";
+import { getJson, getText } from "../http";
 import { mapShopify } from "./_shopify";
-import { basketPercent, basketPrice } from "../../../../lib/live-brands/nisantasishoes";
+import { WINTER_PERCENT, basketPercent, basketPrice, seasonPercentFromHtml } from "../../../../lib/live-brands/nisantasishoes";
 
 /**
  * Nişantaşı Shoes — Shopify (`www.nisantasishoes.com`, Istanbul, currency TRY;
@@ -13,7 +13,8 @@ import { basketPercent, basketPrice } from "../../../../lib/live-brands/nisantas
  * paused and a 429 is backed off as for QUZU.
  *
  * PRICES. No product has a compare-at price; the shop's reductions are basket
- * discounts driven by tags (`indirimNN`, else 10 % (since 2026-11-14) for the `KIŞK` season — see
+ * discounts driven by tags (`indirimNN`, else the `KIŞK` season's rate, read each run off one
+ * plain-KIŞK product page because it keeps moving: 5 → 15 → 20 → 30 → 10 → 30 % — see
  * lib/live-brands/nisantasishoes.ts, measured on 37 product pages). The basket
  * price is the price, the shelf price the list price, like DeFacto / LCW /
  * Altınbaş. 2026-10-23: 336 `indirimNN` rows (138 at 50 %, 133 at 20 %) and
@@ -33,10 +34,10 @@ export const brand = "nisantasishoes";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Map one `/products.json` product. Pure. */
-export function mapNisantasi(p: any): ProductRecord | null {
+export function mapNisantasi(p: any, winterPercent: number = WINTER_PERCENT): ProductRecord | null {
   const r = mapShopify({ brand, sites: { TR: SITE } }, "TR", SITE, p);
   if (!r) return null;
-  const pct = basketPercent(p?.tags);
+  const pct = basketPercent(p?.tags, winterPercent);
   const shelf = r.price;
   return {
     ...r,
@@ -64,15 +65,43 @@ async function page(n: number): Promise<any[] | null> {
   return null;
 }
 
+/** A plain winter product (KIŞK, no indirimNN tag) that is in stock: its page shows the season's rate. Pure. */
+export function seasonProbeHandle(products: any[]): string | null {
+  for (const p of products) {
+    const tags: string[] = Array.isArray(p?.tags) ? p.tags.map(String) : [];
+    if (!tags.some((t) => t.trim() === "KIŞK")) continue;
+    if (tags.some((t) => /^indirim\d+$/i.test(t.trim()))) continue;
+    if (!(p?.variants ?? []).some((v: any) => v?.available)) continue;
+    if (p?.handle) return String(p.handle);
+  }
+  return null;
+}
+
+/** The season's basket rate as the shop prints it today; the constant if no page answers. */
+async function seasonPercent(products: any[]): Promise<number> {
+  const handle = seasonProbeHandle(products);
+  if (!handle) return WINTER_PERCENT;
+  const html = await getText(`${SITE}/products/${encodeURIComponent(handle)}`, {
+    retries: 1,
+    country: "TR",
+    headers: { cookie: "localization=TR; cart_currency=TRY" },
+  }).catch(() => "");
+  const pct = seasonPercentFromHtml(html);
+  if (pct == null) console.warn(`nisantasishoes: no basket label on ${handle}, using the ${WINTER_PERCENT} % fallback`);
+  return pct ?? WINTER_PERCENT;
+}
+
 export async function listProducts(): Promise<ProductRecord[]> {
   const byId = new Map<string, ProductRecord>();
   let ended = false;
+  let winter: number | null = null;
   for (let n = 1; n <= MAX_PAGES; n++) {
     if (n > 1) await sleep(PAUSE_MS);
     const rows = await page(n);
     if (rows === null) throw new Error(`nisantasishoes: products.json page ${n} refused`);
+    if (winter == null) winter = await seasonPercent(rows);
     for (const p of rows) {
-      const r = mapNisantasi(p);
+      const r = mapNisantasi(p, winter);
       if (r && (r.inStock || r.listPrice != null)) byId.set(r.externalId, r);
     }
     if (rows.length < 250) { ended = true; break; }
