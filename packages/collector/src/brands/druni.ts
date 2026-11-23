@@ -173,9 +173,125 @@ async function brandNames(country: CountryCode): Promise<Map<string, string>> {
   }
 }
 
-/** Register as `listDruni(country)`. ES and PT. */
+/**
+ * Fallback feed: the site's Doofinder search (2026-11-23).
+ *
+ * From 2026-10-27 the Magento GraphQL answered GitHub's runners with nginx
+ * "406 Not Acceptable" on every request (14 failed runs in a row) while still
+ * answering a browser. The search box is Doofinder, a separate host outside the
+ * shop's nginx; its search API is keyed by a public per-store hashid (from the
+ * live layer's `/api/1/installation/<id>` config) and checks only the `Origin`
+ * header. One row per parent product: `price` is the regular price and
+ * `sale_price` the struck-through one of the cheapest size (checked against the
+ * Paradigme Parfum product page: 120 → 67.50). No per-variant stock, so the
+ * GraphQL path stays first whenever it answers.
+ */
+export const DRUNI_DOOFINDER: Record<"ES" | "PT", { hashid: string; origin: string }> = {
+  ES: { hashid: "8ed7450f44117ffe10dedbb105484e0e", origin: "https://www.druni.es" },
+  PT: { hashid: "2e3e0c7a3d44d1a21fa82f6687aa2783", origin: "https://www.druni.pt" },
+};
+const DF_RPP = 100;
+/** Doofinder serves at most 1,000 hits per query ("The requested page is too high"). */
+const DF_MAX_PAGE = 10;
+/**
+ * So the markdowns are read in price bands (EUR, [gte, lt)), each its own
+ * query of ≤ 1,000 — under 10 € alone holds ~5,000 discounted products in Spain.
+ */
+export const DF_BANDS: [number, number | null][] = [[100, null], [75, 100], [50, 75], [35, 50], [20, 35], [10, 20], [5, 10], [0, 5]];
+export const doofinderUrl = (hashid: string, page: number, band: [number, number | null] = [0, null]): string =>
+  `https://eu1-search.doofinder.com/6/${hashid}/_search?query=&rpp=${DF_RPP}&page=${page}&filter%5Bcalculated_discount%5D%5Bgte%5D=1` +
+  `&filter%5Bbest_price%5D%5Bgte%5D=${band[0]}` +
+  (band[1] == null ? "" : `&filter%5Bbest_price%5D%5Blt%5D=${band[1]}`);
+
+/** Top shelves — too broad to be a product type on their own. */
+const DF_GENERIC = /^(perfumes|maquillaje|maquilhagem|cosm[eé]tica|cosm[eé]ticos|cabello|produtos para cabelo|parafarmacia|man|coffrets|estuches y sets|produtos para homens|tratamientos)$/i;
+const titleCase = (s: string): string =>
+  s === s.toUpperCase() ? s.toLowerCase().replace(/(^|[\s&'-])\p{L}/gu, (m) => m.toUpperCase()) : s;
+
+/** One Doofinder hit → one record, or none when it is not a real markdown. Pure. */
+export function mapDruniDoofinder(h: any, country: CountryCode): ProductRecord | null {
+  const title = clean(h?.title);
+  const link = typeof h?.link === "string" ? h.link : "";
+  const id = clean(String(h?.parent_sku ?? h?.id ?? ""));
+  const price = Number(h?.sale_price);
+  const was = Number(h?.price);
+  if (!title || !id || !/^https:\/\/www\.druni\.(es|pt)\//.test(link)) return null;
+  if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(was) || was <= price) return null;
+  const maker = clean(h?.brand) ? titleCase(clean(h.brand)) : null;
+  const cats = (Array.isArray(h?.categories) ? h.categories : [])
+    .flatMap((c: unknown) => String(c ?? "").split(","))
+    .map(clean)
+    .filter(Boolean);
+  const notAType = marketOf(country)?.notAType ?? NOT_A_TYPE;
+  const category = cats.find((c: string) => !notAType.test(c) && !DF_GENERIC.test(c)) ?? (clean(h?.["categoria nav"]) || null);
+  const audience = [...(Array.isArray(h?.vt_df_product_target_audience) ? h.vt_df_product_target_audience : []), ...cats]
+    .map((a: unknown) => String(a).toLowerCase())
+    .join(" ");
+  const men = /\b(hombres?|men|homem|homens|masculin)/.test(audience);
+  const women = /\b(mujer(es)?|women|mulher(es)?|femenin)/.test(audience);
+  const kids = /\b(niñ[oa]s?|infantil|kids|crian[cç]as?|beb[eé]s?)\b/.test(audience);
+  const images = cleanGallery([druniImage(h?.image_link ?? h?.image)]);
+  return {
+    brand: "druni",
+    country,
+    externalId: id,
+    name: maker && !title.toLowerCase().includes(maker.toLowerCase()) ? `${maker} ${title}` : title,
+    url: link.split("?")[0],
+    imageUrl: images?.[0] ?? null,
+    images,
+    price: toMinor(price),
+    listPrice: toMinor(was),
+    currency: "EUR",
+    inStock: h?.availability === "in stock",
+    category,
+    maker,
+    gender: kids ? "cocuk" : men && !women ? "erkek" : women && !men ? "kadin" : null,
+    variants: null,
+    groupKey: `druni-${id}`,
+    colorName: null,
+  };
+}
+
+export async function listDruniDoofinder(country: "ES" | "PT"): Promise<ProductRecord[]> {
+  const { hashid, origin } = DRUNI_DOOFINDER[country];
+  const headers = { Origin: origin, Referer: `${origin}/` };
+  const byId = new Map<string, ProductRecord>();
+  let inStock = 0;
+  let requests = 0;
+  // Round-robin over the bands, one page each per round, like the shelves above.
+  const next = new Map<number, number>(DF_BANDS.map((_, i) => [i, 1]));
+  while (next.size && requests < MAX_REQUESTS && inStock < CAP) {
+    for (const [band, page] of [...next]) {
+      if (requests >= MAX_REQUESTS || inStock >= CAP) break;
+      if (requests++) await sleep(PAUSE_MS);
+      const d = await getJson<any>(doofinderUrl(hashid, page, DF_BANDS[band]), { country, headers, timeoutMs: 20_000 });
+      const hits: any[] = d?.results ?? [];
+      for (const h of hits) {
+        const r = mapDruniDoofinder(h, country);
+        if (!r || byId.has(r.externalId)) continue;
+        byId.set(r.externalId, r);
+        if (r.inStock) inStock++;
+      }
+      if (hits.length < DF_RPP || page >= DF_MAX_PAGE || page * DF_RPP >= Number(d?.total ?? 0)) next.delete(band);
+      else next.set(band, page + 1);
+    }
+  }
+  const all = [...byId.values()];
+  return [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
+}
+
+/** Register as `listDruni(country)`. ES and PT. GraphQL first, Doofinder if the shop refuses it. */
 export async function listDruni(country: CountryCode): Promise<ProductRecord[]> {
   if (country !== "ES" && country !== "PT") return [];
+  try {
+    return await listDruniGraphql(country);
+  } catch (err) {
+    console.log(`druni/${country}: GraphQL refused (${String((err as Error)?.message ?? err).slice(0, 80)}), using Doofinder`);
+    return listDruniDoofinder(country);
+  }
+}
+
+async function listDruniGraphql(country: "ES" | "PT"): Promise<ProductRecord[]> {
   const mk = marketOf(country);
   const api = mk ? `${mk.origin}/graphql` : API;
   const headers = { "Accept-Language": mk?.acceptLanguage ?? "es-ES,es;q=0.9" };
