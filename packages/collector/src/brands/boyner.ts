@@ -146,6 +146,42 @@ export const brand = "boyner";
  */
 const PAGE_CONCURRENCY = Number(process.env.BOYNER_CONCURRENCY ?? 48);
 
+/**
+ * Re-ask the pages a walk lost, in rounds: after each pause, `width` at a
+ * time. Returns the pages still missing. One round at 10 s was not enough on
+ * the runners (2026-11-24: 3 pages of category 4 lost two runs running, while
+ * the same walk from a home line lost none), so a second, narrower round
+ * follows a longer pause. Costs nothing when no page was lost.
+ */
+export async function retryPages(
+  pages: number[],
+  fetchPage: (n: number) => Promise<any>,
+  absorb: (data: any) => void,
+  rounds: { pauseMs: number; width: number }[] = [
+    { pauseMs: 10_000, width: 4 },
+    { pauseMs: 30_000, width: 2 },
+  ],
+): Promise<number[]> {
+  let todo = [...pages];
+  for (const { pauseMs, width } of rounds) {
+    if (!todo.length) break;
+    await new Promise((r) => setTimeout(r, pauseMs));
+    const queue = todo;
+    const lost: number[] = [];
+    await Promise.all(
+      Array.from({ length: Math.min(width, queue.length) }, async () => {
+        for (let n = queue.shift(); n != null; n = queue.shift()) {
+          const d = await fetchPage(n);
+          if (d?.Result) absorb(d);
+          else lost.push(n);
+        }
+      }),
+    );
+    todo = lost.sort((a, b) => a - b);
+  }
+  return todo;
+}
+
 export async function listProducts(): Promise<ProductRecord[]> {
   const byId = new Map<string, ProductRecord>();
 
@@ -186,20 +222,11 @@ export async function listProducts(): Promise<ProductRecord[]> {
         }
       }),
     );
-    // A lost page is 24 rows the collector would mark sold out: one more try
-    // each (a few at a time, after a pause — Cloudflare answers a burst with
-    // 429 for a while), then refuse a partial catalogue.
-    if (failed.length) await new Promise((r) => setTimeout(r, 10_000));
-    const retry = failed.splice(0);
-    await Promise.all(
-      Array.from({ length: Math.min(4, retry.length) }, async () => {
-        for (let n = retry.shift(); n != null; n = retry.shift()) {
-          const d = await fetchPage(cat, n);
-          if (d?.Result) absorb(d, gender);
-          else failed.push(n);
-        }
-      }),
-    );
+    // A lost page is 24 rows the collector would mark sold out: retry them
+    // (a few at a time, after a pause — Cloudflare answers a burst with 429
+    // for a while), then refuse a partial catalogue.
+    const lost = await retryPages(failed.splice(0), (n) => fetchPage(cat, n), (d) => absorb(d, gender));
+    failed.push(...lost);
     if (failed.length) throw new Error(`boyner: ${failed.length} listing pages of category ${cat} failed — partial catalogue refused`);
     // Paging a live index can shift rows between pages mid-walk; more than 1%
     // short of the shop's own count means the collector would sell out real stock.

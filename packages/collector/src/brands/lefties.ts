@@ -211,12 +211,33 @@ const GULF: ReadonlySet<CountryCode> = new Set<CountryCode>(["AE", "SA"]);
 /** A Gulf sitemap url in the home section (`/ae/home/…`, `/ae/ar/home/…`). Pure. */
 export const isHomeUrl = (url: string): boolean => /lefties\.com\/[a-z]{2}\/(?:[a-z]{2}\/)?home\//.test(url);
 
+/**
+ * The market's product sitemap urls, from the sitemap index. Akamai answers
+ * the index with 403 on some runner IPs while the same job's other calls pass
+ * (2026-11-24: TR and FR refused two runs running, ES/PT/IT fine minutes
+ * later), so one refusal is retried after a pause, and if the index stays shut
+ * the market's map is asked for by its fixed name (every market has exactly
+ * one, `sitemap-products-lf-{cc}-0.xml.gz`, in every index seen since 10-10).
+ */
+export async function productSitemaps(
+  market: CountryCode,
+  fetchIndex: (u: string) => Promise<string> = (u) => getText(u),
+  pauseMs = 5_000,
+): Promise<string[]> {
+  const cc = market.toLowerCase();
+  let index: string | null = null;
+  for (let attempt = 0; attempt < 2 && index == null; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, pauseMs));
+    index = await fetchIndex(SITEMAP_INDEX).catch(() => null);
+  }
+  if (index == null) return [`https://${DOMAIN}/9/info/sitemaps/sitemap-products-lf-${cc}-0.xml.gz`];
+  return [...index.matchAll(/<loc>([^<]*sitemap-products-lf-([a-z]{2})-\d+\.xml(?:\.gz)?)<\/loc>/g)].filter((x) => x[2] === cc).map((x) => x[1]);
+}
+
 export async function listProducts(country: CountryCode = "TR"): Promise<ProductRecord[]> {
   const m = await resolveMarket(SITE, country);
-  const index = await getText(SITEMAP_INDEX);
   const source = SITEMAP_FROM[country] ?? country;
-  const cc = source.toLowerCase();
-  const maps = [...index.matchAll(/<loc>([^<]*sitemap-products-lf-([a-z]{2})-\d+\.xml(?:\.gz)?)<\/loc>/g)].filter((x) => x[2] === cc).map((x) => x[1]);
+  const maps = await productSitemaps(source);
   if (!maps.length) throw new Error(`lefties/${country}: no product sitemap for this market`);
   let urls = new Map<string, string>();
   for (const sm of maps) for (const [id, u] of idsFromSitemap(await sitemapXml(sm), source)) urls.set(id, u);

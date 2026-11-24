@@ -25,7 +25,7 @@ import { decodeEntities } from "./_sfcchtml";
 
 export type EramBrand = "eram" | "bocage";
 interface Tree { path: string; gender: "kadin" | "erkek"; pages: number }
-export const ERAM_SITES: Record<EramBrand, { host: string; trees: Tree[] }> = {
+export const ERAM_SITES: Record<EramBrand, { host: string; trees: Tree[]; full?: Tree[] }> = {
   eram: {
     host: "https://www.eram.fr",
     trees: [
@@ -39,14 +39,23 @@ export const ERAM_SITES: Record<EramBrand, { host: string; trees: Tree[] }> = {
       { path: "/femme/outlet.html", gender: "kadin", pages: 30 },
       { path: "/homme/outlet.html", gender: "erkek", pages: 10 },
     ],
+    // Out of season the outlet trees are empty (2026-11-24: both answer 200
+    // with 0 tiles); the department pages are read at full price instead.
+    full: [
+      { path: "/femme.html", gender: "kadin", pages: 30 },
+      { path: "/homme.html", gender: "erkek", pages: 10 },
+    ],
   },
 };
 const CAP = 1500;
 const PAUSE_MS = Number(process.env.ERAM_PAUSE_MS ?? 600);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Every reduced tile of a list page. Pure. */
-export function parseEramGrid(brand: EramBrand, html: string, gender: ProductRecord["gender"]): ProductRecord[] {
+/**
+ * Every reduced tile of a list page. Pure. With `keepFull` (sale over) a
+ * full-price tile is kept too, with `listPrice: null`.
+ */
+export function parseEramGrid(brand: EramBrand, html: string, gender: ProductRecord["gender"], keepFull = false): ProductRecord[] {
   const out: ProductRecord[] = [];
   for (const raw of html.split('<li class="item product product-item">').slice(1)) {
     const t = raw.replace(/\s+/g, " ");
@@ -54,7 +63,8 @@ export function parseEramGrid(brand: EramBrand, html: string, gender: ProductRec
     const link = t.match(/<a class="product-item-link" href="(https:\/\/[^"]+)">([^<]+)<\/a>/);
     const price = Number(t.match(/data-price-amount="([\d.]+)" data-price-type="finalPrice"/)?.[1] ?? NaN);
     const was = Number(t.match(/data-price-amount="([\d.]+)" data-price-type="oldPrice"/)?.[1] ?? NaN);
-    if (!id || !link || !(price > 0) || !(was > price)) continue;
+    const reduced = was > price;
+    if (!id || !link || !(price > 0) || (!reduced && !keepFull)) continue;
     const imgs = [
       ...new Set(
         [...t.matchAll(/class="product-image-photo[^"]*"[^>]*?(?:src|data-lazy)="(https:\/\/[^"?]+\/media\/catalog\/product\/[^"?]+)\?/g)].map(
@@ -78,7 +88,7 @@ export function parseEramGrid(brand: EramBrand, html: string, gender: ProductRec
       imageUrl: imgs[0] ?? null,
       images: cleanGallery(imgs, imgs[0] ?? null),
       price: toMinor(price),
-      listPrice: toMinor(was),
+      listPrice: reduced ? toMinor(was) : null,
       currency: "EUR",
       inStock: sizes.length ? sizes.some((s) => s.availability === "in_stock") : true,
       category: null,
@@ -100,28 +110,34 @@ export async function listEramGroup(
   if (country !== "FR" || !site) return [];
   const byId = new Map<string, ProductRecord>();
   let calls = 0;
-  for (const tree of site.trees) {
-    const seen = new Set<string>();
-    for (let page = 1; page <= tree.pages; page++) {
-      if (calls++) await sleep(PAUSE_MS);
-      let html: string;
-      try {
-        html = await fetchHtml(`${site.host}${tree.path}${page > 1 ? `?p=${page}` : ""}`);
-      } catch (err) {
-        if (byId.size === 0 && page === 1 && tree === site.trees[0]) throw err;
-        break;
+  const walk = async (trees: Tree[], keepFull: boolean) => {
+    for (const tree of trees) {
+      const seen = new Set<string>();
+      for (let page = 1; page <= tree.pages; page++) {
+        if (calls++) await sleep(PAUSE_MS);
+        let html: string;
+        try {
+          html = await fetchHtml(`${site.host}${tree.path}${page > 1 ? `?p=${page}` : ""}`);
+        } catch (err) {
+          if (byId.size === 0 && page === 1 && tree === trees[0]) throw err;
+          break;
+        }
+        // Every tile id of the page (reduced or not): a page past the end repeats page 1.
+        const ids = [...html.matchAll(/id="product-item-info_(\d+)"/g)].map((m) => m[1]);
+        const fresh = ids.filter((i) => !seen.has(i));
+        if (!fresh.length) break;
+        for (const i of ids) seen.add(i);
+        for (const r of parseEramGrid(brand, html, tree.gender, keepFull)) if (!byId.has(r.externalId)) byId.set(r.externalId, r);
+        if (ids.length < 24) break;
       }
-      // Every tile id of the page (reduced or not): a page past the end repeats page 1.
-      const ids = [...html.matchAll(/id="product-item-info_(\d+)"/g)].map((m) => m[1]);
-      const fresh = ids.filter((i) => !seen.has(i));
-      if (!fresh.length) break;
-      for (const i of ids) seen.add(i);
-      for (const r of parseEramGrid(brand, html, tree.gender)) if (!byId.has(r.externalId)) byId.set(r.externalId, r);
-      if (ids.length < 24) break;
     }
-  }
+  };
+  await walk(site.trees, false);
+  // Sale over: track the catalogue at full price, so the next markdown shows
+  // up as a price drop (as COS / VERO MODA do).
+  if (byId.size === 0 && site.full) await walk(site.full, true);
   const all = [...byId.values()];
   const out = [...all.filter((r) => r.inStock), ...all.filter((r) => !r.inStock)].slice(0, CAP);
-  console.log(`${brand}/FR: ${calls} pages, ${all.length} reduced, kept ${out.length}`);
+  console.log(`${brand}/FR: ${calls} pages, ${all.filter((r) => r.listPrice).length} reduced of ${all.length}, kept ${out.length}`);
   return out;
 }
