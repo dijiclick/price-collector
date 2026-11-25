@@ -13,8 +13,8 @@
  *      tree, ~5.1k hits) refined by `c_gender`, so gender is known per walk and
  *      Home is left out. Each hit carries `c_price.sales` / `c_price.list` in
  *      AED.
- * The search answers slowly (~13 s per 100 hits, 504 at 200), so the walk is
- * 10 pages of 100 split across genders — about 2 minutes. Hits carry no
+ * The search answers slowly and SCAPI cuts it off at 10 s (504), so the walk
+ * is 40 pages of 25 split across genders (see PER_PAGE). Hits carry no
  * per-size stock, so no size variants.
  *
  * Product pages are `/<anything>-<representedProductId>.html` (the sitemap's
@@ -34,14 +34,21 @@ const SHORT = "cfcgu8kp";
 const ORG = "f_ecom_bljm_prd";
 const CLIENT = "a527050f-fa90-4a90-9950-8edd4cd5eb53";
 const HOST = `https://${SHORT}.api.commercecloud.salesforce.com`;
-const PER_PAGE = 100;
+/**
+ * 25 hits a call (was 100). SCAPI now cuts a search off at 10 s with a 504
+ * "Request Timeout", and since Black Friday a 100-hit page of the big walks
+ * never finishes in time: KW Womens/Mens/Kids all 504'd, only Unisex (640
+ * rows) answered, so 908 deals fell to 351 and then 72 (2026-11-25). Measured
+ * then: 25 hits in 1-6 s on both markets, 50 still 504'd on AE.
+ */
+export const PER_PAGE = 25;
 
-/** Gender walks and their page budget (10 pages ≈ 2 min at ~13 s a page). */
+/** Gender walks and their page budget: 1,000 hits in 40 calls, as before. */
 export const WALKS: { refine: string; gender: ProductRecord["gender"]; pages: number }[] = [
-  { refine: "c_gender=Womens", gender: "kadin", pages: 5 },
-  { refine: "c_gender=Mens", gender: "erkek", pages: 3 },
-  { refine: "c_gender=Girl|Boy|Kids", gender: "cocuk", pages: 1 },
-  { refine: "c_gender=Unisex", gender: null, pages: 1 },
+  { refine: "c_gender=Womens", gender: "kadin", pages: 20 },
+  { refine: "c_gender=Mens", gender: "erkek", pages: 12 },
+  { refine: "c_gender=Girl|Boy|Kids", gender: "cocuk", pages: 4 },
+  { refine: "c_gender=Unisex", gender: null, pages: 4 },
 ];
 
 export const slugify = (s: string) =>

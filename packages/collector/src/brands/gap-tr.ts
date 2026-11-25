@@ -27,8 +27,16 @@ export const SHOP: AkinonShop = {
 
 export const brand = SHOP.brand;
 
+/**
+ * The Black Friday drop grew `/list/` from 3,857 rows to 9,121 = 37 pages of
+ * 250 (2026-11-25), past the old 30-page / 8,000-row caps, and the walk then
+ * refused for 10 runs. 50 pages / 15,000 rows leaves room; the walk itself is
+ * ~36 s from a plain IP.
+ */
+export const LIMITS = { maxProducts: 15_000, maxPages: 50, detailLimit: 30 };
+
 export async function listGapTr(): Promise<ProductRecord[]> {
-  return listAkinonCatalogue(SHOP, limitsFromEnv("GAP_TR", { maxProducts: 8_000, maxPages: 30, detailLimit: 30 }));
+  return listAkinonCatalogue(SHOP, limitsFromEnv("GAP_TR", LIMITS));
 }
 
 export const listProducts = listGapTr;

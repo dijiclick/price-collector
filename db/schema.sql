@@ -726,3 +726,56 @@ CREATE TABLE IF NOT EXISTS search_terms (
   n       INTEGER NOT NULL,
   PRIMARY KEY (country, folded)
 );
+
+-- Influencerlar (owner, 2026-11-24): Turkish fashion influencers on top of the
+-- Stilist tab. One public photo per influencer (re-hosted in public/inf/, the
+-- post linked and credited), its style, and the pieces she wears as the
+-- Pinterest-look detection (scripts/pinterest/pin_service.mjs --image: items
+-- with boxes and crop vectors). /api/influencers lists them; the matching to
+-- the shopper's market happens per request (lib/pinterest.ts pinLook).
+-- Rows come from scripts/influencers/ (Instagram Business Discovery API).
+-- `active` false hides one (removal on request).
+CREATE TABLE IF NOT EXISTS influencers (
+  handle      TEXT PRIMARY KEY,
+  name        TEXT,
+  followers   INTEGER NOT NULL DEFAULT 0,
+  country     TEXT    NOT NULL DEFAULT 'TR',
+  gender      TEXT    NOT NULL DEFAULT 'kadin',
+  style       TEXT,
+  note_tr     TEXT,
+  photo       TEXT    NOT NULL,
+  photo_w     INTEGER,
+  photo_h     INTEGER,
+  avatar      TEXT,
+  post_url    TEXT,
+  modest      BOOLEAN NOT NULL DEFAULT false,
+  items       JSONB   NOT NULL DEFAULT '[]',
+  rank        INTEGER NOT NULL DEFAULT 0,
+  active      BOOLEAN NOT NULL DEFAULT true,
+  followed_at TIMESTAMPTZ,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Her look per market, precomputed (scripts/influencers/looks.run.ts): matching
+-- takes 5-13 s cold, too slow for a request. {"TR": PinLook, …}
+ALTER TABLE influencers ADD COLUMN IF NOT EXISTS looks JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE influencers ADD COLUMN IF NOT EXISTS looks_at TIMESTAMPTZ;
+
+-- Several looks per influencer (owner, 2026-11-24): her standout outfit photos,
+-- n >= 1 (her main look, n 0, stays on the influencers row, which older apps read).
+-- Same columns and pipeline as influencers; `looks` holds each look matched per market.
+CREATE TABLE IF NOT EXISTS influencer_looks (
+  handle    TEXT    NOT NULL REFERENCES influencers(handle) ON DELETE CASCADE,
+  n         INTEGER NOT NULL,
+  photo     TEXT    NOT NULL,
+  photo_w   INTEGER,
+  photo_h   INTEGER,
+  post_url  TEXT,
+  style     TEXT,
+  note_tr   TEXT,
+  modest    BOOLEAN NOT NULL DEFAULT false,
+  items     JSONB   NOT NULL DEFAULT '[]',
+  looks     JSONB   NOT NULL DEFAULT '{}',
+  looks_at  TIMESTAMPTZ,
+  active    BOOLEAN NOT NULL DEFAULT true,
+  PRIMARY KEY (handle, n)
+);

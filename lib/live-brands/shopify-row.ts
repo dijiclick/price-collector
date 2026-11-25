@@ -78,7 +78,11 @@ export const SHOPIFY_ROW: ShopifySite[] = [
   { brand: "stayhard", sites: { SE: "https://stayhard.com" }, collections: { SE: "sale" }, vendorIsMaker: true, defaultGender: "erkek" },
   { brand: "sportamore", sites: { SE: "https://sportamore.com" }, collections: { SE: "final-sale-women" }, vendorIsMaker: true, defaultGender: "kadin" },
   { brand: "message", sites: { DK: "https://message.dk" }, collections: { DK: "alt-sale" }, vendorIsMaker: true },
-  { brand: "nuenotes", sites: { DK: "https://www.nuenotes.com" }, collections: { DK: "sale" }, defaultGender: "kadin" },
+  // Nué Notes: the whole catalogue (224 products), not a collection. Black
+  // Friday emptied `sale` (0 rows, 6 runs at 0 from 2026-11-24) and moved the
+  // same 152 markdowns to `black-friday` / `archive-sale`; reduced-only
+  // mapping keeps the walk to deals whatever the shelf is called.
+  { brand: "nuenotes", sites: { DK: "https://www.nuenotes.com" }, defaultGender: "kadin" },
   { brand: "makia", sites: { FI: "https://makia.com" }, collections: { FI: "outlet" } },
   { brand: "modstrom", sites: { FI: "https://www.modstrom.com" }, collections: { FI: "sale" }, defaultGender: "kadin" },
   { brand: "mosmosh", sites: { FI: "https://www.mosmosh.com" }, collections: { FI: "sale-tag" } },

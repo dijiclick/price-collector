@@ -28,7 +28,10 @@ const ORIGIN = "https://www.stockmann.com";
 const GRID = `${ORIGIN}/on/demandware.store/Sites-STFI-Site/fi_FI/Search-UpdateGrid`;
 const SECTIONS = ["kosmetiikka", "muoti"] as const;
 const PAGE = 96;
-const MAX_PAGES_PER_SECTION = 20;
+// Black Friday (2026-11-25): the ALE filter also returns full-price tiles
+// (only an "Original Price"), so ~25-45 of 96 tiles per page map and 20 pages
+// no longer reach the 1,500-row cap. There is no discount-only filter or sort.
+const MAX_PAGES_PER_SECTION = Number(process.env.STOCKMANN_MAX_PAGES ?? 40);
 const PAUSE_MS = Number(process.env.STOCKMANN_PAUSE_MS ?? 700);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -100,7 +103,13 @@ export async function listStockmann(country: CountryCode, cap = 1500): Promise<P
   let requests = 0;
   for (const cgid of SECTIONS) {
     for (let page = 0; byId.size < cap; page++) {
-      if (page >= MAX_PAGES_PER_SECTION) throw new Error(`stockmann/${country}: ${cgid} has more than ${MAX_PAGES_PER_SECTION} pages`);
+      if (page >= MAX_PAGES_PER_SECTION) {
+        // The walk is capped (1,500 rows) and so partial by design; stopping
+        // at the page cap with rows in hand is the same trade. Only a section
+        // that maps nothing in all its pages is a fault.
+        if (byId.size > 0) break;
+        throw new Error(`stockmann/${country}: ${cgid} has more than ${MAX_PAGES_PER_SECTION} pages and no markdowns`);
+      }
       if (requests++ > 0) await sleep(PAUSE_MS);
       const url = `${GRID}?cgid=${cgid}&prefn1=availableDiscounts&prefv1=sale&store=ecomm&start=${page * PAGE}&sz=${PAGE}`;
       const html = await getText(url, { headers: { "X-Requested-With": "XMLHttpRequest" }, country, timeoutMs: 30_000 });
