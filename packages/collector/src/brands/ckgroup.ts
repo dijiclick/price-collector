@@ -240,15 +240,29 @@ async function openSession(slug: CkGroupSlug, country: CountryCode, cgid: string
   throw new Error(`${slug}/${country}: every session landed in the personalised (50-tile) arm`);
 }
 
+const inStockCount = (m: Map<string, ProductRecord>): number => {
+  let n = 0;
+  for (const r of m.values()) if (r.inStock) n++;
+  return n;
+};
+
 export async function listCkGroup(slug: CkGroupSlug, country: CountryCode): Promise<ProductRecord[]> {
   if (!CKGROUP_MARKETS[country] || !CKGROUP[slug].markets.includes(country)) return [];
   const byId = new Map<string, ProductRecord>();
   let requests = 0;
   for (const cat of CKGROUP[slug].cats) {
+    if (inStockCount(byId) >= CAP) break;
     const jar = await openSession(slug, country, cat.cgid);
     const size = CKGROUP[slug].step * STEPS(CKGROUP[slug]);
     for (let page = 0; ; page++) {
-      if (page >= MAX_PAGES) throw new Error(`${slug}/${country}: ${cat.cgid} still paging after ${MAX_PAGES} pages`);
+      // Enough in-stock deals for the cap: stop (Black Friday 2026-11 grew
+      // C&K AU's mcsale past 12 full pages = 2,376 deals, and the walk refused
+      // for 8 runs while holding far more than it keeps).
+      if (inStockCount(byId) >= CAP) break;
+      if (page >= MAX_PAGES) {
+        if (byId.size >= CAP) break;
+        throw new Error(`${slug}/${country}: ${cat.cgid} still paging after ${MAX_PAGES} pages`);
+      }
       if (requests++ > 0) await sleep(PAUSE_MS);
       const { html, url } = await fetchGrid(gridUrl(slug, country, cat.cgid, page), jar);
       if (isPersonalisedArm(url)) throw new Error(`${slug}/${country}: session switched to the personalised arm on page ${page}`);
