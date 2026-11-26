@@ -681,6 +681,7 @@ export async function insertSnapshots(
   db: Db,
   rows: { productId: number; price: number; listPrice: number | null; inStock: boolean }[],
 ): Promise<void> {
+  for (const r of rows) snapshotTouched.add(r.productId);
   await inChunks(rows, 500, async (chunk) => {
     const params: any[] = [];
     for (const s of chunk) params.push(s.productId, s.price, s.listPrice, s.inStock);
@@ -691,20 +692,37 @@ export async function insertSnapshots(
   });
 }
 
+/** Products that got a snapshot row in this process (see pruneSnapshots). */
+const snapshotTouched = new Set<number>();
+
 /**
  * Cap how many snapshots we keep per product (newest first). With change-only
  * inserts a product only accrues a row per real price/stock change, so this
  * rarely deletes anything — it's a backstop against a product that flip-flops.
+ *
+ * Only products that got a new row in this run can have gone over the cap, so
+ * only those are checked, through idx_snapshots_product_ts. The old version
+ * windowed the whole table (13M rows) after every collector job; on 2026-11-26
+ * seven of them ran at once and saturated the shared box's disk (API p50 ~4 s,
+ * 5xx on deals/product).
  */
 export async function pruneSnapshots(db: Db, keepPerProduct = 120): Promise<number> {
-  const rows = await db.query<{ id: number }>(
-    `DELETE FROM snapshots s USING (
-       SELECT id, row_number() OVER (PARTITION BY product_id ORDER BY ts DESC, id DESC) AS rn
-       FROM snapshots
-     ) d WHERE s.id = d.id AND d.rn > $1 RETURNING s.id`,
-    [keepPerProduct],
-  );
-  return rows.length;
+  const ids = [...snapshotTouched];
+  snapshotTouched.clear();
+  let pruned = 0;
+  await inChunks(ids, 2000, async (chunk) => {
+    const rows = await db.query<{ id: number }>(
+      `DELETE FROM snapshots s USING (
+         SELECT id FROM (
+           SELECT id, row_number() OVER (PARTITION BY product_id ORDER BY ts DESC, id DESC) AS rn
+           FROM snapshots WHERE product_id = ANY($2::int[])
+         ) x WHERE x.rn > $1
+       ) d WHERE s.id = d.id RETURNING s.id`,
+      [keepPerProduct, chunk],
+    );
+    pruned += rows.length;
+  });
+  return pruned;
 }
 
 export async function insertEvents(db: Db, rows: { productId: number; e: PriceEvent }[]): Promise<void> {
