@@ -1,0 +1,87 @@
+name: hetzner-rescale
+# Owner 2026-11-26: upgrade the main box (arias-all-services, CX43 → CX53, 32 GB RAM)
+# the moment Hetzner has CX53 capacity in nbg1 again ("limited availability").
+# It runs here and not on the box, because the box has to be switched off to rescale.
+# The box's hetzner-cx53-watch.timer checks availability every 2 min and dispatches
+# this; the cron is only a backup (GitHub drops many scheduled fires).
+# Once the server is CX53, every run is a no-op. Delete this file after the upgrade.
+#
+# THE COLLECTOR REPOSITORY IS PUBLIC — schedule and workflow_dispatch only.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hetzner-rescale
+  cancel-in-progress: false
+
+jobs:
+  rescale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+      SERVER_ID: "171233225"
+      TARGET: cx53
+      LOCATION: nbg1
+    steps:
+      - name: Rescale when available
+        run: |
+          set -u
+          API=https://api.hetzner.cloud/v1
+          H="Authorization: Bearer $HCLOUD_TOKEN"
+          notify() {
+            [ -n "${TG_TOKEN:-}" ] && curl -s -o /dev/null "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+              --data-urlencode "chat_id=$TG_CHAT" --data-urlencode "text=🖥 Hetzner main: $1" || true
+            echo "$1"
+          }
+          status() { curl -sf -H "$H" "$API/servers/$SERVER_ID" | jq -r .server.status; }
+          wait_action() {
+            for _ in $(seq 1 120); do
+              s=$(curl -sf -H "$H" "$API/actions/$1" | jq -r .action.status)
+              [ "$s" = success ] && return 0
+              [ "$s" = error ] && return 1
+              sleep 5
+            done
+            return 1
+          }
+          power_on() {
+            [ "$(status)" = running ] && return 0
+            a=$(curl -sf -X POST -H "$H" "$API/servers/$SERVER_ID/actions/poweron" | jq -r .action.id)
+            wait_action "$a"
+          }
+
+          cur=$(curl -sf -H "$H" "$API/servers/$SERVER_ID" | jq -r .server.server_type.name)
+          if [ "$cur" = "$TARGET" ]; then echo "already $TARGET"; exit 0; fi
+          avail=$(curl -sf -H "$H" "$API/server_types?name=$TARGET" | jq -r --arg l "$LOCATION" '.server_types[0].locations[] | select(.name==$l) | .available')
+          if [ "$avail" != "true" ]; then echo "$TARGET not available in $LOCATION ($avail)"; exit 0; fi
+
+          notify "$TARGET is available in $LOCATION. Upgrading $cur → $TARGET now (about 5–10 min offline)."
+          # Whatever happens next, the server must end up running again.
+          trap 'power_on || notify "⚠️ could not power the server back on — check the console"' EXIT
+
+          # Graceful ACPI shutdown first so Postgres stops cleanly; hard power-off only after 5 min.
+          curl -sf -X POST -H "$H" "$API/servers/$SERVER_ID/actions/shutdown" > /dev/null
+          for _ in $(seq 1 60); do [ "$(status)" = off ] && break; sleep 5; done
+          if [ "$(status)" != off ]; then
+            a=$(curl -sf -X POST -H "$H" "$API/servers/$SERVER_ID/actions/poweroff" | jq -r .action.id)
+            wait_action "$a"
+          fi
+
+          resp=$(curl -s -X POST -H "$H" -H "Content-Type: application/json" \
+            -d "{\"server_type\":\"$TARGET\",\"upgrade_disk\":true}" "$API/servers/$SERVER_ID/actions/change_type")
+          id=$(echo "$resp" | jq -r '.action.id // empty')
+          if [ -z "$id" ] || ! wait_action "$id"; then
+            notify "rescale failed, server stays $cur and is being powered back on: $(echo "$resp" | jq -c '.error // .action.error // .' | head -c 300)"
+            exit 1
+          fi
+          power_on
+          trap - EXIT
+          new=$(curl -sf -H "$H" "$API/servers/$SERVER_ID" | jq -r '.server.server_type | "\(.name) \(.cores) cores \(.memory) GB RAM \(.disk) GB disk"')
+          notify "✅ done: now $new, status $(status)."
