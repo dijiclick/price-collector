@@ -93,6 +93,20 @@ function urlOf(hit: any, id: string): string {
   return u.split("?")[0];
 }
 
+/**
+ * The share of the price a hit's automatic promotion leaves (Black Friday
+ * 2026: "30% off sitewide" on top of sale prices — 49.97 → 34.98 on the page
+ * and at checkout). SCAPI hands it as `productPromotions[].promotionalPrice`
+ * for the hit's own price; variants of the hit get the same share. 1 when
+ * there is none. Pure.
+ */
+export function promoFactor(hit: any): number {
+  const base = num(hit?.price);
+  if (base == null || !Array.isArray(hit?.productPromotions)) return 1;
+  const promo = hit.productPromotions.map((p: any) => num(p?.promotionalPrice)).filter((n: number | null): n is number => n != null && n < base);
+  return promo.length ? Math.min(...promo) / base : 1;
+}
+
 /** Map one Shopper Search hit to its marked-down variants. Pure. */
 export function mapKendraHit(hit: any, country: CountryCode = "US"): ProductRecord[] {
   const masterName = String(hit?.productName ?? "").trim();
@@ -102,10 +116,12 @@ export function mapKendraHit(hit: any, country: CountryCode = "US"): ProductReco
     ? hit.variants
     : [{ productId: hit.productId, name: masterName, price: hit.price, tieredPrices: hit.tieredPrices, orderable: hit.orderable, variationValues: null, rep: true }];
   const groupKey = variants.length > 1 ? `kendrascott-${hit.productId}` : null;
+  const factor = promoFactor(hit);
   const out: ProductRecord[] = [];
   for (const v of variants) {
     const id = String(v?.productId ?? "");
-    const price = num(v?.price);
+    const base = num(v?.price);
+    const price = base == null ? null : factor < 1 ? Math.round(base * factor * 100) / 100 : base;
     const list = listOf(v?.tieredPrices);
     if (!id || price == null || list == null || list <= price) continue;
     const name = String(v?.name ?? masterName).trim() || masterName;
@@ -153,7 +169,7 @@ export function searchUrl(offset: number): string {
     limit: String(PAGE),
     offset: String(offset),
     currency: "USD",
-    expand: "prices,variations,availability,images,represented_products",
+    expand: "prices,promotions,variations,availability,images,represented_products",
     allImages: "true",
     perPricebook: "true",
     allVariationProperties: "true",

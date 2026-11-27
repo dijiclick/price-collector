@@ -74,7 +74,9 @@ export function unflatten(arr: any[]): any {
 
 /** The category result out of a page's HTML; null when the payload is missing. */
 export function categoryResults(html: string): { numFound: number; items: any[] } | null {
-  const m = html.match(/<script type="application\/json" data-nuxt-data="category-ui"[^>]*>([\s\S]*?)<\/script>/);
+  // The payload's script was `category-ui` until 2026-11-22 and is `search-ui`
+  // since (same CategoryResults inside) — accept either.
+  const m = html.match(/<script type="application\/json" data-nuxt-data="(?:category|search)-ui"[^>]*>([\s\S]*?)<\/script>/);
   if (!m) return null;
   const res = unflatten(JSON.parse(m[1]))?.data?.CategoryResults;
   if (!res || !Array.isArray(res.items)) return null;
