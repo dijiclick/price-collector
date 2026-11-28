@@ -30,6 +30,13 @@ export interface StorefrontStore {
   sites: Partial<Record<CountryCode, string>>;
   /** Sale collection handle. Absent = the whole catalogue (shops with no sale collection). */
   collection?: string;
+  /**
+   * Seasonal collections walked after `collection`, the same way, skipped
+   * quietly when the shop has no such handle. AG Jeans, 2026-11-28: Black
+   * Friday moved 917 markdowns to `black-friday` and left 369 in `sale`, so 3
+   * runs stored 369 of the usual 916.
+   */
+  extraCollections?: string[];
   defaultGender?: "kadin" | "erkek" | "cocuk" | null;
   /** Shop-specific tag dialect, consulted when the generic tag reading finds no gender. */
   tagGender?: (tags: string[]) => ProductRecord["gender"];
@@ -136,14 +143,18 @@ export async function listStorefront(store: StorefrontStore, country: CountryCod
   const byId = new Map<string, ProductRecord>();
   const passes: (boolean | null)[] = store.collection ? [true, false] : [null];
   let requests = 0;
+  const handles: (string | undefined)[] = store.collection
+    ? [store.collection, ...(store.extraCollections ?? [])]
+    : [undefined];
+  for (const handle of handles)
   for (const available of passes) {
     let after: string | null = null;
     for (let n = 0; n < MAX_PAGES && byId.size < cap; n++) {
       if (requests++ > 0) await sleep(PAUSE_MS);
-      const data: any = store.collection
-        ? await post(store, COLLECTION_QUERY, { h: store.collection, c: country, a: after, f: [{ available }] })
+      const data: any = handle
+        ? await post(store, COLLECTION_QUERY, { h: handle, c: country, a: after, f: [{ available }] })
         : await post(store, CATALOGUE_QUERY, { c: country, a: after });
-      const conn: any = store.collection ? data?.collection?.products : data?.products;
+      const conn: any = handle ? data?.collection?.products : data?.products;
       if (!conn) {
         if (requests === 1) throw new Error(`${store.brand}/${country}: collection "${store.collection}" not found`);
         break;

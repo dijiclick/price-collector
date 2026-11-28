@@ -28,6 +28,13 @@ import { attrOf, decodeEntities, jsonOf } from "./_sfcchtml";
 
 const ORIGIN = "https://www.parfois.com";
 const CGID = "2919";
+/**
+ * Seasonal shelves walked after Special Prices, same tiles, deduped. Black
+ * Friday (3319, every site) took ~420 markdowns out of 2919 on 2026-11-28
+ * (IT/FR/NL/IE 754 -> 338). Once Parfois retires it, a failing or empty grid is
+ * skipped, never fatal.
+ */
+export const SEASONAL_CGIDS = ["3319"];
 const PAGE = 100;
 const MAX_PAGES = 15;
 const CAP = 1500;
@@ -54,8 +61,8 @@ export const PARFOIS_MARKETS: Partial<Record<CountryCode, Market>> = {
   FI: { site: "PAR_NE", locale: "en_FI", path: "/en/fi" },
 };
 
-export const gridUrl = (m: Market, start: number): string =>
-  `${ORIGIN}/on/demandware.store/Sites-${m.site}-Site/${m.locale}/Search-UpdateGrid?cgid=${CGID}&start=${start}&sz=${PAGE}`;
+export const gridUrl = (m: Market, start: number, cgid: string = CGID): string =>
+  `${ORIGIN}/on/demandware.store/Sites-${m.site}-Site/${m.locale}/Search-UpdateGrid?cgid=${cgid}&start=${start}&sz=${PAGE}`;
 
 const TILE = '<div class="product js_product"';
 const clean = (s: unknown): string => (typeof s === "string" ? decodeEntities(s).replace(/\s+/g, " ").trim() : "");
@@ -113,15 +120,26 @@ export async function listParfois(country: CountryCode): Promise<ProductRecord[]
   const m = PARFOIS_MARKETS[country];
   if (!m) return [];
   const byId = new Map<string, ProductRecord>();
-  for (let page = 0; page < MAX_PAGES && byId.size < CAP; page++) {
-    if (page > 0) await sleep(PAUSE_MS);
-    const html = await getText(gridUrl(m, page * PAGE), { country, timeoutMs: 60_000 });
-    const tiles = parfoisTiles(html);
-    for (const t of tiles) {
-      const r = mapParfoisTile(t, country);
-      if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
+  const walk = async (cgid: string) => {
+    for (let page = 0; page < MAX_PAGES && byId.size < CAP; page++) {
+      await sleep(byId.size || page ? PAUSE_MS : 0);
+      const html = await getText(gridUrl(m, page * PAGE, cgid), { country, timeoutMs: 60_000 });
+      const tiles = parfoisTiles(html);
+      for (const t of tiles) {
+        const r = mapParfoisTile(t, country);
+        if (r && !byId.has(r.externalId)) byId.set(r.externalId, r);
+      }
+      if (tiles.length < PAGE) break;
     }
-    if (tiles.length < PAGE) break;
+  };
+  await walk(CGID);
+  for (const cgid of SEASONAL_CGIDS) {
+    const before = byId.size;
+    try {
+      await walk(cgid);
+    } catch (e) {
+      console.warn(`parfois/${country}: seasonal shelf ${cgid} skipped (${(e as Error).message}); kept ${before}`);
+    }
   }
   return [...byId.values()].slice(0, CAP);
 }

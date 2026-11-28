@@ -35,7 +35,7 @@ export const US1110_STORES: StorefrontStore[] = [
   { brand: "tedbaker", host: "www.tedbaker.com", collection: "sale", sites: { US: "https://www.tedbaker.com" }, tagGender: tedBakerGender },
   { brand: "sevenforallmankind", host: "7forallmankind.com", collection: "sale", sites: { US: "https://7forallmankind.com" } },
   { brand: "frame", host: "frame-store.com", collection: "all-markdowns", sites: { US: "https://frame-store.com" } },
-  { brand: "agjeans", host: "www.agjeans.com", collection: "sale", sites: { US: "https://www.agjeans.com" } },
+  { brand: "agjeans", host: "www.agjeans.com", collection: "sale", extraCollections: ["black-friday"], sites: { US: "https://www.agjeans.com" } },
   { brand: "aliceandolivia", host: "www.aliceandolivia.com", collection: "sale", sites: { US: "https://www.aliceandolivia.com" }, defaultGender: "kadin" },
   { brand: "aninebing", host: "www.aninebing.com", collection: "sale", sites: { US: "https://www.aninebing.com" }, defaultGender: "kadin" },
   { brand: "bcbg", host: "www.bcbg.com", collection: "sale", sites: { US: "https://bcbg.com" }, defaultGender: "kadin" },
